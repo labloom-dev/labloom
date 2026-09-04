@@ -1,0 +1,40 @@
+{
+  "name": "labloom",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.0",
+    "@tauri-apps/cli": "^2.11.4",
+    "@tsconfig/svelte": "^5.0.8",
+    "@types/markdown-it": "^14.2.0",
+    "@types/node": "^24.13.3",
+    "svelte": "^5.56.10",
+    "svelte-check": "^4.7.6",
+    "typescript": "~6.0.2",
+    "vite": "^8.2.2"
+  },
+  "dependencies": {
+    "@codemirror/lang-markdown": "^6.5.2",
+    "@event-calendar/core": "^5.12.1",
+    "@lucide/svelte": "^1.39.0",
+    "@mdit/plugin-mathjax": "^1.2.0",
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "~2.7.3",
+    "@tauri-apps/plugin-fs": "~2.5.2",
+    "@tauri-apps/plugin-http": "~2.6.0",
+    "@tauri-apps/plugin-opener": "~2.5.5",
+    "@tauri-apps/plugin-store": "~2.4.4",
+    "codemirror": "^6.0.2",
+    "csv42": "^5.0.3",
+    "dompurify": "^3.4.14",
+    "feedsmith": "^2.9.6",
+    "markdown-it": "^15.0.1"
+  }
+}
