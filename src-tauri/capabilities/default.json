@@ -1,16 +1,38 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "enables the default permissions",
+  "description": "Permissions required by Research Desk",
   "windows": [
     "main"
   ],
   "permissions": [
     "core:default",
-    "store:default",
-    "http:default",
-    "dialog:default",
-    "fs:default",
-    "opener:default"
+    "core:window:allow-destroy",
+    "store:allow-load",
+    "store:allow-get",
+    "store:allow-set",
+    "store:allow-delete",
+    "store:allow-save",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "https://*:*" },
+        { "url": "http://*:*" },
+        { "url": "http://localhost:23119/*" }
+      ]
+    },
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "fs:allow-read-text-file",
+    "fs:allow-write-text-file",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "http://*" },
+        { "url": "https://*" },
+        { "url": "zotero:*" },
+        { "url": "file:*" }
+      ]
+    }
   ]
 }

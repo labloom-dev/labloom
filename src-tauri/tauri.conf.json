@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "labloom",
+  "productName": "Research Desk",
   "version": "0.1.0",
-  "identifier": "com.tauri.dev",
+  "identifier": "dev.researchdesk.desktop",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -12,15 +12,18 @@
   "app": {
     "windows": [
       {
-        "title": "Labloom",
-        "width": 800,
-        "height": 600,
+        "title": "Research Desk",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1080,
+        "minHeight": 680,
         "resizable": true,
         "fullscreen": false
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' data: asset: http://asset.localhost; font-src 'self' data: asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; script-src 'self'",
+      "devCsp": null
     }
   },
   "bundle": {
