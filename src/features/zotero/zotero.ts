@@ -6,6 +6,7 @@ export const ZOTERO_DISCONNECTED_MESSAGE = '未连接到 Zotero，请先启动 Z
 
 const PAGE_SIZE = 100
 const NON_BIBLIOGRAPHIC_TYPES = new Set(['annotation', 'attachment', 'note'])
+const FILE_ATTACHMENT_MODES = new Set(['imported_file', 'imported_url', 'linked_file'])
 
 type JsonRecord = Record<string, unknown>
 
@@ -95,6 +96,7 @@ async function requestJson(
       headers: {
         Accept: 'application/json',
         'Zotero-API-Version': '3',
+        'Zotero-Allowed-Request': 'true',
       },
     })
     if (!response.ok) {
@@ -201,20 +203,29 @@ function attachmentFrom(value: unknown, baseUrl: string): AttachmentLink | undef
   if (!record || !data || !key) return undefined
 
   const itemType = readString(data.itemType)
+  if (itemType !== 'attachment') return undefined
+
+  const linkMode = readString(data.linkMode)
   const contentType = readString(data.contentType)?.toLocaleLowerCase()
   const filename = readString(data.filename) ?? readString(data.path)
-  const attachment = linkFrom(record, 'attachment', baseUrl)
   const enclosure = linkFrom(record, 'enclosure', baseUrl)
-  const linkedUrl = itemType === 'attachment' ? usableUrl(data.url, baseUrl) : undefined
-  const linkedFile = itemType === 'attachment' ? usableUrl(data.path, baseUrl) : undefined
-  const url = attachment.url ?? enclosure.url ?? linkedUrl ?? linkedFile
+  const linkedUrl = usableUrl(data.url, baseUrl)
+  const linkedFile = usableUrl(data.path, baseUrl)
+  const url = enclosure.url ?? linkedUrl ?? linkedFile
   if (!url) return undefined
 
-  const declaredType = `${attachment.type ?? ''} ${enclosure.type ?? ''} ${contentType ?? ''}`
+  const declaredType = `${enclosure.type ?? ''} ${contentType ?? ''}`
+  const isPdf = declaredType.toLocaleLowerCase().includes('pdf')
+    || Boolean(filename?.toLocaleLowerCase().endsWith('.pdf'))
+  const opensInZotero = isPdf && (
+    FILE_ATTACHMENT_MODES.has(linkMode ?? '')
+    || enclosure.url?.startsWith('file:') === true
+    || linkedFile?.startsWith('file:') === true
+  )
   return {
     key,
-    url,
-    isPdf: declaredType.toLocaleLowerCase().includes('pdf') || Boolean(filename?.toLocaleLowerCase().endsWith('.pdf')),
+    url: opensInZotero ? `zotero://open-pdf/library/items/${encodeURIComponent(key)}` : url,
+    isPdf,
   }
 }
 
@@ -285,7 +296,6 @@ function parseItem(value: unknown, baseUrl: string): ZoteroItem | undefined {
     tags,
     collections,
     url: usableUrl(data.url, baseUrl),
-    attachmentUrl: attachmentFrom(value, baseUrl)?.url,
   }
 }
 
@@ -301,7 +311,7 @@ function parseChildAttachment(value: unknown, baseUrl: string): AttachmentLink |
   const filename = readString(data.filename) ?? readString(data.path)
   const linkMode = readString(data.linkMode)
   const isPdf = contentType?.includes('pdf') === true || filename?.toLocaleLowerCase().endsWith('.pdf') === true
-  const isFileAttachment = Boolean(filename) || ['imported_file', 'imported_url', 'linked_file'].includes(linkMode ?? '')
+  const isFileAttachment = Boolean(filename) || FILE_ATTACHMENT_MODES.has(linkMode ?? '')
   if (!isFileAttachment) return undefined
 
   return {
@@ -374,7 +384,6 @@ export async function loadZoteroItemDetails(baseUrl: string, itemKey: string): P
   const { value } = await requestJson(baseUrl, `users/0/items/${encodedKey}`, { format: 'json' })
   const item = parseItem(value, baseUrl)
   if (!item) throw new ZoteroApiError('无法识别该 Zotero 条目')
-  if (item.attachmentUrl) return item
   if (readNumber(asRecord(asRecord(value)?.meta)?.numChildren) === 0) return item
 
   const children = await loadPaginated(

@@ -19,8 +19,8 @@
   function manageDialog(node: HTMLElement): { destroy: () => void } {
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const appShell = document.querySelector<HTMLElement>('.app-shell')
-    const wasInert = appShell?.hasAttribute('inert') ?? false
-    appShell?.setAttribute('inert', '')
+    const shouldInertAppShell = Boolean(appShell && !node.closest('.app-shell') && !appShell.hasAttribute('inert'))
+    if (shouldInertAppShell) appShell?.setAttribute('inert', '')
 
     const focusable = (): HTMLElement[] => [...node.querySelectorAll<HTMLElement>(
       'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [href], [tabindex]:not([tabindex="-1"])',
@@ -61,7 +61,7 @@
       destroy: () => {
         cancelAnimationFrame(focusFrame)
         node.removeEventListener('keydown', keydown)
-        if (!wasInert) appShell?.removeAttribute('inert')
+        if (shouldInertAppShell) appShell?.removeAttribute('inert')
         previousFocus?.focus()
       },
     }
