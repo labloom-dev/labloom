@@ -1,10 +1,5 @@
-<script lang="ts">
-    import "./base.css";
-</script>
-
-
 <div class="container">
-
+    <Page />
 </div>
 
 
@@ -16,3 +11,10 @@
         width: 100%;
     }
 </style>
+
+
+<script lang="ts">
+    import "./base.css";
+
+    import Page from "./components/Editor/Editor.svelte";
+</script>

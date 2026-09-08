@@ -10,8 +10,7 @@
         "composite": true,
         "verbatimModuleSyntax": true,
         "useDefineForClassFields": true,
-        "strict": false,
-        "allowJs": true,
+        "strict": true,
         "checkJs": true,
         "lib": ["ESNext", "DOM", "DOM.Iterable"]
     }

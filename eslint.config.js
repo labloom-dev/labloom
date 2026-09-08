@@ -5,7 +5,7 @@ import stylistic from "@stylistic/eslint-plugin";
 import css from "@eslint/css";
 import json from "@eslint/json";
 import yml from "eslint-plugin-yml";
-import local from "./eslint-rules/css.mjs";
+import local from "./eslint-rules/css.js";
 
 export default defineConfig(
     { ignores: ["**/node_modules", "**/dist", "**/out", "pnpm-lock.yaml"] },
@@ -17,8 +17,11 @@ export default defineConfig(
         ],
         plugins: { "@stylistic": stylistic },
         rules: {
+            "no-unused-vars": "off",
+            "@typescript-eslint/no-unused-vars": "off",
             "@stylistic/quotes": ["warn", "double", { avoidEscape: false, allowTemplateLiterals: "always" }],
             "@stylistic/semi": ["warn", "always"],
+            "@stylistic/comma-dangle": ["warn", "never"],
             "@stylistic/arrow-spacing": ["warn", { before: true, after: true }],
             "@stylistic/brace-style": ["warn", "stroustrup"]
         }

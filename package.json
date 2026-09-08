@@ -1,6 +1,7 @@
 {
     "name": "labloom",
     "version": "1.0.0",
+    "type": "module",
     "description": "An Electron application with Svelte and TypeScript",
     "main": "./out/main/index.js",
     "license": "AGPL-3.0-only",
@@ -9,7 +10,7 @@
     "scripts": {
         "lint": "eslint --cache .",
         "lint:fix": "eslint --fix .",
-        "lint:test": "node eslint-rules/config.test.mjs",
+        "lint:test": "node eslint-rules/config.test.js",
         "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
         "svelte-check": "svelte-check --tsconfig ./tsconfig.json",
         "typecheck": "npm run typecheck:node && npm run svelte-check",
@@ -24,7 +25,11 @@
     },
     "dependencies": {
         "@electron-toolkit/preload": "^3.0.2",
-        "@electron-toolkit/utils": "^4.0.0"
+        "@electron-toolkit/utils": "^4.0.0",
+        "@tiptap/core": "^3.31.3",
+        "@tiptap/pm": "^3.31.3",
+        "@tiptap/starter-kit": "^3.31.3",
+        "better-sqlite3": "^13.0.3"
     },
     "devDependencies": {
         "@electron-toolkit/eslint-config-ts": "^3.1.0",
@@ -33,6 +38,7 @@
         "@eslint/json": "^2.1.0",
         "@stylistic/eslint-plugin": "^5.10.0",
         "@sveltejs/vite-plugin-svelte": "^6.2.0",
+        "@types/better-sqlite3": "^9.6.0",
         "@types/node": "^22.19.1",
         "electron": "^39.2.6",
         "electron-builder": "^26.0.12",

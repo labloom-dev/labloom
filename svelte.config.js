@@ -5,6 +5,7 @@ export default {
     // for more information about preprocessors
     preprocess: vitePreprocess(),
     compilerOptions: {
-        runes: true
+        runes: true,
+        warningFilter: (warning) => !warning.code.startsWith("a11y_")
     }
 };

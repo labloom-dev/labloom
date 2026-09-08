@@ -1,4 +1,4 @@
-import config from "../eslint.config.mjs";
+import config from "../eslint.config.js";
 import css from "@eslint/css";
 import { ESLint } from "eslint";
 import assert from "node:assert/strict";
@@ -7,7 +7,7 @@ const fix = new ESLint({ overrideConfigFile: true, overrideConfig: config, fix: 
 const cases = [
     ["probe.js", "export const x = 'hello'  \n", ["@stylistic/quotes", "@stylistic/semi", "@stylistic/no-trailing-spaces", "@stylistic/eol-last"]],
     ["probe.ts", "export type Name = 'hello'\n", ["@stylistic/quotes", "@stylistic/semi", "@stylistic/eol-last"]],
-    ["probe.mjs", "if (a) {\nfoo();\n} else {\nbar();\n}\ntry {\nfoo();\n} catch {\nbar();\n}", ["@stylistic/brace-style"]],
+    ["probe.js", "if (a) {\nfoo();\n} else {\nbar();\n}\ntry {\nfoo();\n} catch {\nbar();\n}", ["@stylistic/brace-style"]],
     ["probe.css", "a[data-x='value'] { content: 'hello'; background: url('a.png'); --text: 'custom'; color: red }  \n", ["local/css-quotes", "local/css-semi", "@stylistic/no-trailing-spaces", "@stylistic/eol-last"]],
     ["probe.svelte", "<script lang=\"ts\">\nconst x = 'hello'\n</script>\n<p>{x}</p>\n<style>p { content: 'hello' }</style>  \n", ["@stylistic/quotes", "@stylistic/semi", "local/css-quotes", "local/css-semi", "@stylistic/no-trailing-spaces", "@stylistic/eol-last"]],
     ["probe.json", "{\"x\": 1}  \n", ["@stylistic/no-trailing-spaces", "@stylistic/eol-last"]],

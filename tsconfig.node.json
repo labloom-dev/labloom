@@ -3,6 +3,8 @@
     "include": ["electron.vite.config.*", "src/main/**/*", "src/preload/**/*"],
     "compilerOptions": {
         "composite": true,
+        "strict": true,
+        "checkJs": true,
         "types": ["electron-vite/node"]
     }
 }
