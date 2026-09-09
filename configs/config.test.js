@@ -1,4 +1,4 @@
-import config from "../eslint.config.js";
+import config from "./eslint.config.js";
 import css from "@eslint/css";
 import { ESLint } from "eslint";
 import assert from "node:assert/strict";

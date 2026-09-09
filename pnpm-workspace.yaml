@@ -1,3 +1,4 @@
+shamefullyHoist: true
 allowBuilds:
   better-sqlite3: false
   electron: true

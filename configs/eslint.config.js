@@ -5,10 +5,10 @@ import stylistic from "@stylistic/eslint-plugin";
 import css from "@eslint/css";
 import json from "@eslint/json";
 import yml from "eslint-plugin-yml";
-import local from "./eslint-rules/css.js";
+import local from "./css.js";
 
 export default defineConfig(
-    { ignores: ["**/node_modules", "**/dist", "**/out", "pnpm-lock.yaml"] },
+    { ignores: ["**/node_modules", "**/dist", "pnpm-lock.yaml"] },
     {
         files: ["**/*.{js,mjs,cjs,jsx,ts,mts,cts,tsx,svelte}"],
         extends: [

@@ -26,6 +26,9 @@
     "[yaml]": {
         "editor.defaultFormatter": "dbaeumer.vscode-eslint"
     },
+    "eslint.options": {
+        "overrideConfigFile": "configs/eslint.config.js"
+    },
     "eslint.validate": [
         "javascript",
         "javascriptreact",

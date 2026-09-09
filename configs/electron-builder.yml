@@ -2,14 +2,18 @@ appId: dev.labloom.app
 productName: labloom
 directories:
   buildResources: build
+  output: dist/release
 files:
   - '!**/.vscode/*'
-  - '!src/*'
-  - '!electron.vite.config.{js,ts,mjs,cjs}'
-  - '!svelte.config.js'
-  - '!{.eslintcache,eslint.config.js,dev-app-update.yml,CHANGELOG.md,README.md}'
-  - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
-  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!{main,preload,renderer,shared}/**/*'
+  - '!configs/**/*'
+  - '!dist/.eslintcache'
+  - '!dist/*.tsbuildinfo'
+  - '!dist/types/**/*'
+  - '!dist/release/**/*'
+  - '!{.eslintcache,dev-app-update.yml,CHANGELOG.md,README.md}'
+  - '!{.env,.env.*,pnpm-lock.yaml,pnpm-workspace.yaml}'
+  - '!tsconfig.json'
 asarUnpack:
   - resources/**
 win:
