@@ -16,7 +16,7 @@
 
 
 <script lang="ts">
-    import { getTabs } from "./tab";
+    import { getTabs } from "./definitions";
 
     const tabs = getTabs();
     const active = $derived(

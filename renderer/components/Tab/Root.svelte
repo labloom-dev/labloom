@@ -3,7 +3,7 @@
 
 <script lang="ts">
     import { type Snippet, untrack } from "svelte";
-    import { setTabs, type Tab, type TabState } from "./tab";
+    import { setTabs, type Tab, type TabState } from "./definitions";
 
     let { initialTabs, children }: { initialTabs: Tab[]; children: Snippet } = $props();
     const activeState = $state<TabState>({

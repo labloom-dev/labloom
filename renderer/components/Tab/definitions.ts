@@ -20,6 +20,7 @@ type Tab_Settings = {
 
 export type Tab = {
     id: TabID;
+    title: string;
 } & (
     Tab_Page |
     Tab_Overview |
