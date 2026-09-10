@@ -45,7 +45,8 @@ function createWindow(): void {
                 if (devToolsWindow.isVisible()) {
                     mainWindow.webContents.closeDevTools();
                     devToolsWindow.hide();
-                } else {
+                }
+                else {
                     mainWindow.webContents.openDevTools({ mode: "detach" });
                     devToolsWindow.show();
                 }
