@@ -1,5 +1,5 @@
 <button type="button" onclick={openFilesMenu}>Files</button>
-
+<!--todo: design menu-->
 
 <script lang="ts">
     function openFilesMenu(event: MouseEvent): void {

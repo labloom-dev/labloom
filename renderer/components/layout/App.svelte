@@ -1,16 +1,23 @@
 <div class="vertical-container">
-    <Tab.Root initialTabs={[{
-        id: "tab-0" as TabID,
-        title: "Overview",
-        type: "overview"
-    }]}>
+    <Tab.Root initialTabs={[
+        {
+            id: "tab-0" as TabID,
+            title: "Overview",
+            type: "overview"
+        },
+        {
+            id: "tab-1" as TabID,
+            title: "Settings",
+            type: "settings"
+        }
+    ]}>
         <NavBar />
         <div class="horizontal-container occupy">
             <Sidebar />
             <div style:width={`${panelWidth}px`}>
                 <SidePanel />
             </div>
-            <Resizer direction="vertical" changeCB={resizerCB} origin={panelWidth} min={50} max={150} />
+            <Resizer direction="vertical" changeCB={resizerCB} origin={panelWidth} min={50} max={200} />
             <Main />
         </div>
     </Tab.Root>
