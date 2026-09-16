@@ -1,7 +1,7 @@
 {#if active}
     {#key active.id}
         {#if active.type === "page"}
-            <div>page</div>
+            <Editor />
         {:else if active.type === "overview"}
             <div>overview</div>
         {:else if active.type === "about"}
@@ -16,6 +16,7 @@
 
 
 <script lang="ts">
+    import Editor from "../Editor/Editor.svelte";
     import { getTabs } from "./definitions";
 
     const tabs = getTabs();

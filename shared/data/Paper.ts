@@ -1,4 +1,4 @@
-import type { PageBase } from "./Page";
+import type { Page } from "./Page";
 
 type PaperAttrTypes = {
     doi: string | null;
@@ -13,4 +13,4 @@ type PaperAttr = {
     };
 }[keyof PaperAttrTypes];
 
-export type Paper = PageBase<"paper", PaperAttr>;
+export type Paper = Page<"paper", PaperAttr>;

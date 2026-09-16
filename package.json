@@ -2,7 +2,7 @@
     "name": "labloom",
     "version": "1.0.0",
     "type": "module",
-    "description": "An Electron application with Svelte and TypeScript",
+    "description": "An all-in-one AI research workspace for the entire research lifecycle.",
     "main": "./dist/main/index.js",
     "license": "AGPL-3.0-only",
     "author": "labloom.dev",
@@ -31,7 +31,8 @@
         "@tiptap/core": "^3.31.3",
         "@tiptap/pm": "^3.31.3",
         "@tiptap/starter-kit": "^3.31.3",
-        "better-sqlite3": "^13.0.3"
+        "better-sqlite3": "^13.0.3",
+        "uuid": "^14.0.2"
     },
     "devDependencies": {
         "@electron-toolkit/eslint-config-ts": "^3.1.0",
@@ -39,18 +40,18 @@
         "@eslint/css": "^2.0.0",
         "@eslint/json": "^2.1.0",
         "@stylistic/eslint-plugin": "^5.10.0",
-        "@sveltejs/vite-plugin-svelte": "^6.2.0",
+        "@sveltejs/vite-plugin-svelte": "^6.2.4",
         "@types/better-sqlite3": "^9.6.0",
-        "@types/node": "^22.19.1",
-        "electron": "^39.2.6",
-        "electron-builder": "^26.0.12",
+        "@types/node": "^22.20.2",
+        "electron": "^39.8.10",
+        "electron-builder": "^26.15.3",
         "electron-vite": "^5.0.0",
-        "eslint": "^9.39.1",
-        "eslint-plugin-svelte": "^3.13.1",
+        "eslint": "^10.10.0",
+        "eslint-plugin-svelte": "^3.23.0",
         "eslint-plugin-yml": "^3.8.1",
-        "svelte": "^5.45.6",
-        "svelte-check": "^4.3.4",
+        "svelte": "^5.57.0",
+        "svelte-check": "^4.7.6",
         "typescript": "^5.9.3",
-        "vite": "^7.2.6"
+        "vite": "^7.3.6"
     }
 }

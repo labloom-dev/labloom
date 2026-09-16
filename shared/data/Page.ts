@@ -1,8 +1,8 @@
-import { type uuid } from "./base";
-import { type Block } from "./Block";
+import { type uuid } from "./uuid";
+import { type Block, type BlockOf } from "./Block";
 import { type PageAttr } from "./PageAttr";
 
-export type PageBase<
+export type Page<
     Kind extends string,
     ExtraIntrAttrs = never
 > = {
@@ -10,7 +10,5 @@ export type PageBase<
     id: uuid;
     attrs: (PageAttr | ExtraIntrAttrs)[];
     children: Block[];
-    title: Block;
+    title: BlockOf<"title">;
 };
-
-export type Page = PageBase<"normal">;

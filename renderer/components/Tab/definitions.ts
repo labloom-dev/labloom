@@ -1,4 +1,5 @@
-import { type uuid } from "../../../shared/data/base";
+import { type uuid } from "../../../shared/data/uuid";
+import { v4 } from "uuid";
 import { createContext } from "svelte";
 
 type Tab_Page = {
@@ -34,6 +35,10 @@ export type TabID = string & {
 
 export function isTabID(id: string): id is TabID {
     return id.startsWith("tab-");
+}
+
+export function getTabID(): TabID {
+    return `tab-${v4()}` as TabID;
 }
 
 export type TabState = {
