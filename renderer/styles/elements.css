@@ -1,0 +1,17 @@
+button {
+    display: inline-block;
+    text-align: center;
+    cursor: pointer;
+    box-sizing: content-box;
+    background: none;
+    margin: 0;
+    padding: 0;
+    border: none;
+}
+
+.dc-paragraph {
+    padding-block: .28125rem;
+    padding-inline: .1875rem;
+    background-color: aliceblue;
+    border-radius: .1875rem;
+}

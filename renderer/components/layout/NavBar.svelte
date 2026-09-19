@@ -1,10 +1,10 @@
 <nav>
     <img src="../../assets/icon.png" alt="Labloom Logo" />
-    <NavGroup panelOpened={true} canBack={false} canForward={false} />
-    <div class="space"></div>
-    <MenuGroup />
-    <div class="space"></div>
-    <Tab.List />
+    <div style:width="1rem"></div>
+    <NavGroup panelOpened={true} canBack={false} canForward={true} />
+    <div style:width="2rem"></div>
+    <GlobalSearchLauncher />
+    <div style:width="2rem"></div>
 </nav>
 
 
@@ -29,17 +29,13 @@
         aspect-ratio: 1/1;
         height: calc(env(titlebar-area-height) * 0.8);
         -webkit-user-drag: none;
-        margin-left: .25rem;
+        margin-left: .2rem;
         margin-right: .5rem;
-    }
-    .space {
-        width: 2rem;
     }
 </style>
 
 
 <script lang="ts">
-    import MenuGroup from "../MenuGroup.svelte";
     import NavGroup from "../NavGroup.svelte";
-    import * as Tab from "../Tab";
+    import GlobalSearchLauncher from "../globalSearch/GlobalSearchLauncher.svelte";
 </script>

@@ -17,10 +17,12 @@
 
 <script lang="ts">
     import Editor from "../Editor/Editor.svelte";
-    import { getTabs } from "./definitions";
+    import type { GroupID } from "./defs";
+    import { tabState } from "./state.svelte";
 
-    const tabs = getTabs();
+    let { groupId }: { groupId: GroupID } = $props();
+    const group = $derived(tabState.groups.find(group => group.id === groupId));
     const active = $derived(
-        tabs.items.find(tab => tab.id === tabs.activeId)
+        group?.tabs.find(tab => tab.id === group.activeTabId)
     );
 </script>

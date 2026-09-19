@@ -6,7 +6,7 @@
         "../renderer/**/*",
         "../renderer/**/*.svelte",
         "../preload/*.d.ts",
-        "../shared/data"
+        "../shared/typess"
     ],
     "compilerOptions": {
         "rootDir": "..",

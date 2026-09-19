@@ -1,4 +1,4 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
 	<path d="M0 0h32v32H0z" fill="none" />
-	<path fill="currentColor" d="m14 26l1.41-1.41L7.83 17H28v-2H7.83l7.58-7.59L14 6L4 16z" />
+	<path fill="currentColor" d="M17 15V5h-2v10H5v2h10v10h2V17h10v-2z" />
 </svg>

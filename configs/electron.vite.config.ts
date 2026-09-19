@@ -21,6 +21,9 @@ export default defineConfig({
     },
     renderer: {
         root: "renderer",
+        server: {
+            port: 15173
+        },
         build: {
             outDir: "dist/renderer",
             rollupOptions: {

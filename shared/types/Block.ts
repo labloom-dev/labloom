@@ -11,7 +11,7 @@ const BlockType_Container = ["callout", "blockquote"] as const;
 // BLocks that have content, but cannot have children.
 const BlockType_Leaf = ["title", "heading_1", "heading_2", "heading_3", "code"] as const;
 // Blocks that don't have content, and cannot have children.
-const BlockType_Decoration = ["page_reference", "hr"] as const;
+const BlockType_Decoration = ["blocked_reference", "hr"] as const;
 
 export type BlockKind =
     typeof BlockType_Normal[number] |
@@ -22,6 +22,7 @@ export type BlockKind =
 export type Block_Normal = BlockBase & {
     type: typeof BlockType_Normal[number];
     children: Block[];
+    //todo: add inline styles
     content: string;
 };
 

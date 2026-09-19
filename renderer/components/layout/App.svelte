@@ -1,28 +1,8 @@
-
-<Tab.Root initialTabs={[
-    {
-        id: getTabID(),
-        title: "Overview",
-        type: "overview"
-    },
-    {
-        id: getTabID(),
-        title: "Settings",
-        type: "settings"
-    },
-    {
-        id: getTabID(),
-        title: "Editor",
-        type: "page",
-        pageId: getUUID()
-    }
-]}>
-    <NavBar />
-    <div class="container occupy">
-        <Sidebar />
-        <Main />
-    </div>
-</Tab.Root>
+<NavBar />
+<div class="container">
+    <Sidebar />
+    <Main />
+</div>
 
 
 <style>
@@ -37,10 +17,9 @@
 
 <script lang="ts">
     import "../../styles/base.css";
+    import "../../styles/elements.css";
+
     import NavBar from "./NavBar.svelte";
     import Sidebar from "./Sidebar.svelte";
     import Main from "./Main.svelte";
-    import * as Tab from "../Tab";
-    import { getTabID } from "../Tab/definitions";
-    import { getUUID } from "../../../shared/data/uuid";
 </script>

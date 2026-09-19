@@ -64,14 +64,14 @@ app.on("browser-window-created", (_, window) => {
 
 //#region Menus
 
-const filesMenu = Menu.buildFromTemplate([
-    { label: "Exit", click: () => app.quit() }
-]);
-ipcMain.on("menu:files", (event, x: number, y: number) => {
-    const window = BrowserWindow.fromWebContents(event.sender);
-    if (!window || !Number.isFinite(x) || !Number.isFinite(y)) return;
-    filesMenu.popup({ window, x: Math.round(x), y: Math.round(y) });
-});
+//const filesMenu = Menu.buildFromTemplate([
+//    { label: "Exit", click: () => app.quit() }
+//]);
+//ipcMain.on("menu:files", (event, x: number, y: number) => {
+//    const window = BrowserWindow.fromWebContents(event.sender);
+//    if (!window || !Number.isFinite(x) || !Number.isFinite(y)) return;
+//    filesMenu.popup({ window, x: Math.round(x), y: Math.round(y) });
+//});
 
 //#endregion
 
