@@ -1,0 +1,1 @@
+export type XYDirection = "horizontal" | "vertical";

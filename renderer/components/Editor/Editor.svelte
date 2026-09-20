@@ -64,12 +64,10 @@
     import { onMount } from "svelte";
     import { Editor } from "@tiptap/core";
     import { StarterKit } from "@tiptap/starter-kit";
-    import SidePanel from "../SidePanel/SidePanel.svelte";
-    import Resizer from "../Resizer.svelte";
+    import SidePanel from "../utils/SidePanel.svelte";
+    import Resizer from "../utils/Resizer.svelte";
     import Paragraph from "./extensions/Paragraph";
 
-    let element: HTMLDivElement;
-    let editorState = $state<{ editor: Editor | null }>({ editor: null });
     const formats = [
         { name: "bold", label: "Bold" },
         { name: "italic", label: "Italic" },
@@ -83,6 +81,8 @@
         panelWidth = value;
     }
 
+    let element: HTMLDivElement;
+    let editorState = $state<{ editor: Editor | null }>({ editor: null });
     onMount(() => {
         const editor = new Editor({
             element,

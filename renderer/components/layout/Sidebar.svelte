@@ -40,7 +40,7 @@
     nav {
         /* Note: We cannot ignore this and this only. */
         app-region: drag;
-        background-color: aliceblue;
+        background-color: #ededed;
         height: 100%;
         width: 3rem;
         display: flex;

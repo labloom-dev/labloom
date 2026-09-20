@@ -30,8 +30,8 @@
 
 
 <script lang="ts">
-    import arrowLeft from "../assets/carbon--arrow-left.svg?raw";
-    import arrowRight from "../assets/carbon--arrow-right.svg?raw";
+    import arrowLeft from "../../assets/carbon--arrow-left.svg?raw";
+    import arrowRight from "../../assets/carbon--arrow-right.svg?raw";
 
     type Props = {
         color?: string;

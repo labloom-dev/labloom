@@ -1,10 +1,11 @@
 <nav>
     <img src="../../assets/icon.png" alt="Labloom Logo" />
     <div style:width="1rem"></div>
-    <NavGroup panelOpened={true} canBack={false} canForward={true} />
+    <TabNav panelOpened={true} canBack={false} canForward={true} />
+    <div style:width="2rem"></div>
+    <Menu />
     <div style:width="2rem"></div>
     <GlobalSearchLauncher />
-    <div style:width="2rem"></div>
 </nav>
 
 
@@ -36,6 +37,7 @@
 
 
 <script lang="ts">
-    import NavGroup from "../NavGroup.svelte";
+    import TabNav from "../Tab/TabNav.svelte";
     import GlobalSearchLauncher from "../globalSearch/GlobalSearchLauncher.svelte";
+    import Menu from "./Menu.svelte";
 </script>

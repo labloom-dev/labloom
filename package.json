@@ -33,6 +33,7 @@
         "@tiptap/pm": "^3.31.3",
         "@tiptap/starter-kit": "^3.31.3",
         "better-sqlite3": "^13.0.3",
+        "bits-ui": "^2.19.2",
         "uuid": "^14.0.2"
     },
     "devDependencies": {

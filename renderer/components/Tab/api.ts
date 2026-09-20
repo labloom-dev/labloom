@@ -1,5 +1,6 @@
 import { v4 } from "uuid";
-import type { GroupID, LayoutNode, SplitDirection, Tab, TabGroup, TabID } from "./defs";
+import type { GroupID, LayoutNode, Tab, TabGroup, TabID } from "./defs";
+import type { XYDirection } from "../types";
 import { tabState } from "./state.svelte";
 
 export function isTabID(id: string): id is TabID {
@@ -84,7 +85,7 @@ export function activateTab(id: TabID): boolean {
     return true;
 }
 
-function splitLeaf(node: LayoutNode, groupId: GroupID, newId: GroupID, direction: SplitDirection): LayoutNode {
+function splitLeaf(node: LayoutNode, groupId: GroupID, newId: GroupID, direction: XYDirection): LayoutNode {
     if (node.type === "group") return node.groupId === groupId
         ? { type: "split", direction, ratio: 0.5, children: [node, { type: "group", groupId: newId }] }
         : node;
@@ -92,7 +93,7 @@ function splitLeaf(node: LayoutNode, groupId: GroupID, newId: GroupID, direction
     return node;
 }
 
-export function splitGroup(groupId: GroupID, direction: SplitDirection): GroupID | null {
+export function splitGroup(groupId: GroupID, direction: XYDirection): GroupID | null {
     if (!findGroup(groupId) || (direction !== "horizontal" && direction !== "vertical")) return null;
     const id = `group-${v4()}` as GroupID;
     tabState.groups.push({ id, tabs: [], activeTabId: null });
@@ -141,5 +142,35 @@ export function resizeSplit(path: readonly number[], ratio: number): boolean {
     }
     if (node.type !== "split") return false;
     node.ratio = ratio;
+    return true;
+}
+
+/** Collapse one side of a split, merging its tabs into the adjoining surviving group. */
+export function closeSplitSide(path: readonly number[], side: 0 | 1): boolean {
+    let node = tabState.layout;
+    let parent: Extract<LayoutNode, { type: "split" }> | null = null;
+    let childIndex = 0;
+    for (const index of path) {
+        if (node.type !== "split" || (index !== 0 && index !== 1)) return false;
+        parent = node;
+        childIndex = index;
+        node = node.children[index];
+    }
+    if (node.type !== "split" || (side !== 0 && side !== 1)) return false;
+    const removedIds = collectGroups(node.children[side]);
+    const survivingNode = node.children[side === 0 ? 1 : 0];
+    const survivingIds = collectGroups(survivingNode);
+    const target = findGroup(side === 0 ? survivingIds[0] : survivingIds[survivingIds.length - 1])!;
+    const removedGroups = removedIds.map(id => findGroup(id)!);
+    const focused = removedGroups.find(group => group.id === tabState.focusedGroupId);
+    target.tabs.push(...removedGroups.flatMap(group => group.tabs));
+    if (target.activeTabId === null) target.activeTabId = target.tabs[0]?.id ?? null;
+    if (focused) {
+        tabState.focusedGroupId = target.id;
+        if (focused.activeTabId !== null) target.activeTabId = focused.activeTabId;
+    }
+    if (parent) parent.children[childIndex] = survivingNode;
+    else tabState.layout = survivingNode;
+    tabState.groups = tabState.groups.filter(group => !removedIds.includes(group.id));
     return true;
 }

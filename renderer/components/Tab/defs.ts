@@ -1,4 +1,5 @@
 import { type uuid } from "../../../shared/types/uuid";
+import type { XYDirection } from "../types";
 
 type Tab_Page = {
     type: "page";
@@ -41,13 +42,11 @@ export type TabGroup = {
     activeTabId: TabID | null;
 };
 
-export type SplitDirection = "horizontal" | "vertical";
-
 export type LayoutNode =
     | { type: "group"; groupId: GroupID }
     | {
         type: "split";
-        direction: SplitDirection;
+        direction: XYDirection;
         ratio: number;
         children: [LayoutNode, LayoutNode];
     };
