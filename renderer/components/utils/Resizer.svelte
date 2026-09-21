@@ -13,8 +13,7 @@
 
 <style>
     div {
-        /* todo: unify border color, should use var(--border-color) */
-        background-color: aqua;
+        background-color: var(--color-resizer-background);
     }
 </style>
 

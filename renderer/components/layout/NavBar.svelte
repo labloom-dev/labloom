@@ -1,11 +1,10 @@
 <nav>
-    <img src="../../assets/icon.png" alt="Labloom Logo" />
-    <div style:width="1rem"></div>
-    <TabNav panelOpened={true} canBack={false} canForward={true} />
-    <div style:width="2rem"></div>
-    <Menu />
-    <div style:width="2rem"></div>
-    <GlobalSearchLauncher />
+    <div class="left-controls">
+        <img src="../../assets/icon.png" alt="Labloom Logo" />
+        <TabNav panelOpened={true} canBack={false} canForward={true} />
+        <Menu />
+    </div>
+    <GSLauncher />
 </nav>
 
 
@@ -14,30 +13,40 @@
         /* Note: We cannot ignore this and this only. */
         app-region: drag;
         flex-shrink: 0;
-        display: flex;
-        flex-direction: row;
+        display: grid;
+        grid-template-columns:
+            minmax(max-content, 1fr)
+            minmax(0, var(--search-width))
+            minmax(calc(var(--window-controls-width) + var(--search-gap)), 1fr);
         align-items: center;
         height: calc(env(titlebar-area-height) + 1px);
-        background-color: #ddd;
+        background-color: var(--color-navbar-background);
     }
-    nav :global(*) {
+    nav :global(button) {
         /* Note: We cannot ignore this and this only. */
         app-region: no-drag;
     }
+    .left-controls {
+        display: flex;
+        align-items: center;
+        justify-self: start;
+        height: 100%;
+        gap: 2vw;
+        padding-left: env(titlebar-area-x, 0px);
+        margin-right: var(--search-gap);
+    }
     img {
-        /* Note: We cannot ignore this and this only. */
-        app-region: drag;
-        aspect-ratio: 1/1;
+        aspect-ratio: 1;
         height: calc(env(titlebar-area-height) * 0.8);
         -webkit-user-drag: none;
-        margin-left: .2rem;
-        margin-right: .5rem;
+        margin-left: 3.2px;
+        margin-right: 8px;
     }
 </style>
 
 
 <script lang="ts">
     import TabNav from "../Tab/TabNav.svelte";
-    import GlobalSearchLauncher from "../globalSearch/GlobalSearchLauncher.svelte";
+    import GSLauncher from "../globalSearch/GSLauncher.svelte";
     import Menu from "./Menu.svelte";
 </script>

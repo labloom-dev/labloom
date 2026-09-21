@@ -1,10 +1,15 @@
-import { app, shell, BrowserWindow, ipcMain, Menu } from "electron";
+import { app, shell, BrowserWindow } from "electron";
 import { join } from "path";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
 import icon from "../resources/labloom-2x-trs.png?asset";
 
 
 function createWindow(): void {
+    const
+        minWindowWidth = 500,
+        // Title bar + Sidebar buttons with no gap between groups.
+        minContentHeight = 37 + 8 * 48;
+
     const mainWindow = new BrowserWindow({
         titleBarStyle: "hidden",
         ...(process.platform !== "darwin" ? { titleBarOverlay: {
@@ -14,6 +19,8 @@ function createWindow(): void {
         }} : {}),
         width: 960,
         height: 540,
+        minWidth: minWindowWidth,
+        minHeight: minContentHeight,
         show: false,
         autoHideMenuBar: true,
         icon,
@@ -23,7 +30,12 @@ function createWindow(): void {
         }
     });
 
-    mainWindow.on("ready-to-show", () => mainWindow.show());
+    mainWindow.once("ready-to-show", () => {
+        const [, windowHeight] = mainWindow.getSize();
+        const [, contentHeight] = mainWindow.getContentSize();
+        mainWindow.setMinimumSize(minWindowWidth, minContentHeight + windowHeight - contentHeight);
+        mainWindow.show();
+    });
 
     mainWindow.webContents.setWindowOpenHandler((details) => {
         shell.openExternal(details.url);
@@ -60,20 +72,6 @@ app.on("browser-window-created", (_, window) => {
         zoom: false
     });
 });
-
-
-//#region Menus
-
-//const filesMenu = Menu.buildFromTemplate([
-//    { label: "Exit", click: () => app.quit() }
-//]);
-//ipcMain.on("menu:files", (event, x: number, y: number) => {
-//    const window = BrowserWindow.fromWebContents(event.sender);
-//    if (!window || !Number.isFinite(x) || !Number.isFinite(y)) return;
-//    filesMenu.popup({ window, x: Math.round(x), y: Math.round(y) });
-//});
-
-//#endregion
 
 
 // If there are no open windows, create a new one on activation.

@@ -16,6 +16,8 @@
 
 
 <script lang="ts">
+    import "../../styles/colors.css";
+    import "../../styles/layouts.css";
     import "../../styles/base.css";
     import "../../styles/elements.css";
 

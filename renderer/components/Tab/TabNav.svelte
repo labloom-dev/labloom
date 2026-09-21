@@ -12,15 +12,15 @@
 
 <style>
     button {
-        height: 1.25rem;
-        width: 1.25rem;
-        padding: .25rem;
+        height: var(--icon-size-medium);
+        width: var(--icon-size-medium);
+        padding: 4px;
     }
     div {
         display: flex;
         flex-flow: row nowrap;
         align-items: center;
-        gap: .5rem;
+        gap: 8px;
         height: 100%;
     }
     button:disabled {

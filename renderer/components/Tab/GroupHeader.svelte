@@ -30,11 +30,11 @@
     .group-header {
         display: flex;
         flex-shrink: 0;
-        background: #eee;
-        border-bottom: 1px solid #ccc;
+        background: var(--color-tab-header-background);
+        border-bottom: var(--border-width) solid var(--color-tab-header-border);
     }
     .group-header.focused {
-        border-bottom-color: #557cdb;
+        border-bottom-color: var(--color-accent);
     }
     .group-header > :global(.tab-list) {
         display: flex;
@@ -45,17 +45,17 @@
     .tab {
         display: flex;
         flex-shrink: 0;
-        border-top: 2px solid transparent;
+        border-top: var(--focus-width) solid transparent;
     }
     .tab.active {
-        border-top-color: #557cdb;
+        border-top-color: var(--color-accent);
     }
     button {
         display: flex;
         align-items: center;
         justify-content: center;
         height: 100%;
-        width: 1rem;
+        width: var(--icon-size-small);
     }
 </style>
 

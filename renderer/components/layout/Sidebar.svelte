@@ -40,9 +40,9 @@
     nav {
         /* Note: We cannot ignore this and this only. */
         app-region: drag;
-        background-color: #ededed;
+        background-color: var(--color-sidebar-background);
         height: 100%;
-        width: 3rem;
+        width: 48px;
         display: flex;
         flex-flow: column nowrap;
         justify-content: center;
@@ -54,7 +54,7 @@
     .icon-container {
         display: grid;
         place-items: center;
-        padding: .75rem;
+        padding: 12px;
     }
     .flex-end {
         margin-top: auto;

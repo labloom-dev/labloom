@@ -3,7 +3,7 @@
 
 <style>
     nav {
-        background-color: antiquewhite;
+        background-color: var(--color-side-panel-background);
         height: 100%;
         width: 100%;
     }

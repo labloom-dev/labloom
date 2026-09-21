@@ -1,0 +1,36 @@
+:root {
+    /* Application surfaces */
+    --color-navbar-background: #ddd;
+    --color-sidebar-background: #ededed;
+    --color-tab-header-background: #eeeeee;
+    --color-tab-header-border: #cccccc;
+    --color-side-panel-background: #e4ead9;
+    --color-resizer-background: #00ffff;
+    --color-paragraph-background: #f0f8ff;
+
+    /* Shared interaction states */
+    --color-accent: #557cdb;
+    --color-surface: #ffffff;
+    --color-surface-hover: #f3f5f9;
+    --color-surface-focus: #edf3ff;
+    --color-border-focus: #b6c8f1;
+
+    /* Search launcher */
+    --color-search-trigger-background: #f5f6f8;
+    --color-search-trigger-border: #c9cdd3;
+    --color-search-trigger-border-hover: #a8b3c7;
+    --color-search-trigger-text: #606773;
+
+    /* Search popover */
+    --color-popover-border: #d9dde5;
+    --color-popover-text: #242a35;
+    --color-search-divider: #edf0f4;
+    --color-search-icon: #66758e;
+    --color-search-placeholder: #858c98;
+    --color-search-heading: #77808f;
+    --color-search-secondary-text: #7b8493;
+    --color-search-footer-background: #fafbfc;
+    --color-kbd-border: #e1e5eb;
+    --color-popover-shadow: #18243b40;
+    --color-popover-shadow-soft: #18243b0d;
+}

@@ -52,8 +52,8 @@
         width: 100%;
         display: flex;
         flex-flow: column nowrap;
-        gap: .125rem;
-        padding: 1rem 3rem 40dvh;
+        gap: var(--editor-block-gap);
+        padding: var(--editor-padding);
         overflow-x: clip;
         overflow-y: auto;
     }

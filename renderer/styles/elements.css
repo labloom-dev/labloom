@@ -9,9 +9,17 @@ button {
     border: none;
 }
 
+kbd {
+    padding: .1em .4em;
+    border: .0625em solid var(--color-kbd-border);
+    border-radius: .25em;
+    font-size: .9em;
+    font-family: inherit;
+}
+
 .dc-paragraph {
-    padding-block: .28125rem;
-    padding-inline: .1875rem;
-    background-color: aliceblue;
-    border-radius: .1875rem;
+    padding-block: var(--paragraph-padding-block);
+    padding-inline: var(--paragraph-padding-inline);
+    background-color: var(--color-paragraph-background);
+    border-radius: var(--paragraph-radius);
 }

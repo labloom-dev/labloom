@@ -12,7 +12,7 @@
         </div>
         <div class="divider">
             <Resizer
-                direction={node.direction === "horizontal" ? "vertical" : "horizontal"}
+                direction={node.direction}
                 origin={availableSize * node.ratio}
                 min={availableSize * 0.1}
                 max={availableSize * 0.9}

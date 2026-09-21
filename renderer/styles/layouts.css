@@ -1,0 +1,28 @@
+:root {
+    /* Shared controls */
+    --border-width: 1px;
+    --focus-width: 2px;
+    --focus-offset: 2px;
+    --radius-medium: 6px;
+    --radius-large: 12px;
+    --icon-size-small: 16px;
+    --icon-size-medium: 20px;
+
+    /* Navigation bar */
+    --window-controls-width: max(0px, calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)));
+    --search-width: min(35vw, 640px);
+    --search-gap: 2vw;
+
+    /* Search launcher and popover */
+    --search-popover-width: 576px;
+    --search-popover-max-height: 512px;
+    --search-popover-viewport-gap: 12px;
+    --shadow-popover: 0 12px 32px -12px var(--color-popover-shadow), 0 2px 8px var(--color-popover-shadow-soft);
+
+    /* Editor */
+    --editor-padding: 16px 48px 40vh;
+    --editor-block-gap: .125em;
+    --paragraph-padding-block: .28125em;
+    --paragraph-padding-inline: .1875em;
+    --paragraph-radius: .1875em;
+}
