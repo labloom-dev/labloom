@@ -13,7 +13,6 @@
                     <Toolbar.Button
                         class={format.active ? "tool-button active" : "tool-button"}
                         disabled={format.disabled}
-                        title={format.label}
                         onclick={() => editor?.chain().focus().toggleMark(format.name).run()}
                     >
                         {#if format.icon}
@@ -27,12 +26,11 @@
                     </Toolbar.Button>
                 {/each}
                 <span class="separator"></span>
-                <Color {editor} anchor={element} bind:open={colorOpen} />
+                <Color {editor} anchor={element} bind:element={colorElement} bind:open={colorOpen} />
                 <Toolbar.Button
                     class="tool-button"
-                    title="清除格式"
                     disabled={!toolbarState.canClear}
-                    onclick={() => editor?.chain().focus().unsetAllMarks().run()}
+                    onclick={clearFormat}
                 >
                     <span class="icon">
                         <!-- eslint-disable-next-line svelte/no-at-html-tags -->
@@ -41,13 +39,13 @@
                 </Toolbar.Button>
                 <span class="separator"></span>
                 <div class="history-actions">
-                    <Toolbar.Button class="tool-button" title="撤销" disabled={!toolbarState.canUndo} onclick={() => editor?.chain().focus().undo().run()}>
+                    <Toolbar.Button class="tool-button" disabled={!toolbarState.canUndo} onclick={() => editor?.chain().focus().undo().run()}>
                         <span class="icon">
                             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
                             {@html undoIcon}
                         </span>
                     </Toolbar.Button>
-                    <Toolbar.Button class="tool-button" title="重做" disabled={!toolbarState.canRedo} onclick={() => editor?.chain().focus().redo().run()}>
+                    <Toolbar.Button class="tool-button" disabled={!toolbarState.canRedo} onclick={() => editor?.chain().focus().redo().run()}>
                         <span class="icon">
                             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
                             {@html redoIcon}
@@ -144,7 +142,9 @@
 
     let { editor }: { editor: Editor | null } = $props();
     let element = $state<HTMLDivElement>();
+    let colorElement = $state<HTMLDivElement | null>(null);
     let colorOpen = $state(false);
+    const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 
     const formats = [
         { name: "bold", label: "加粗", icon: boldIcon },
@@ -154,6 +154,16 @@
         { name: "code", label: "行内代码", icon: codeIcon }
     ];
     let toolbarState = $state(readState(null));
+
+    function clearFormat(): void {
+        if (!editor || editor.isDestroyed || !editor.isEditable) return;
+        const cleared = editor.chain().focus().unsetAllMarks().command(({ tr }) => {
+            // unsetAllMarks only clears a range; a caret also needs its pending marks cleared.
+            if (tr.selection.empty) tr.setStoredMarks([]);
+            return true;
+        }).run();
+        if (cleared) colorOpen = false;
+    }
 
     function readState(instance: Editor | null): {
         formats: { name: string; label: string; icon: string | null; active: boolean; disabled: boolean }[];
@@ -188,7 +198,6 @@
         let frame = 0;
 
         function hide(): void {
-            colorOpen = false;
             if (menu.matches(":popover-open")) menu.hidePopover();
         }
 
@@ -203,7 +212,12 @@
 
         function position(): void {
             if (disposed) return;
-            if (instance?.isDestroyed || !instance?.isEditable || instance.state.selection.empty) {
+            if (instance?.isDestroyed || !instance?.isEditable) {
+                colorOpen = false;
+                hide();
+                return;
+            }
+            if (instance.state.selection.empty || dismissed) {
                 hide();
                 return;
             }
@@ -212,10 +226,11 @@
             if (!document.hasFocus()) return;
             // A pointer click can collapse the DOM selection before the editor receives selectionchange.
             if (
-                selecting || dismissed || instance.view.composing
+                selecting || instance.view.composing
                 || (pointerSelection && window.getSelection()?.isCollapsed)
-                || (!instance.view.hasFocus() && !menu.contains(document.activeElement))
+                || (!instance.view.hasFocus() && !menu.contains(document.activeElement) && !colorElement?.contains(document.activeElement))
             ) {
+                colorOpen = false;
                 hide();
                 return;
             }
@@ -233,6 +248,7 @@
                 rect.bottom <= Math.max(0, viewport.top) || rect.top >= Math.min(window.innerHeight, viewport.bottom)
                 || rect.right <= Math.max(0, viewport.left) || rect.left >= Math.min(window.innerWidth, viewport.right)
             ) {
+                colorOpen = false;
                 hide();
                 return;
             }
@@ -261,11 +277,12 @@
         }
 
         function pointerDown(event: PointerEvent): void {
-            if (menu.contains(event.target as Node)) return;
+            if (menu.contains(event.target as Node) || colorElement?.contains(event.target as Node)) return;
             const inside = dom.contains(event.target as Node);
             selecting = event.button === 0 && inside;
             pointerSelection = selecting;
             dismissed = !selecting;
+            colorOpen = false;
             hide();
 
             if (!inside && instance && !instance.isDestroyed) {
@@ -285,19 +302,32 @@
             update();
         }
 
-        function keyDown(event: KeyboardEvent): void {
-            if (event.key === "Escape") {
-                if (event.defaultPrevented || colorOpen) return;
-                dismissed = true;
-                if (menu.contains(document.activeElement)) instance?.view.focus();
-                hide();
+        function shortcut(event: KeyboardEvent): void {
+            if (event.defaultPrevented || event.isComposing || event.key === "Process") return;
+            const target = event.target as Node;
+            if (!dom.contains(target) && !menu.contains(target) && !colorElement?.contains(target)) return;
+            const modifier = isMac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+            if (modifier && !event.altKey && !event.shiftKey && event.code === "KeyW" && instance?.isEditable && !instance.isDestroyed) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                if (!event.repeat) clearFormat();
+                return;
             }
-            // The editor has already handled formatting shortcuts before this event bubbles here.
-            else if (!event.defaultPrevented && !["Tab", "Alt", "AltGraph", "Control", "Meta", "Shift"].includes(event.key) && dom.contains(event.target as Node)) {
-                selecting = true;
+            if (event.key !== "Escape" || event.defaultPrevented || event.repeat || colorOpen || !menu.matches(":popover-open")) return;
+            if (!dom.contains(event.target as Node) && !menu.contains(event.target as Node)) return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            dismissed = true;
+            if (menu.contains(document.activeElement)) instance?.view.focus();
+            hide();
+        }
+
+        function keyDown(event: KeyboardEvent): void {
+            // Unhandled shortcuts can leave the selection intact; position follows the editor state.
+            if (!event.defaultPrevented && !["Escape", "Tab", "Alt", "AltGraph", "Control", "Meta", "Shift"].includes(event.key) && dom.contains(event.target as Node)) {
                 pointerSelection = false;
                 dismissed = false;
-                hide();
+                update();
             }
         }
 
@@ -315,6 +345,7 @@
         document.addEventListener("pointerdown", pointerDown, true);
         document.addEventListener("selectionchange", update);
         document.addEventListener("focusin", update);
+        document.addEventListener("keydown", shortcut, true);
         document.addEventListener("keydown", keyDown);
         document.addEventListener("keyup", finishSelection);
         document.addEventListener("scroll", update, true);
@@ -330,12 +361,14 @@
             resizeObserver.disconnect();
             cancelAnimationFrame(frame);
             hide();
+            colorOpen = false;
             instance.off("transaction", update);
             instance.off("update", update);
             instance.off("destroy", update);
             document.removeEventListener("pointerdown", pointerDown, true);
             document.removeEventListener("selectionchange", update);
             document.removeEventListener("focusin", update);
+            document.removeEventListener("keydown", shortcut, true);
             document.removeEventListener("keydown", keyDown);
             document.removeEventListener("keyup", finishSelection);
             document.removeEventListener("scroll", update, true);

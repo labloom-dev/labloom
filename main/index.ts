@@ -1,7 +1,7 @@
 import { app, shell, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { mkdirSync } from "node:fs";
 import { join } from "path";
-import { electronApp, optimizer, is } from "@electron-toolkit/utils";
+import { electronApp, is } from "@electron-toolkit/utils";
 import icon from "../resources/labloom-2x-trs.png?asset";
 import { AppStorage, developmentDataPath } from "./storage/app";
 import { Startup } from "./startup";
@@ -100,20 +100,33 @@ function createWindow(): void {
     });
 
     mainWindow.webContents.on("before-input-event", (event, input) => {
-        // The toolkit only handles F12 in development.
-        if (!is.dev && input.type === "keyDown" && input.code === "F12") {
+        const command = input.control || input.meta;
+        // Disable native reload/close shortcuts while keeping page key events.
+        mainWindow.webContents.setIgnoreMenuShortcuts(
+            command && (input.code === "KeyR" || input.code === "KeyW")
+        );
+
+        if (input.code === "F11") {
             event.preventDefault();
-            if (!input.isAutoRepeat) mainWindow.webContents.toggleDevTools();
+            return;
+        }
+        if (input.type !== "keyDown") return;
+
+        if (input.code === "F12") {
+            event.preventDefault();
+            if (!input.isAutoRepeat) {
+                if (is.dev && !mainWindow.webContents.isDevToolsOpened()) {
+                    mainWindow.webContents.openDevTools({ mode: "undocked" });
+                }
+                else mainWindow.webContents.toggleDevTools();
+            }
             return;
         }
 
         if (
-            (input.control && input.key === "r")
-         || (input.control && input.shift && input.key.toLowerCase() === "r")
-         || (input.control && input.key === "w")
-         || (input.key === "F11")
+            (command && (input.code === "Minus" || (input.code === "Equal" && input.shift)))
+         || (!is.dev && input.code === "KeyI" && ((input.control && input.shift) || (input.meta && input.alt)))
         ) {
-            console.log("dwq");
             event.preventDefault();
         }
     });
@@ -128,14 +141,6 @@ app.whenReady().then(() => {
     electronApp.setAppUserModelId("dev.labloom.app");
     startup.restore();
     createWindow();
-});
-
-
-app.on("browser-window-created", (_, window) => {
-    optimizer.watchWindowShortcuts(window, {
-        escToCloseWindow: false,
-        zoom: false
-    });
 });
 
 

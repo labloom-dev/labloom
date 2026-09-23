@@ -1,7 +1,7 @@
-<Popover.Root bind:open>
-    <Popover.Trigger bind:ref={colorTrigger} disabled={colorState.every(format => format.disabled)}>
+<Popover.Root bind:open={() => open, setOpen}>
+    <Popover.Trigger disabled={colorState.every(format => format.disabled)}>
         {#snippet child({ props })}
-            <Toolbar.Button {...props} class={open ? "tool-button active" : "tool-button"} title="文字颜色">
+            <Toolbar.Button {...props} class={open ? "tool-button active" : "tool-button"} style={buttonStyle}>
                 <span class="icon">
                     <!-- eslint-disable-next-line svelte/no-at-html-tags -->
                     {@html paletteIcon}
@@ -9,29 +9,29 @@
             </Toolbar.Button>
         {/snippet}
     </Popover.Trigger>
-    <!-- Keep the menu inside the native popover's top layer. -->
-    <Popover.Content
-        side="bottom"
-        align="end"
-        customAnchor={anchor}
-        sideOffset={8}
-        collisionPadding={8}
-        strategy="fixed"
-        trapFocus={false}
-        onOpenAutoFocus={openColors}
-        onCloseAutoFocus={event => event.preventDefault()}
-        onEscapeKeydown={closeColors}
-    >
-        {#snippet child({ props, wrapperProps })}
-            <div {...wrapperProps}>
-                <div {...props} class="color-menu">
-                    {#each colorState as format (format.name)}
-                        {@render palette(format)}
-                    {/each}
+    <Popover.Portal>
+        <Popover.Content
+            side="bottom"
+            align={attached ? "end" : "start"}
+            customAnchor={attached ? anchor : caretAnchor}
+            sideOffset={8}
+            collisionPadding={8}
+            strategy="fixed"
+            trapFocus={false}
+            onOpenAutoFocus={openColors}
+            onCloseAutoFocus={event => event.preventDefault()}
+        >
+            {#snippet child({ props, wrapperProps })}
+                <div {...wrapperProps} class="color-layer" popover="manual" bind:this={element}>
+                    <div {...props} class="color-menu">
+                        {#each colorState as format (format.name)}
+                            {@render palette(format)}
+                        {/each}
+                    </div>
                 </div>
-            </div>
-        {/snippet}
-    </Popover.Content>
+            {/snippet}
+        </Popover.Content>
+    </Popover.Portal>
 </Popover.Root>
 
 {#snippet palette(format: ColorFormatState)}
@@ -46,7 +46,6 @@
                     class="color-choice"
                     class:active={format.active === color.value}
                     type="button"
-                    title={color.label}
                     disabled={format.disabled}
                     onclick={() => applyColor(format.name, color.value)}
                 >
@@ -66,6 +65,16 @@
 
 
 <style>
+    .color-layer {
+        inset: auto;
+        margin: 0;
+        padding: 0;
+        overflow: visible;
+        border: 0;
+        color: var(--dc-c-popover-text);
+        background: transparent;
+        font-size: .8125rem;
+    }
     .icon {
         display: inline-flex;
         flex-shrink: 0;
@@ -115,7 +124,21 @@
         aspect-ratio: 1;
         padding: .25rem;
         border: 1px solid var(--dc-c-popover-border);
+        border-radius: .25rem;
+        color: inherit;
         background: var(--dc-c-surface);
+        font: inherit;
+    }
+    .color-choice:hover:not(:disabled) {
+        background-color: var(--dc-c-surface-hover);
+    }
+    .color-choice:focus-visible {
+        outline: 2px solid var(--dc-c-accent);
+        outline-offset: 1px;
+    }
+    .color-choice:disabled {
+        opacity: .4;
+        cursor: default;
     }
     .color-icon {
         width: 1.375rem;
@@ -132,15 +155,18 @@
 
 
 <script lang="ts">
+    import { tick } from "svelte";
+    import { SvelteSet } from "svelte/reactivity";
     import type { Editor } from "@tiptap/core";
     import { Popover, Toolbar } from "bits-ui";
     import paletteIcon from "../../assets/carbon--color-palette.svg?raw";
     import fgColorIcon from "../../assets/carbon--text-color.svg?raw";
     import bgColorIcon from "../../assets/carbon--text-highlight.svg?raw";
 
-    let { editor, anchor, open = $bindable(false) }: {
+    let { editor, anchor, element = $bindable(null), open = $bindable(false) }: {
         editor: Editor | null;
         anchor: HTMLElement | undefined;
+        element?: HTMLDivElement | null;
         open?: boolean;
     } = $props();
     type ColorMark = "fgColor" | "bgColor";
@@ -149,10 +175,21 @@
         name: ColorMark;
         label: string;
         icon: string;
+        keys: string[];
         active: ActiveColor;
         disabled: boolean;
     };
-    let colorTrigger = $state<HTMLButtonElement | null>(null);
+    let attached = $state(false);
+    let returnFocus: HTMLElement | null = null;
+    const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+    const lastColors: Record<ColorMark, string | null | undefined> = { fgColor: undefined, bgColor: undefined };
+    const caretAnchor = {
+        getBoundingClientRect(): DOMRect {
+            if (!editor || editor.isDestroyed) return new DOMRect();
+            const { left, right, top, bottom } = editor.view.coordsAtPos(editor.state.selection.head);
+            return new DOMRect(left, top, right - left, bottom - top);
+        }
+    };
 
     const colors = [
         { value: null, label: "默认" },
@@ -170,22 +207,41 @@
         { value: "pink", label: "粉" },
         { value: "magenta", label: "品红" }
     ];
-    const colorFormats: { name: ColorMark; label: string; icon: string }[] = [
-        { name: "fgColor", label: "前景色", icon: fgColorIcon },
-        { name: "bgColor", label: "背景色", icon: bgColorIcon }
+    const colorFormats: { name: ColorMark; label: string; icon: string; keys: string[] }[] = [
+        { name: "fgColor", label: "前景色", icon: fgColorIcon, keys: [..."1234567QWERTYU"] },
+        { name: "bgColor", label: "背景色", icon: bgColorIcon, keys: [..."ASDFGHJZXCVBNM"] }
     ];
+    const keyColors = new Map<string, { name: ColorMark; value: string | null }>(colorFormats.flatMap(format => format.keys.map((key, index) => [
+        `${/\d/.test(key) ? "Digit" : "Key"}${key}`,
+        { name: format.name, value: colors[index].value }
+    ] as const)));
     let colorState = $state(readState(null));
+    const buttonStyle = $derived(colorState.map(({ name, active }) => typeof active === "string"
+        ? `${name === "fgColor" ? "color" : "background-color"}: var(--dc-c-${name === "fgColor" ? "fg" : "bg"}-${CSS.escape(active)})`
+        : "").join("; "));
 
-    function openColors(event: Event): void {
-        // Mouse clicks keep the editor focused; keyboard activation enters the menu.
-        if (document.activeElement !== colorTrigger) event.preventDefault();
+    function setOpen(value: boolean): void {
+        if (value && !open) {
+            attached = anchor?.matches(":popover-open") ?? false;
+            returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        }
+        open = value;
     }
 
-    function closeColors(event: KeyboardEvent): void {
+    async function openColors(event: Event): Promise<void> {
         event.preventDefault();
-        event.stopImmediatePropagation();
+        await tick();
+        if (!open || !element) return;
+        if (!element.matches(":popover-open")) element.showPopover();
+        element.querySelector<HTMLButtonElement>(".color-choice:not(:disabled)")?.focus({ preventScroll: true });
+    }
+
+    function closeColors(): void {
         open = false;
-        if (anchor?.contains(document.activeElement)) colorTrigger?.focus({ preventScroll: true });
+        if (returnFocus && anchor?.matches(":popover-open") && anchor.contains(returnFocus)) {
+            returnFocus.focus({ preventScroll: true });
+        }
+        else if (editor && !editor.isDestroyed) editor.view.focus();
     }
 
     function colorLabel(value: ActiveColor): string {
@@ -208,14 +264,15 @@
     function applyColor(name: ColorMark, value: string | null): void {
         if (!editor || editor.isDestroyed || !editor.isEditable) return;
         const chain = editor.chain().focus();
+        let applied: boolean;
         if (name === "fgColor") {
-            if (value === null) chain.unsetFgColor().run();
-            else chain.setFgColor(value).run();
+            applied = value === null ? chain.unsetFgColor().run() : chain.setFgColor(value).run();
         }
         else {
-            if (value === null) chain.unsetBgColor().run();
-            else chain.setBgColor(value).run();
+            applied = value === null ? chain.unsetBgColor().run() : chain.setBgColor(value).run();
         }
+        if (!applied) return;
+        lastColors[name] = value;
         open = false;
     }
 
@@ -232,6 +289,68 @@
         const instance = editor;
         let disposed = false;
         let queued = false;
+        const heldKeys = new SvelteSet<string>();
+
+        function consume(event: KeyboardEvent): void {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }
+
+        function keyDown(event: KeyboardEvent): void {
+            // After returning focus to the editor, key repeat must not type the selected color's key.
+            if (heldKeys.has(event.code)) {
+                consume(event);
+                return;
+            }
+            if (!instance || instance.isDestroyed || !instance.isEditable || event.isComposing || event.key === "Process") return;
+            const target = event.target as Node;
+            const inside = instance.view.dom.contains(target) || anchor?.contains(target) || element?.contains(target);
+            if (!inside) return;
+            const modifier = isMac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+
+            if (open && event.key === "Escape") {
+                consume(event);
+                if (!event.repeat) {
+                    heldKeys.add(event.code);
+                    closeColors();
+                }
+                return;
+            }
+            if (modifier && !event.altKey && !event.shiftKey && ["KeyR", "KeyJ", "KeyK"].includes(event.code)) {
+                consume(event);
+                if (event.repeat) return;
+                if (event.code === "KeyR") {
+                    if (!open) setOpen(true);
+                }
+                else {
+                    const name = event.code === "KeyJ" ? "fgColor" : "bgColor";
+                    const color = lastColors[name];
+                    if (color !== undefined) applyColor(name, color);
+                }
+                return;
+            }
+            if (!open || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+            const color = keyColors.get(event.code);
+            if (!color) return;
+            consume(event);
+            if (!event.repeat) {
+                heldKeys.add(event.code);
+                applyColor(color.name, color.value);
+            }
+        }
+
+        function keyUp(event: KeyboardEvent): void {
+            heldKeys.delete(event.code);
+        }
+
+        function windowBlur(): void {
+            heldKeys.clear();
+        }
+
+        function focusIn(event: FocusEvent): void {
+            const target = event.target as Node;
+            if (open && !element?.contains(target) && !anchor?.contains(target) && !instance?.view.dom.contains(target)) open = false;
+        }
 
         function update(): void {
             if (queued) return;
@@ -249,6 +368,10 @@
         // setEditable emits update without a transaction.
         instance?.on("update", update);
         instance?.on("destroy", update);
+        document.addEventListener("keydown", keyDown, true);
+        document.addEventListener("keyup", keyUp, true);
+        document.addEventListener("focusin", focusIn);
+        window.addEventListener("blur", windowBlur);
         update();
 
         return () => {
@@ -256,6 +379,10 @@
             instance?.off("transaction", update);
             instance?.off("update", update);
             instance?.off("destroy", update);
+            document.removeEventListener("keydown", keyDown, true);
+            document.removeEventListener("keyup", keyUp, true);
+            document.removeEventListener("focusin", focusIn);
+            window.removeEventListener("blur", windowBlur);
         };
     });
 </script>

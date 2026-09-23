@@ -1,9 +1,9 @@
 <div style:color={color}>
-    <button disabled={!canBack} title="Back">
+    <button disabled={!canBack}>
         <!-- eslint-disable-next-line svelte/no-at-html-tags -->
         {@html arrowLeft}
     </button>
-    <button disabled={!canForward} title="Forward">
+    <button disabled={!canForward}>
         <!-- eslint-disable-next-line svelte/no-at-html-tags -->
         {@html arrowRight}
     </button>

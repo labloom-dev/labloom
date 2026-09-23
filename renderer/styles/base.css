@@ -38,3 +38,24 @@ body {
     flex-direction: column;
     overflow: clip;
 }
+
+.tiptap.ProseMirror {
+    min-height: 100%;
+    width: 100%;
+    display: flex;
+    flex-flow: column nowrap;
+    gap: .125em;
+    padding: 16px 48px 20cqh;
+}
+
+
+*[contenteditable]:not([contenteditable="false"]) {
+    -webkit-user-modify: read-write-plaintext-only;
+
+    & * {
+        white-space: pre-wrap;
+        word-wrap: normal;
+        word-break: break-word;
+        overflow-wrap: break-word;
+    }
+}

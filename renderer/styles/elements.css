@@ -13,13 +13,27 @@ button {
     background-color: var(--dc-c-selection);
 }
 
-div.dc-paragraph {
+.dc-paragraph {
     margin: 0;
     line-height: 1.5em;
     padding-block: var(--dc-p-padding-block);
     padding-inline: var(--dc-p-padding-inline);
     background-color: var(--dc-c-paragraph-background);
     border-radius: .1875em;
+
+    &.dc-empty {
+        position: relative;
+
+        &::after {
+            content: attr(data-placeholder);
+            color: var(--dc-c-placeholder);
+            display: block;
+            position: absolute;
+            top: var(--dc-p-padding-block);
+            left: calc(var(--dc-p-padding-inline) + .1em);
+            pointer-events: none;
+        }
+    }
 }
 
 b {

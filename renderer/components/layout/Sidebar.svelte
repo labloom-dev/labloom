@@ -1,34 +1,34 @@
 <nav>
-    <button class="icon-container" title="Overview">
+    <button class="icon-container">
         <!-- eslint-disable-next-line svelte/no-at-html-tags -->
         {@html home}
     </button>
-    <button class="icon-container" title="RSS">
+    <button class="icon-container">
         <!-- eslint-disable-next-line svelte/no-at-html-tags -->
         {@html rss}
     </button>
-    <button class="icon-container" title="Papers">
+    <button class="icon-container">
         <!-- eslint-disable-next-line svelte/no-at-html-tags -->
         {@html book}
     </button>
-    <button class="icon-container" title="Schedule">
+    <button class="icon-container">
         <!-- eslint-disable-next-line svelte/no-at-html-tags -->
         {@html calendar}
     </button>
-    <button class="icon-container" title="Knowledge Base">
+    <button class="icon-container">
         <!-- eslint-disable-next-line svelte/no-at-html-tags -->
         {@html library}
     </button>
-    <button class="icon-container" title="AI">
+    <button class="icon-container">
         <!-- eslint-disable-next-line svelte/no-at-html-tags -->
         {@html ai}
     </button>
     <div class="flex-end flex">
-        <button class="icon-container" title="New Page">
+        <button class="icon-container">
             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
             {@html add}
         </button>
-        <button class="icon-container" title="Settings">
+        <button class="icon-container">
             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
             {@html settings}
         </button>

@@ -28,36 +28,6 @@
     .no-shrink {
         flex-shrink: 0;
     }
-    :global(*[contenteditable]:not([contenteditable="false"])) {
-        -webkit-user-modify: read-write-plaintext-only;
-
-        & * {
-            white-space: pre-wrap;
-            word-wrap: normal;
-            word-break: break-word;
-            overflow-wrap: break-word;
-        }
-    }
-    :global(.tiptap.ProseMirror) {
-        min-height: 100%;
-        width: 100%;
-        display: flex;
-        flex-flow: column nowrap;
-        gap: .125em;
-        padding: 16px 48px 20cqh;
-    }
-    :global(.dc-paragraph.dc-empty) {
-        position: relative;
-    }
-    :global(.dc-paragraph.dc-empty)::after {
-        content: "输入 / 发起命令...";
-        color: grey;
-        display: block;
-        position: absolute;
-        top: var(--dc-p-padding-block);
-        left: var(--dc-p-padding-inline);
-        pointer-events: none;
-    }
 </style>
 
 
@@ -103,7 +73,7 @@
                 Placeholder.configure({
                     emptyEditorClass: "dc-editor-empty",
                     emptyNodeClass: "dc-empty",
-                    placeholder: ""
+                    placeholder: "输入 / 发起命令..."
                 }),
                 Dropcursor.configure({
                     color: "var(--dc-c-drop-cursor)",

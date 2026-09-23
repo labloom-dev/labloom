@@ -11,15 +11,15 @@
         {/each}
     </Tabs.List>
 
-    <button title="Split Horizontally" onclick={() => splitGroup(group.id, "horizontal")}>
+    <button onclick={() => splitGroup(group.id, "horizontal")}>
         <!-- eslint-disable-next-line svelte/no-at-html-tags -->
         {@html split_right}
     </button>
-    <button title="Split Vertically" onclick={() => splitGroup(group.id, "vertical")}>
+    <button onclick={() => splitGroup(group.id, "vertical")}>
         <!-- eslint-disable-next-line svelte/no-at-html-tags -->
         {@html split_down}
     </button>
-    <button title="Close Group" onclick={() => closeGroup(group.id)}>
+    <button onclick={() => closeGroup(group.id)}>
         <!-- eslint-disable-next-line svelte/no-at-html-tags -->
         {@html close_svg}
     </button>
