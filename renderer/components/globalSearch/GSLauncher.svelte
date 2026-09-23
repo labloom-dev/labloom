@@ -37,25 +37,25 @@
         gap: 8px;
         width: 100%;
         height: 70%;
-        border: var(--border-width) solid var(--color-search-trigger-border);
-        border-radius: var(--radius-medium);
-        background-color: var(--color-search-trigger-background);
-        color: var(--color-search-trigger-text);
+        border: var(--border-width) solid var(--c-search-trigger-border);
+        border-radius: 6px;
+        background-color: var(--c-search-trigger-background);
+        color: var(--c-search-trigger-text);
         font: inherit;
         font-size: 13px;
     }
     .trigger:hover, .trigger[data-state="open"] {
-        border-color: var(--color-search-trigger-border-hover);
-        background-color: var(--color-surface);
+        border-color: var(--c-search-trigger-border-hover);
+        background-color: var(--c-surface);
     }
     .trigger:focus-visible {
-        outline: var(--focus-width) solid var(--color-accent);
+        outline: var(--focus-width) solid var(--c-accent);
         outline-offset: var(--focus-offset);
     }
     .search-icon {
         display: flex;
-        width: var(--icon-size-small);
-        height: var(--icon-size-small);
+        width: 16px;
+        height: 16px;
         flex-shrink: 0;
     }
     .search-icon :global(svg) {
@@ -65,14 +65,16 @@
     .popover-content {
         display: flex;
         flex-direction: column;
-        width: min(var(--search-popover-width), calc(100vw - 2 * var(--search-popover-viewport-gap)));
-        max-height: min(var(--search-popover-max-height), var(--bits-popover-content-available-height));
+        width: min(576px, calc(100vw - 2 * 12px));
+        max-height: min(512px, var(--bits-popover-content-available-height));
         overflow: hidden;
-        border: var(--border-width) solid var(--color-popover-border);
-        border-radius: var(--radius-large);
-        background-color: var(--color-surface);
-        color: var(--color-popover-text);
-        box-shadow: var(--shadow-popover);
+        border: var(--border-width) solid var(--c-popover-border);
+        border-radius: 12px;
+        background-color: var(--c-surface);
+        color: var(--c-popover-text);
+        box-shadow:
+            0 12px 32px -12px var(--c-popover-shadow),
+            0 2px 8px var(--c-popover-shadow-soft);
         z-index: 50;
     }
 </style>

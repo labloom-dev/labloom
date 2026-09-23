@@ -1,36 +1,81 @@
 :root {
     /* Application surfaces */
-    --color-navbar-background: #ddd;
-    --color-sidebar-background: #ededed;
-    --color-tab-header-background: #eeeeee;
-    --color-tab-header-border: #cccccc;
-    --color-side-panel-background: #e4ead9;
-    --color-resizer-background: #00ffff;
-    --color-paragraph-background: #f0f8ff;
+    --c-selection: #b9d1eb;
+    --c-navbar-background: #ddd;
+    --c-sidebar-background: #ededed;
+    --c-tab-header-background: #eeeeee;
+    --c-tab-header-border: #cccccc;
+    --c-side-panel-background: #e4ead9;
+    --c-resizer-background: #00ffff;
+
+    /* Editor surfaces */
+    --dc-c-selection: #b9d1eb;
+    --dc-c-paragraph-background: /*#f0f8ff*/transparent;
+    --dc-c-code-background: #ddeeee;
+    --dc-c-drop-cursor: #488aed;
+    --dc-c-accent: #557cdb;
+    --dc-c-surface: #ffffff;
+    --dc-c-surface-hover: #f3f5f9;
+    --dc-c-surface-focus: #edf3ff;
+    --dc-c-popover-border: #d9dde5;
+    --dc-c-popover-text: #242a35;
+    --dc-c-popover-shadow-soft: #18243b0d;
+    --dc-c-divider: #edf0f4;
+    --dc-c-secondary-text: #7b8493;
+
+    /* Document foreground palette */
+    --dc-c-fg-gray: #4c4c4c;
+    --dc-c-fg-light-gray: #999999;
+    --dc-c-fg-red: #b02e26;
+    --dc-c-fg-yellow: #fed83d;
+    --dc-c-fg-orange: #f9801d;
+    --dc-c-fg-green: #5e7c16;
+    --dc-c-fg-lime: #80c71f;
+    --dc-c-fg-blue: #3c44aa;
+    --dc-c-fg-purple: #8932b8;
+    --dc-c-fg-brown: #835432;
+    --dc-c-fg-cyan: #169c9c;
+    --dc-c-fg-pink: #f38baa;
+    --dc-c-fg-magenta: #c74ebd;
+
+    /* Document background palette */
+    --dc-c-bg-gray: #e5e5e5;
+    --dc-c-bg-light-gray: #f2f2f2;
+    --dc-c-bg-red: #f8ddda;
+    --dc-c-bg-yellow: #fff4c2;
+    --dc-c-bg-orange: #ffe5cc;
+    --dc-c-bg-green: #e4ecd7;
+    --dc-c-bg-lime: #edf5d8;
+    --dc-c-bg-blue: #dfe5f6;
+    --dc-c-bg-purple: #ecdff4;
+    --dc-c-bg-brown: #eee2d8;
+    --dc-c-bg-cyan: #daf0ed;
+    --dc-c-bg-pink: #fbe3ed;
+    --dc-c-bg-magenta: #f4def1;
 
     /* Shared interaction states */
-    --color-accent: #557cdb;
-    --color-surface: #ffffff;
-    --color-surface-hover: #f3f5f9;
-    --color-surface-focus: #edf3ff;
-    --color-border-focus: #b6c8f1;
+    --c-accent: #557cdb;
+    --c-surface: #ffffff;
+    --c-surface-hover: #f3f5f9;
+    --c-surface-focus: #edf3ff;
+    --c-border-focus: #b6c8f1;
 
     /* Search launcher */
-    --color-search-trigger-background: #f5f6f8;
-    --color-search-trigger-border: #c9cdd3;
-    --color-search-trigger-border-hover: #a8b3c7;
-    --color-search-trigger-text: #606773;
+    --c-search-trigger-background: #f5f6f8;
+    --c-search-trigger-border: #c9cdd3;
+    --c-search-trigger-border-hover: #a8b3c7;
+    --c-search-trigger-text: #606773;
 
     /* Search popover */
-    --color-popover-border: #d9dde5;
-    --color-popover-text: #242a35;
-    --color-search-divider: #edf0f4;
-    --color-search-icon: #66758e;
-    --color-search-placeholder: #858c98;
-    --color-search-heading: #77808f;
-    --color-search-secondary-text: #7b8493;
-    --color-search-footer-background: #fafbfc;
-    --color-kbd-border: #e1e5eb;
-    --color-popover-shadow: #18243b40;
-    --color-popover-shadow-soft: #18243b0d;
+    --c-popover-border: #d9dde5;
+    --c-popover-text: #242a35;
+    --c-search-divider: #edf0f4;
+    --c-search-icon: #66758e;
+    --c-search-placeholder: #858c98;
+    --c-search-heading: #77808f;
+    --c-search-secondary-text: #7b8493;
+    --c-search-footer-background: #fafbfc;
+    --c-kbd-border: #e1e5eb;
+    --c-popover-shadow: #18243b40;
+    --c-popover-shadow-soft: #18243b0d;
 }

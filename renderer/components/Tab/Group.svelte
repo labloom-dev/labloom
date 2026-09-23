@@ -5,7 +5,7 @@
         onfocusin={() => focusGroup(groupId)}
     >
         <Tabs.Root
-            class="tabs-root"
+            class="group-root"
             bind:value={getActiveTab, setActiveTab}
         >
             <GroupHeader {group} />
@@ -27,24 +27,21 @@
     .group {
         display: flex;
         flex: 1;
-        min-width: 0;
-        min-height: 0;
         overflow: hidden;
-    }
-    .group > :global(.tabs-root) {
-        display: flex;
-        flex-direction: column;
-        flex: 1;
-        min-width: 0;
-        min-height: 0;
+
+        & > :global(.group-root) {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+        }
     }
     .group-content {
         flex: 1;
-        min-height: 0;
         overflow: auto;
-    }
-    .group-content > :global([data-tabs-content]) {
-        height: 100%;
+
+        & > :global([data-tabs-content]) {
+            height: 100%;
+        }
     }
 </style>
 

@@ -1,17 +1,4 @@
-<div class="tab-root">
-    <Layout node={tabState.layout} />
-</div>
-
-
-<style>
-    .tab-root {
-        display: flex;
-        flex: 1;
-        min-width: 0;
-        min-height: 0;
-        height: 100%;
-    }
-</style>
+<Layout node={tabState.layout} />
 
 
 <script lang="ts">
@@ -21,7 +8,7 @@
     import Layout from "./Layout.svelte";
     import { tabState } from "./state.svelte";
 
-    let { initialTabs = [] }: { initialTabs?: Tab[] } = $props();
+    const { initialTabs = [] }: { initialTabs?: Tab[] } = $props();
 
     untrack(() => {
         const group = tabState.groups[0];

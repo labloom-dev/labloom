@@ -10,18 +10,16 @@
         <div class="pane" style:flex={`${node.ratio} 1 0`}>
             <Layout node={node.children[0]} path={[...path, 0]} />
         </div>
-        <div class="divider">
-            <Resizer
-                direction={node.direction}
-                origin={availableSize * node.ratio}
-                min={availableSize * 0.1}
-                max={availableSize * 0.9}
-                changeCB={resize}
-                overflowMargin={32}
-                onMinExceeded={() => closeSplitSide(path, 0)}
-                onMaxExceeded={() => closeSplitSide(path, 1)}
-            />
-        </div>
+        <Resizer
+            direction={node.direction === "horizontal" ? "vertical" : "horizontal"}
+            origin={availableSize * node.ratio}
+            min={availableSize * 0.1}
+            max={availableSize * 0.9}
+            changeCB={resize}
+            overflowMargin={32}
+            onMinExceeded={() => closeSplitSide(path, 0)}
+            onMaxExceeded={() => closeSplitSide(path, 1)}
+        />
         <div class="pane" style:flex={`${1 - node.ratio} 1 0`}>
             <Layout node={node.children[1]} path={[...path, 1]} />
         </div>
@@ -38,10 +36,6 @@
     }
     .split.vertical {
         flex-direction: column;
-    }
-    .divider {
-        flex: 0 0 5px;
-        touch-action: none;
     }
 </style>
 

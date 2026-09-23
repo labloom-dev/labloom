@@ -6,14 +6,15 @@
     {onpointermove}
     {onpointerup}
     onpointercancel={onpointerup}
->
-
-</div>
+></div>
 
 
 <style>
     div {
-        background-color: var(--color-resizer-background);
+        background-color: var(--c-resizer-background);
+        flex-grow: 0;
+        flex-shrink: 0;
+        touch-action: none;
     }
 </style>
 

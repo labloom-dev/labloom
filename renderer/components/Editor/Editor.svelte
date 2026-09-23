@@ -1,41 +1,25 @@
-<div class="outer">
+<div class="editor">
     <div class="no-shrink" style={`width: ${panelWidth}px;`}>
         <SidePanel />
     </div>
     <Resizer {changeCB} direction="vertical" origin={panelWidth} min={50} max={300} />
-    <div class="inner">
-        <div class="toolbar">
-            {#each formats as format (format.name)}
-                <button
-                    title={format.label}
-                    disabled={!editorState}
-                    onclick={() => editorState.editor?.chain().focus().toggleMark(format.name).run()}
-                >
-                    {format.label}
-                </button>
-            {/each}
-        </div>
-        <div class="content" bind:this={element}></div>
+    <div class="content" spellcheck="false">
+        <Toolbar {editor} />
+        <div bind:this={element}></div>
     </div>
 </div>
 
 
 <style>
-    .outer {
+    .editor {
         display: flex;
         flex-flow: row nowrap;
         height: 100%;
         width: 100%;
         flex-shrink: 0;
     }
-    .inner {
-        display: flex;
-        flex-flow: column nowrap;
-        height: 100%;
-        flex: 1;
-        min-width: 0;
-    }
     .content {
+        container-type: size;
         flex: 1;
         min-height: 0;
         overflow-x: clip;
@@ -46,16 +30,33 @@
     }
     :global(*[contenteditable]:not([contenteditable="false"])) {
         -webkit-user-modify: read-write-plaintext-only;
+
+        & * {
+            white-space: pre-wrap;
+            word-wrap: normal;
+            word-break: break-word;
+            overflow-wrap: break-word;
+        }
     }
     :global(.tiptap.ProseMirror) {
-        height: 100%;
+        min-height: 100%;
         width: 100%;
         display: flex;
         flex-flow: column nowrap;
-        gap: var(--editor-block-gap);
-        padding: var(--editor-padding);
-        overflow-x: clip;
-        overflow-y: auto;
+        gap: .125em;
+        padding: 16px 48px 20cqh;
+    }
+    :global(.dc-paragraph.dc-empty) {
+        position: relative;
+    }
+    :global(.dc-paragraph.dc-empty)::after {
+        content: "输入 / 发起命令...";
+        color: grey;
+        display: block;
+        position: absolute;
+        top: var(--dc-p-padding-block);
+        left: var(--dc-p-padding-inline);
+        pointer-events: none;
     }
 </style>
 
@@ -63,17 +64,25 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import { Editor } from "@tiptap/core";
-    import { StarterKit } from "@tiptap/starter-kit";
+    import Toolbar from "./Toolbar.svelte";
     import SidePanel from "../utils/SidePanel.svelte";
     import Resizer from "../utils/Resizer.svelte";
-    import Paragraph from "./extensions/Paragraph";
 
-    const formats = [
-        { name: "bold", label: "Bold" },
-        { name: "italic", label: "Italic" },
-        { name: "underline", label: "Underline" },
-        { name: "strike", label: "Strike" }
-    ];
+    import History from "@tiptap/extension-history";
+    import Document from "@tiptap/extension-document";
+    import Text from "@tiptap/extension-text";
+    import Paragraph from "./extensions/block/Paragraph";
+    import Dropcursor from "@tiptap/extension-dropcursor";
+    import Placeholder from "@tiptap/extension-placeholder";
+    import ClearMarksOnEmptyBlock from "./extensions/ClearMarksOnEmptyBlock";
+
+    import bold from "./extensions/mark/bold";
+    import italic from "./extensions/mark/italic";
+    import underline from "./extensions/mark/underline";
+    import strike from "./extensions/mark/strike";
+    import bgColor from "./extensions/mark/bgColor";
+    import fgColor from "./extensions/mark/fgColor";
+    import code from "./extensions/mark/code";
 
     let panelWidth = $state(100);
 
@@ -82,24 +91,36 @@
     }
 
     let element: HTMLDivElement;
-    let editorState = $state<{ editor: Editor | null }>({ editor: null });
+    let editor = $state.raw<Editor | null>(null);
     onMount(() => {
-        const editor = new Editor({
+        const instance = new Editor({
             element,
             extensions: [
-                StarterKit,
-                Paragraph
+                History,
+                ClearMarksOnEmptyBlock,
+                Document,
+                Paragraph,
+                Placeholder.configure({
+                    emptyEditorClass: "dc-editor-empty",
+                    emptyNodeClass: "dc-empty",
+                    placeholder: ""
+                }),
+                Dropcursor.configure({
+                    color: "var(--dc-c-drop-cursor)",
+                    width: 2
+                }),
+                Text,
+                bold, italic, underline, strike,
+                bgColor, fgColor,
+                code
             ],
-            content: "<div class='dc-paragraph'>Hello World!</div>",
-            onTransaction: ({ editor }) => {
-                editorState = { editor };
-            }
+            content: "<div class='dc-paragraph'>Hello World!</div>"
         });
 
-        editorState = { editor };
+        editor = instance;
 
         return () => {
-            editor.destroy();
+            instance.destroy();
         };
     });
 </script>

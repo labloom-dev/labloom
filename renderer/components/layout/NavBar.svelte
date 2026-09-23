@@ -1,6 +1,6 @@
 <nav>
     <div class="left-controls">
-        <img src="../../assets/icon.png" alt="Labloom Logo" />
+        <img src={icon} alt="Labloom Logo" />
         <TabNav panelOpened={true} canBack={false} canForward={true} />
         <Menu />
     </div>
@@ -9,6 +9,14 @@
 
 
 <style>
+    * {
+        --window-controls-width: max(
+            0px,
+            calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))
+        );
+        --search-width: min(35vw, 640px);
+        --search-gap: 2vw;
+    }
     nav {
         /* Note: We cannot ignore this and this only. */
         app-region: drag;
@@ -20,7 +28,7 @@
             minmax(calc(var(--window-controls-width) + var(--search-gap)), 1fr);
         align-items: center;
         height: calc(env(titlebar-area-height) + 1px);
-        background-color: var(--color-navbar-background);
+        background-color: var(--c-navbar-background);
     }
     nav :global(button) {
         /* Note: We cannot ignore this and this only. */
@@ -46,6 +54,7 @@
 
 
 <script lang="ts">
+    import icon from "../../assets/icon.png";
     import TabNav from "../Tab/TabNav.svelte";
     import GSLauncher from "../globalSearch/GSLauncher.svelte";
     import Menu from "./Menu.svelte";

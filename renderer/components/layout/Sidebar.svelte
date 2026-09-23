@@ -40,7 +40,7 @@
     nav {
         /* Note: We cannot ignore this and this only. */
         app-region: drag;
-        background-color: var(--color-sidebar-background);
+        background-color: var(--c-sidebar-background);
         height: 100%;
         width: 48px;
         display: flex;

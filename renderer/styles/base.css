@@ -1,6 +1,22 @@
 *, *::before, *::after {
     box-sizing: border-box;
     outline: none;
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-smooth: always;
+    line-height: normal;
+    scrollbar-gutter: auto;
+    scrollbar-width: thin;
+    line-height: normal;
+}
+
+::selection {
+    background-color: var(--c-selection);
+}
+
+::-moz-selection {
+    background-color: var(--c-selection);
 }
 
 body {

@@ -12,8 +12,8 @@
 
 <style>
     button {
-        height: var(--icon-size-medium);
-        width: var(--icon-size-medium);
+        height: 20px;
+        width: 20px;
         padding: 4px;
     }
     div {
