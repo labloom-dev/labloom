@@ -52,6 +52,7 @@
                 >
                     <span
                         class="icon color-icon"
+                        class:background={format.name === "bgColor" && color.value !== null}
                         style:color={color.value === null ? undefined : `var(--dc-c-${format.name === "fgColor" ? "fg" : "bg"}-${color.value})`}
                     >
                         <!-- eslint-disable-next-line svelte/no-at-html-tags -->
@@ -119,6 +120,9 @@
     .color-icon {
         width: 1.375rem;
         height: 1.375rem;
+    }
+    .color-icon.background :global(svg) {
+        color: hsl(from currentColor h s calc(l * .6));
     }
     .color-choice.active {
         border-color: var(--dc-c-accent);
