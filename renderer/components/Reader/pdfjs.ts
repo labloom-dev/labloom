@@ -11,7 +11,7 @@ import {
     type PDFDocumentProxy
 } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { EventBus, FindState, PDFFindController, PDFLinkService, PDFViewer } from "pdfjs-dist/legacy/web/pdf_viewer.mjs";
-import "pdfjs-dist/legacy/web/pdf_viewer.css";
+import viewerCss from "pdfjs-dist/legacy/web/pdf_viewer.css?inline";
 import workerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import { scalePresets, type ReaderError, type ReaderRotation, type ReaderScalePreset, type ReaderViewState } from "./defs";
 
@@ -55,6 +55,14 @@ export type ViewerLocation = {
 
 /** `container` must be absolutely positioned and contain an empty `div.pdfViewer`. */
 export function createViewer(container: HTMLDivElement): Viewer {
+    // Keep pdf.js' root defaults (especially color-scheme) inside this viewer.
+    const style = document.createElement("style");
+    style.textContent = `@scope {${viewerCss.replaceAll(":root", ":scope")}
+        /* PDFViewer updates this variable on document.documentElement. */
+        :scope { --viewer-container-height: inherit; }
+    }`;
+    container.append(style);
+
     const eventBus = new EventBus();
     const linkService = new PDFLinkService({ eventBus });
     // Links inside a PDF are untrusted, and the main process opens any external URL it is given.

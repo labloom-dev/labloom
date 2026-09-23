@@ -1,16 +1,15 @@
 <div class="toolbar">
     <div class="group">
-        <button title="上一页" disabled={disabled || pageNumber <= 1} onclick={previousPage}>
+        <button disabled={disabled || pageNumber <= 1} onclick={previousPage}>
             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
             {@html chevron_up}
         </button>
-        <button title="下一页" disabled={disabled || pageNumber >= pagesCount} onclick={nextPage}>
+        <button disabled={disabled || pageNumber >= pagesCount} onclick={nextPage}>
             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
             {@html chevron_down}
         </button>
         <input
             class="page-input"
-            title="页码"
             inputmode="numeric"
             {disabled}
             value={pageDraft ?? (disabled ? "" : String(pageNumber))}
@@ -22,11 +21,11 @@
     </div>
 
     <div class="group">
-        <button title="缩小" {disabled} onclick={zoomOut}>
+        <button {disabled} onclick={zoomOut}>
             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
             {@html zoom_out}
         </button>
-        <select title="缩放" {disabled} value={scaleOption} onchange={event => setScale(parseScale(event.currentTarget.value))}>
+        <select {disabled} value={scaleOption} onchange={event => setScale(parseScale(event.currentTarget.value))}>
             {#each presetOptions as option (option.value)}
                 <option value={option.value}>{option.label}</option>
             {/each}
@@ -37,11 +36,11 @@
                 <option value="custom" disabled hidden>{Math.round(scale * 100)}%</option>
             {/if}
         </select>
-        <button title="放大" {disabled} onclick={zoomIn}>
+        <button {disabled} onclick={zoomIn}>
             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
             {@html zoom_in}
         </button>
-        <button title="顺时针旋转" {disabled} onclick={rotate}>
+        <button {disabled} onclick={rotate}>
             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
             {@html rotate_clockwise}
         </button>
@@ -61,14 +60,14 @@
             oninput={onSearchInput}
             onkeydown={onSearchKeydown}
         />
-        <span class="muted find-status" title={findTitle}>
+        <span class="muted find-status">
             {findText}
         </span>
-        <button title="上一个匹配" disabled={disabled || findStatus.kind !== "found"} onclick={() => find(query, true)}>
+        <button disabled={disabled || findStatus.kind !== "found"} onclick={() => find(query, true)}>
             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
             {@html chevron_up}
         </button>
-        <button title="下一个匹配" disabled={disabled || findStatus.kind !== "found"} onclick={() => find(query)}>
+        <button disabled={disabled || findStatus.kind !== "found"} onclick={() => find(query)}>
             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
             {@html chevron_down}
         </button>
@@ -213,12 +212,6 @@
             case "no-text": return "无可搜索文本";
             default: return "";
         }
-    });
-
-    const findTitle = $derived.by(() => {
-        if (findStatus.kind === "no-text") return "此 PDF 没有可提取的文本（可能是扫描件），无法搜索。";
-        if (findStatus.kind === "found" && findStatus.wrapped) return "已到达文档末尾，已从头继续。";
-        return undefined;
     });
 
     let pageDraft = $state<string | null>(null);
