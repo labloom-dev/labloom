@@ -24,34 +24,37 @@
     --dc-c-secondary-text: #7b8493;
     --dc-c-placeholder: #b7bac0;
 
-    /* Document foreground palette */
+    /* Document palettes: every foreground/background pair exceeds 3:1.
+       Keep foregrounds dark and backgrounds light; verify with test:editor-colors. */
+    --dc-c-fg-default: #000000;
     --dc-c-fg-gray: #4c4c4c;
-    --dc-c-fg-light-gray: #999999;
+    --dc-c-fg-light-gray: #7a7a7a;
     --dc-c-fg-red: #b02e26;
-    --dc-c-fg-yellow: #fed83d;
-    --dc-c-fg-orange: #f9801d;
-    --dc-c-fg-green: #5e7c16;
-    --dc-c-fg-lime: #80c71f;
-    --dc-c-fg-blue: #3c44aa;
-    --dc-c-fg-purple: #8932b8;
+    --dc-c-fg-yellow: #987600;
+    --dc-c-fg-orange: #ba590d;
+    --dc-c-fg-green: #387844;
+    --dc-c-fg-lime: #68801b;
+    --dc-c-fg-blue: #167fc4;
+    --dc-c-fg-purple: #8844b3;
     --dc-c-fg-brown: #835432;
-    --dc-c-fg-cyan: #169c9c;
-    --dc-c-fg-pink: #f38baa;
-    --dc-c-fg-magenta: #c74ebd;
+    --dc-c-fg-cyan: #087f86;
+    --dc-c-fg-pink: #bd507a;
+    --dc-c-fg-magenta: #a43c9a;
 
     /* Document background palette */
+    --dc-c-bg-default: #ffffff;
     --dc-c-bg-gray: #e5e5e5;
     --dc-c-bg-light-gray: #f2f2f2;
     --dc-c-bg-red: #f8ddda;
     --dc-c-bg-yellow: #fff4c2;
     --dc-c-bg-orange: #ffe5cc;
-    --dc-c-bg-green: #e4ecd7;
+    --dc-c-bg-green: #deefdf;
     --dc-c-bg-lime: #edf5d8;
-    --dc-c-bg-blue: #dfe5f6;
-    --dc-c-bg-purple: #ecdff4;
+    --dc-c-bg-blue: #deecfa;
+    --dc-c-bg-purple: #eee1f7;
     --dc-c-bg-brown: #eee2d8;
     --dc-c-bg-cyan: #daf0ed;
-    --dc-c-bg-pink: #fbe3ed;
+    --dc-c-bg-pink: #fce4eb;
     --dc-c-bg-magenta: #f4def1;
 
     /* Shared interaction states */

@@ -24,6 +24,8 @@
         min-height: 0;
         overflow-x: clip;
         overflow-y: auto;
+        color: var(--dc-c-fg-default);
+        background-color: var(--dc-c-bg-default);
     }
     .no-shrink {
         flex-shrink: 0;
