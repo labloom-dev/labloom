@@ -1,8 +1,15 @@
-import { contextBridge } from "electron";
+import { contextBridge, ipcRenderer } from "electron";
 import { electronAPI } from "@electron-toolkit/preload";
+import type { AppAPI } from "../shared/types/startup";
 
 // Custom APIs for renderer
-const api = {};
+const api: AppAPI = {
+    startup: {
+        getState: () => ipcRenderer.invoke("startup:get-state"),
+        chooseWorkspace: action => ipcRenderer.invoke("startup:choose-workspace", action),
+        retry: () => ipcRenderer.invoke("startup:retry")
+    }
+};
 
 // Use `contextBridge` APIs to expose Electron APIs to
 // renderer only if context isolation is enabled, otherwise
