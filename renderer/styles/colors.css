@@ -57,6 +57,14 @@
     --dc-c-bg-pink: #fce4eb;
     --dc-c-bg-magenta: #f4def1;
 
+    /* PDF reader */
+    --c-reader-background: #e6e7ea;
+    --c-reader-toolbar-background: #fafafa;
+    --c-reader-toolbar-border: #dddddd;
+    --c-reader-input-border: #c9cdd3;
+    --c-reader-muted-text: #666d78;
+    --c-reader-error-text: #b42318;
+
     /* Shared interaction states */
     --c-accent: #557cdb;
     --c-surface: #ffffff;
