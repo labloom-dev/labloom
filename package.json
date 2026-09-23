@@ -11,6 +11,7 @@
         "lint": "eslint --config configs/eslint.config.js --cache --cache-location dist/.eslintcache .",
         "lint:fix": "eslint --config configs/eslint.config.js --fix .",
         "lint:test": "node configs/config.test.js",
+        "test:editor-colors": "node configs/editor-colors.test.js",
         "typecheck:node": "tsc --noEmit -p configs/tsconfig.node.json",
         "svelte-check": "svelte-check --tsconfig ./tsconfig.json --config ./configs/svelte.config.js",
         "typecheck": "npm run typecheck:node && npm run svelte-check",
