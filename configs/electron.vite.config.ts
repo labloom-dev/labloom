@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { defineConfig } from "electron-vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
+import { viteStaticCopy } from "vite-plugin-static-copy";
 
 export default defineConfig({
     main: {
@@ -30,6 +31,16 @@ export default defineConfig({
                 input: resolve("renderer/index.html")
             }
         },
-        plugins: [svelte({ configFile: resolve("configs/svelte.config.js") })]
+        plugins: [
+            svelte({ configFile: resolve("configs/svelte.config.js") }),
+            // pdf.js fetches these at runtime, see renderer/components/Reader/pdfjs.ts.
+            viteStaticCopy({
+                targets: [{
+                    src: "../node_modules/pdfjs-dist/{cmaps,iccs,standard_fonts,wasm}/*",
+                    dest: "pdfjs",
+                    rename: { stripBase: 2 }
+                }]
+            })
+        ]
     }
 });
