@@ -138,7 +138,6 @@
     }
     .color-choice:disabled {
         opacity: .4;
-        cursor: default;
     }
     .color-icon {
         width: 1.375rem;

@@ -46,6 +46,7 @@
     import Paragraph from "./extensions/block/Paragraph";
     import Dropcursor from "@tiptap/extension-dropcursor";
     import Placeholder from "@tiptap/extension-placeholder";
+    import trailingP from "./extensions/technical/trailingP";
     import ClearMarksOnEmptyBlock from "./extensions/ClearMarksOnEmptyBlock";
 
     import bold from "./extensions/mark/bold";
@@ -70,6 +71,7 @@
             extensions: [
                 History,
                 ClearMarksOnEmptyBlock,
+                trailingP,
                 Document,
                 Paragraph,
                 Placeholder.configure({

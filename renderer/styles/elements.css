@@ -7,6 +7,10 @@ button {
     margin: 0;
     padding: 0;
     border: none;
+
+    &[disabled]:not([disabled="false"]) {
+        cursor: default;
+    }
 }
 
 .tiptap::selection, .tiptap *::selection {

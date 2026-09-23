@@ -102,7 +102,6 @@
     }
     .toolbar :global(button:disabled) {
         opacity: .4;
-        cursor: default;
     }
     .toolbar :global(button.active) {
         background-color: var(--dc-c-surface-focus);

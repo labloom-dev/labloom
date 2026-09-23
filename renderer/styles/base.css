@@ -40,8 +40,9 @@ body {
 }
 
 .tiptap.ProseMirror {
-    min-height: 100%;
+    min-height: 100cqh;
     width: 100%;
+    cursor: text;
     display: flex;
     flex-flow: column nowrap;
     gap: .125em;
