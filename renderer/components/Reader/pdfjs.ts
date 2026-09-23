@@ -33,8 +33,6 @@ export function loadDocument(data: Uint8Array): PDFDocumentLoadingTask {
         standardFontDataUrl: resourceUrl("standard_fonts"),
         wasmUrl: resourceUrl("wasm"),
         iccUrl: resourceUrl("iccs"),
-        // PDFs are untrusted input, and the CSP forbids eval anyway.
-        isEvalSupported: false,
         enableXfa: false
     });
 }
