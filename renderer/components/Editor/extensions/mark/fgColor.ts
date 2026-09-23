@@ -11,6 +11,8 @@ declare module "@tiptap/core" {
 
 export default Mark.create({
     name: "fgColor",
+    // Wrap decoration marks so their lines inherit the foreground color.
+    priority: 1000,
     keepOnSplit: false,
     addAttributes() {
         return {

@@ -200,11 +200,20 @@
             if (menu.matches(":popover-open")) menu.hidePopover();
         }
 
-        function blockRect(position: ResolvedPos): DOMRect | null {
+        function lineRect(position: ResolvedPos, side: number): { top: number; bottom: number } | null {
             for (let depth = position.depth; depth > 0; depth--) {
-                if (!position.node(depth).isBlock) continue;
+                if (!position.node(depth).isTextblock) continue;
                 const node = instance?.view.nodeDOM(position.before(depth));
-                if (node instanceof HTMLElement) return node.getBoundingClientRect();
+                if (!(node instanceof HTMLElement)) continue;
+                const style = getComputedStyle(node);
+                const lineHeight = parseFloat(style.lineHeight);
+                if (!Number.isFinite(lineHeight) || lineHeight <= 0) return null;
+                const contentTop = node.getBoundingClientRect().top + parseFloat(style.borderTopWidth) + parseFloat(style.paddingTop);
+                const coords = instance!.view.coordsAtPos(position.pos, side);
+                // Marks only identify the line; its bounds use this text block's unmarked line height.
+                const line = Math.max(0, Math.floor(((coords.top + coords.bottom) / 2 - contentTop) / lineHeight));
+                const top = contentTop + line * lineHeight;
+                return { top, bottom: top + lineHeight };
             }
             return null;
         }
@@ -255,8 +264,8 @@
             if (!menu.matches(":popover-open")) menu.showPopover();
             const { width, height } = menu.getBoundingClientRect();
             const left = Math.max(8, Math.min(rect.left + rect.width / 2 - width / 2, window.innerWidth - width - 8));
-            const top = (blockRect(fromPosition) ?? rect).top - height - 8;
-            const bottom = (blockRect(toPosition) ?? rect).bottom + 8;
+            const top = (lineRect(fromPosition, 1) ?? rect).top - height - 8;
+            const bottom = (lineRect(toPosition, -1) ?? rect).bottom + 8;
             menu.style.left = left + "px";
             menu.style.top = Math.max(8, Math.min(top >= 8 ? top : bottom, window.innerHeight - height - 8)) + "px";
         }
