@@ -18,6 +18,11 @@ type Tab_Settings = {
     type: "settings";
 };
 
+//todo: remove once papers can be opened as pages.
+type Tab_ReaderTest = {
+    type: "reader-test";
+};
+
 export type Tab = {
     id: TabID;
     title: string;
@@ -25,7 +30,8 @@ export type Tab = {
     Tab_Page |
     Tab_Overview |
     Tab_About |
-    Tab_Settings
+    Tab_Settings |
+    Tab_ReaderTest
 );
 
 export type TabID = string & {
