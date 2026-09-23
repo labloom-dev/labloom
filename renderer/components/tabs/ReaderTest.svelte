@@ -25,7 +25,7 @@
         font-size: 13px;
     }
     .error {
-        color: var(--color-reader-error-text);
+        color: var(--c-reader-error-text);
     }
     .reader {
         flex: 1;

@@ -9,12 +9,12 @@
     --color-paragraph-background: #f0f8ff;
 
     /* PDF reader */
-    --color-reader-background: #e6e7ea;
-    --color-reader-toolbar-background: #fafafa;
-    --color-reader-toolbar-border: #dddddd;
-    --color-reader-input-border: #c9cdd3;
-    --color-reader-muted-text: #666d78;
-    --color-reader-error-text: #b42318;
+    --c-reader-background: #e6e7ea;
+    --c-reader-toolbar-background: #fafafa;
+    --c-reader-toolbar-border: #dddddd;
+    --c-reader-input-border: #c9cdd3;
+    --c-reader-muted-text: #666d78;
+    --c-reader-error-text: #b42318;
 
     /* Shared interaction states */
     --color-accent: #557cdb;

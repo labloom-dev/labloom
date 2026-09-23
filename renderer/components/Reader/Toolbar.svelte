@@ -80,13 +80,13 @@
     .toolbar {
         display: flex;
         align-items: center;
-        gap: var(--reader-toolbar-gap);
+        gap: 12px;
         flex-shrink: 0;
-        height: var(--reader-toolbar-height);
-        padding-inline: var(--reader-toolbar-gap);
+        height: 36px;
+        padding-inline: 12px;
         overflow-x: auto;
-        background-color: var(--color-reader-toolbar-background);
-        border-bottom: var(--border-width) solid var(--color-reader-toolbar-border);
+        background-color: var(--c-reader-toolbar-background);
+        border-bottom: var(--border-width) solid var(--c-reader-toolbar-border);
         font-size: 13px;
     }
     .group {
@@ -103,37 +103,37 @@
     button {
         display: grid;
         place-items: center;
-        width: var(--reader-control-size);
-        height: var(--reader-control-size);
-        border-radius: var(--radius-medium);
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
         box-sizing: border-box;
     }
     button:hover:not(:disabled) {
-        background-color: var(--color-surface-hover);
+        background-color: var(--c-surface-hover);
     }
     button:disabled {
         cursor: default;
         opacity: .4;
     }
     button :global(svg), .icon :global(svg) {
-        width: var(--icon-size-small);
-        height: var(--icon-size-small);
+        width: 16px;
+        height: 16px;
     }
     .icon {
         display: flex;
         padding-inline: 4px;
-        color: var(--color-reader-muted-text);
+        color: var(--c-reader-muted-text);
     }
     input, select {
         height: 24px;
         padding-inline: 6px;
-        border: var(--border-width) solid var(--color-reader-input-border);
-        border-radius: var(--radius-medium);
-        background-color: var(--color-surface);
+        border: var(--border-width) solid var(--c-reader-input-border);
+        border-radius: 6px;
+        background-color: var(--c-surface);
         font: inherit;
     }
     input:focus-visible, select:focus-visible, button:focus-visible {
-        outline: var(--focus-width) solid var(--color-border-focus);
+        outline: var(--focus-width) solid var(--c-border-focus);
     }
     .page-input {
         width: 48px;
@@ -146,7 +146,7 @@
         flex-shrink: 1;
     }
     .muted {
-        color: var(--color-reader-muted-text);
+        color: var(--c-reader-muted-text);
         white-space: nowrap;
     }
     .find-status {

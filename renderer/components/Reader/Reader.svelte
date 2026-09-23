@@ -67,7 +67,7 @@
         position: absolute;
         inset: 0;
         overflow: auto;
-        background-color: var(--color-reader-background);
+        background-color: var(--c-reader-background);
     }
     .overlay {
         position: absolute;
@@ -78,8 +78,8 @@
         justify-content: center;
         gap: 12px;
         margin: 0;
-        background-color: var(--color-reader-background);
-        color: var(--color-reader-muted-text);
+        background-color: var(--c-reader-background);
+        color: var(--c-reader-muted-text);
         font-size: 14px;
     }
     .overlay p {
@@ -88,18 +88,18 @@
         text-align: center;
     }
     .error {
-        color: var(--color-reader-error-text);
+        color: var(--c-reader-error-text);
     }
     .overlay input {
         width: 240px;
         height: 28px;
         padding-inline: 8px;
-        border: var(--border-width) solid var(--color-reader-input-border);
-        border-radius: var(--radius-medium);
+        border: var(--border-width) solid var(--c-reader-input-border);
+        border-radius: 6px;
         font: inherit;
     }
     .overlay input:focus-visible {
-        outline: var(--focus-width) solid var(--color-border-focus);
+        outline: var(--focus-width) solid var(--c-border-focus);
     }
     .actions {
         display: flex;
@@ -107,15 +107,15 @@
     }
     .actions button {
         padding: 4px 16px;
-        border: var(--border-width) solid var(--color-reader-input-border);
-        border-radius: var(--radius-medium);
-        background-color: var(--color-surface);
+        border: var(--border-width) solid var(--c-reader-input-border);
+        border-radius: 6px;
+        background-color: var(--c-surface);
         font: inherit;
     }
     .actions button.primary {
-        border-color: var(--color-accent);
-        background-color: var(--color-accent);
-        color: var(--color-surface);
+        border-color: var(--c-accent);
+        background-color: var(--c-accent);
+        color: var(--c-surface);
     }
     .actions button:disabled {
         cursor: default;

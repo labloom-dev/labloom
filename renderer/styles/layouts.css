@@ -25,9 +25,4 @@
     --paragraph-padding-block: .28125em;
     --paragraph-padding-inline: .1875em;
     --paragraph-radius: .1875em;
-
-    /* PDF reader */
-    --reader-toolbar-height: 36px;
-    --reader-toolbar-gap: 12px;
-    --reader-control-size: 28px;
 }
