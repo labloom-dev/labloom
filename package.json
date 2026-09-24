@@ -4,7 +4,7 @@
     "type": "module",
     "description": "An all-in-one AI research workspace for the entire research lifecycle.",
     "main": "./dist/main/index.js",
-    "license": "AGPL-3.0-only",
+    "license": "MIT",
     "author": "labloom.dev",
     "homepage": "https://labloom.dev",
     "scripts": {
