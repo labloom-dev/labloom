@@ -4,11 +4,16 @@ English | [中文](README.chs.md)
 
 <h1 align="center">Labloom</h1>
 
-<p align="center">An all-in-one AI research workspace for the entire research lifecycle.</p>
+<p align="center">Where ideas take root.</p>
+
+An all-in-one AI research workspace for the entire research lifecycle.
 
 ## Features
 
-TODO
+1. **Subscriptions**: Follow research feeds and keep up with new papers.
+2. **Reading, annotations and citations**: Read papers, highlight and annotate, and cite passages in notes with links back to the source.
+3. **Knowledge base**: Keep your notes, research products and papers at one place, with links between them.
+4. **AI features**: Filter and recommend papers in feeds, summarize papers, explain, and manage your knowledge base with AI.
 
 ## Development
 
