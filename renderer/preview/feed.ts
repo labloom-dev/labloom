@@ -5,6 +5,7 @@ import "../styles/colors.css";
 import "../styles/layouts.css";
 import "../styles/base.css";
 import "../styles/elements.css";
+import "../styles/workspace.css";
 import "./feed.css";
 
 async function request<T>(method: keyof FeedAPI, ...args: unknown[]): Promise<T> {

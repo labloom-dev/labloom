@@ -53,9 +53,10 @@
 
 <style>
     form {
-        padding: 16px;
-        border: var(--border-width) solid var(--c-popover-border);
-        border-radius: 6px;
+        padding: 24px;
+        border: 1.5px solid var(--c-ink);
+        box-shadow: var(--c-shadow);
+        border-radius: 10px;
         background: var(--c-surface);
     }
     h3 {
@@ -65,17 +66,17 @@
     label {
         display: flex;
         flex-direction: column;
-        gap: 4px;
+        gap: 8px;
         margin-bottom: 12px;
         font-size: 13px;
     }
     input, select {
         width: 100%;
         min-width: 0;
-        height: 24px;
-        padding-inline: 6px;
+        height: 38px;
+        padding-inline: 12px;
         border: var(--border-width) solid var(--c-reader-input-border);
-        border-radius: 6px;
+        border-radius: 10px;
         background: var(--c-surface);
         color: inherit;
         font: inherit;
@@ -101,13 +102,18 @@
     }
     button {
         box-sizing: border-box;
-        min-height: 28px;
-        padding: 0 8px;
+        min-height: 36px;
+        padding: 8px 13px;
         border: var(--border-width) solid var(--c-reader-input-border);
-        border-radius: 6px;
+        border-radius: 10px;
         background: var(--c-surface);
         color: inherit;
         font: inherit;
+    }
+    button[type="submit"] {
+        background: var(--c-gold);
+        border-color: var(--c-ink);
+        font-weight: 800;
     }
     button:hover:not(:disabled) {
         background: var(--c-surface-hover);
