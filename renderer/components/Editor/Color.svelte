@@ -1,7 +1,7 @@
 <Popover.Root bind:open={() => open, setOpen}>
     <Popover.Trigger disabled={colorState.every(format => format.disabled)}>
         {#snippet child({ props })}
-            <Toolbar.Button {...props} class={open ? "tool-button active" : "tool-button"} style={buttonStyle}>
+            <Toolbar.Button {...props} aria-label="文字与背景颜色" class={open ? "tool-button active" : "tool-button"} style={buttonStyle}>
                 <span class="icon">
                     <!-- eslint-disable-next-line svelte/no-at-html-tags -->
                     {@html paletteIcon}
@@ -46,6 +46,7 @@
                     class="color-choice"
                     class:active={format.active === color.value}
                     type="button"
+                    aria-label={`${format.label}：${color.label}`}
                     disabled={format.disabled}
                     onclick={() => applyColor(format.name, color.value)}
                 >
@@ -95,7 +96,7 @@
         border: 1px solid var(--dc-c-popover-border);
         border-radius: .625rem;
         background: var(--dc-c-surface);
-        box-shadow: 0 .5rem 1.5rem var(--dc-c-popover-shadow-soft), 0 .125rem .375rem var(--dc-c-popover-shadow-soft);
+        box-shadow: 3px 4px 0 var(--dc-c-popover-text);
     }
     .color-section + .color-section {
         margin-top: .75rem;
