@@ -72,7 +72,7 @@ test("only deleted is seeded, with an empty value for each supported page kind",
         assert.deepEqual(database.prepare("SELECT attr_id, value FROM page_attrs WHERE page_id = ? ORDER BY attr_id").all(id),
             attrs.map(attrId => ({ attr_id: attrId, value: null })));
     }
-    assert.equal(database.pragma("user_version", { simple: true }), 3);
+    assert.equal(database.pragma("user_version", { simple: true }), workspaceFormatVersion);
     assert.deepEqual(database.prepare("SELECT user_version AS labloom_format_version FROM pragma_user_version").get(), {
         labloom_format_version: workspaceFormatVersion
     });
@@ -133,7 +133,7 @@ test("ordinary attributes can be attached, removed, and retyped, and page deleti
 test("version 2 gains deleted and empty ownership rows without changing modification time", t => {
     const fixture = versionTwo(database => [page(database, "editable"), page(database, "paper")]);
     const database = track(t, openWorkspace(fixture.root, fixture.id).database);
-    assert.equal(database.pragma("user_version", { simple: true }), 3);
+    assert.equal(database.pragma("user_version", { simple: true }), workspaceFormatVersion);
     assert.deepEqual(database.prepare("SELECT id, type, metadata FROM attrs").all(), [{ id: "deleted", type: "boolean", metadata: "{}" }]);
     for (const id of fixture.data) {
         assert.deepEqual(database.prepare("SELECT attr_id, value FROM page_attrs WHERE page_id = ?").all(id), [{ attr_id: "deleted", value: null }]);
@@ -177,7 +177,7 @@ test("conflicting builtin definitions or invalid old values abort the upgrade wi
             assert.ok(error instanceof WorkspaceUpgradeError);
             assert.equal(error.failure.stage, "migration");
             assert.equal(error.failure.fromVersion, 2);
-            assert.equal(error.failure.toVersion, 3);
+            assert.equal(error.failure.toVersion, workspaceFormatVersion);
             assert.match(error.failure.error.message, type === "string" ? /incompatible type/ : /value is invalid/);
             return true;
         });

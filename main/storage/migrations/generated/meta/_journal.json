@@ -1,0 +1,11 @@
+{
+    "version": 1,
+    "dialect": "sqlite",
+    "baseVersion": 4,
+    "entries": [
+        {
+            "version": 5,
+            "tag": "0005_drizzle_baseline"
+        }
+    ]
+}

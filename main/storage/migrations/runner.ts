@@ -1,12 +1,13 @@
-import type Database from "better-sqlite3";
+import { type Database } from "better-sqlite3";
 
 export type WorkspaceMigration = {
     readonly from: number;
     readonly to: number;
-    readonly up: (database: Database.Database) => void;
+    readonly foreignKeysOff?: boolean;
+    readonly up: (database: Database) => void;
 };
 
-export function runMigrations(database: Database.Database, migrations: readonly WorkspaceMigration[]): void {
+export function runMigrations(database: Database, migrations: readonly WorkspaceMigration[]): void {
     let target = 0;
     for (const migration of migrations) {
         if (migration.from !== target || migration.to !== target + 1) {
@@ -21,18 +22,31 @@ export function runMigrations(database: Database.Database, migrations: readonly 
     }
     if (version === target) return;
 
-    database.transaction(() => {
-        if (database.pragma("user_version", { simple: true }) !== version) {
-            throw new Error("The Labloom workspace version changed before the upgrade could start. Try again.");
-        }
-        for (const migration of migrations) {
-            if (migration.from < version) continue;
-            migration.up(database);
-            database.pragma(`user_version = ${migration.to}`);
-        }
-        const violations = database.pragma("foreign_key_check") as unknown[];
-        if (violations.length > 0) {
-            throw new Error(`The Labloom workspace upgrade failed its foreign key check: ${JSON.stringify(violations)}`);
-        }
-    }).immediate();
+    // SQLite table rebuilds must disable FK actions before BEGIN: disabling them
+    // inside the transaction is a no-op, and DROP TABLE can cascade-delete rows.
+    const suspendForeignKeys = migrations.some(migration => migration.from >= version && migration.foreignKeysOff)
+        && database.pragma("foreign_keys", { simple: true }) === 1;
+    if (suspendForeignKeys && database.inTransaction) {
+        throw new Error("Table-rebuilding migrations must start outside a transaction with foreign keys enabled.");
+    }
+    if (suspendForeignKeys) database.pragma("foreign_keys = OFF");
+    try {
+        database.transaction(() => {
+            if (database.pragma("user_version", { simple: true }) !== version) {
+                throw new Error("The Labloom workspace version changed before the upgrade could start. Try again.");
+            }
+            for (const migration of migrations) {
+                if (migration.from < version) continue;
+                migration.up(database);
+                database.pragma(`user_version = ${migration.to}`);
+            }
+            const violations = database.pragma("foreign_key_check") as unknown[];
+            if (violations.length > 0) {
+                throw new Error(`The Labloom workspace upgrade failed its foreign key check: ${JSON.stringify(violations)}`);
+            }
+        }).immediate();
+    }
+    finally {
+        if (suspendForeignKeys) database.pragma("foreign_keys = ON");
+    }
 }

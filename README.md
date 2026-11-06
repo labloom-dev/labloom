@@ -30,6 +30,12 @@ pnpm install
 pnpm dev
 ```
 
+### Database development
+
+Use `pnpm db:generate --name <name>` to generate migrations, `pnpm db:check` to check repository consistency, and `pnpm db:diagram` to view the schema. Run `pnpm test:db` for database tests.
+
+Workspace commands require an explicit `--workspace <directory>`: `db:init` creates a development workspace, `db:status` reads its version, and `db:migrate` backs up and upgrades it. See the [database development guide](docs/数据库开发.md) for the migration workflow.
+
 ### Packaging the application
 
 ```shell

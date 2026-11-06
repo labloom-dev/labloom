@@ -1,37 +1,15 @@
 import { randomUUID } from "node:crypto";
-import type Database from "better-sqlite3";
-import type { FeedEntry, FeedItem, FeedQuery, FeedSource, FeedSourceInput, FeedState } from "../../shared/types/feed";
+import { and, count, desc, eq, getTableColumns, ne, placeholder, sql } from "drizzle-orm";
+import { type FeedEntry, type FeedQuery, type FeedSource, type FeedSourceInput, type FeedState } from "../../shared/types/feed";
 import { feedURL } from "../../shared/utils/feed";
+import { type WorkspaceDatabase } from "../storage/database";
+import { feedItems, feedSources } from "../storage/tables";
 import { fetchFeed } from "./parser";
 
 export class FeedService {
     private pending = new Map<string, Promise<void>>();
 
-    constructor(private readonly database: Database.Database, private readonly load = fetchFeed) {
-        database.exec(`
-            CREATE TABLE IF NOT EXISTS feed_sources (
-                id TEXT PRIMARY KEY NOT NULL,
-                name TEXT NOT NULL,
-                url TEXT NOT NULL UNIQUE,
-                last_refreshed TEXT,
-                last_added INTEGER NOT NULL DEFAULT 0,
-                error TEXT
-            );
-            CREATE TABLE IF NOT EXISTS feed_items (
-                id TEXT PRIMARY KEY NOT NULL,
-                source_id TEXT NOT NULL REFERENCES feed_sources(id) ON DELETE CASCADE,
-                external_id TEXT NOT NULL,
-                title TEXT NOT NULL,
-                url TEXT,
-                authors TEXT NOT NULL,
-                summary TEXT NOT NULL,
-                published_at TEXT,
-                is_read INTEGER NOT NULL DEFAULT 0,
-                UNIQUE (source_id, external_id)
-            );
-            CREATE INDEX IF NOT EXISTS feed_items_date ON feed_items(published_at DESC);
-        `);
-    }
+    constructor(private readonly database: WorkspaceDatabase, private readonly load = fetchFeed) {}
 
     getState(query: FeedQuery): FeedState {
         if (!query || typeof query !== "object"
@@ -41,30 +19,23 @@ export class FeedService {
             || (query.offset !== undefined && (!Number.isSafeInteger(query.offset) || query.offset < 0))) {
             throw new Error("无效的订阅查询。");
         }
-        const sources = this.database.prepare<[], FeedSource>(`
-            SELECT s.id, s.name, s.url, s.last_refreshed AS lastRefreshed, s.last_added AS lastAdded, s.error,
-                (SELECT COUNT(*) FROM feed_items WHERE source_id = s.id AND is_read = 0) AS unreadCount
-            FROM feed_sources s ORDER BY s.name, s.id
-        `).all();
-        const where = `WHERE (@sourceId = '' OR i.source_id = @sourceId)
-            AND (@unreadOnly = 0 OR i.is_read = 0)
-            AND (@keyword = '' OR instr(lower(i.title || ' ' || i.summary), lower(@keyword)) > 0)`;
-        const params = {
-            sourceId: query.sourceId ?? "",
-            keyword: query.keyword?.trim() ?? "",
-            unreadOnly: query.unreadOnly ? 1 : 0,
-            offset: query.offset ?? 0
-        };
-        const rows = this.database.prepare<typeof params, Omit<FeedItem, "isRead"> & { isRead: number; }>(`
-            SELECT i.id, i.source_id AS sourceId, s.name AS sourceName, i.external_id AS externalId,
-                i.title, i.url, i.authors, i.summary, i.published_at AS publishedAt, i.is_read AS isRead
-            FROM feed_items i JOIN feed_sources s ON s.id = i.source_id ${where}
-            ORDER BY i.published_at DESC, i.id LIMIT 50 OFFSET @offset
-        `).all(params);
-        const total = this.database.prepare<typeof params, { count: number; }>(`
-            SELECT COUNT(*) AS count FROM feed_items i ${where}
-        `).get(params)!.count;
-        return { sources, items: rows.map(row => ({ ...row, isRead: Boolean(row.isRead) })), total };
+        const sources = this.database.select({
+            ...getTableColumns(feedSources),
+            unreadCount: this.database.$count(feedItems, and(eq(feedItems.sourceId, feedSources.id), eq(feedItems.isRead, false)))
+        }).from(feedSources).orderBy(feedSources.name, feedSources.id).all();
+        const keyword = query.keyword?.trim();
+        const where = and(
+            query.sourceId ? eq(feedItems.sourceId, query.sourceId) : undefined,
+            query.unreadOnly ? eq(feedItems.isRead, false) : undefined,
+            keyword ? sql`instr(lower(${feedItems.title} || ' ' || ${feedItems.summary}), lower(${keyword})) > 0` : undefined
+        );
+        const items = this.database.select({
+            ...getTableColumns(feedItems),
+            sourceName: feedSources.name
+        }).from(feedItems).innerJoin(feedSources, eq(feedItems.sourceId, feedSources.id))
+            .where(where).orderBy(desc(feedItems.publishedAt), feedItems.id).limit(50).offset(query.offset ?? 0).all();
+        const total = this.database.select({ count: count() }).from(feedItems).where(where).get()!.count;
+        return { sources, items, total };
     }
 
     async saveSource(input: FeedSourceInput): Promise<string> {
@@ -76,7 +47,8 @@ export class FeedService {
         const id = input.id ?? randomUUID();
         const existing = input.id ? this.source(id) : undefined;
         if (this.pending.has(id)) throw new Error("此来源正在刷新，请完成后再修改。");
-        const duplicate = this.database.prepare("SELECT id FROM feed_sources WHERE url = ? AND id != ?").get(url, id);
+        const duplicate = this.database.select({ id: feedSources.id }).from(feedSources)
+            .where(and(eq(feedSources.url, url), ne(feedSources.id, id))).get();
         if (duplicate) throw new Error("这个订阅地址已经添加。");
         const request = (async () => {
             // Validate a new address before changing any saved configuration.
@@ -84,11 +56,11 @@ export class FeedService {
             this.database.transaction(() => {
                 if (existing) {
                     this.source(id);
-                    this.database.prepare("UPDATE feed_sources SET name = ?, url = ? WHERE id = ?").run(name, url, id);
+                    this.database.update(feedSources).set({ name, url }).where(eq(feedSources.id, id)).run();
                 }
-                else this.database.prepare("INSERT INTO feed_sources (id, name, url) VALUES (?, ?, ?)").run(id, name, url);
+                else this.database.insert(feedSources).values({ id, name, url }).run();
                 if (entries) this.storeEntries(id, entries);
-            })();
+            });
         })();
         this.pending.set(id, request);
         try {
@@ -103,7 +75,7 @@ export class FeedService {
     removeSource(id: string): void {
         this.source(id);
         if (this.pending.has(id)) throw new Error("此来源正在刷新，请完成后再取消订阅。");
-        this.database.prepare("DELETE FROM feed_sources WHERE id = ?").run(id);
+        this.database.delete(feedSources).where(eq(feedSources.id, id)).run();
     }
 
     async refresh(sourceId?: string): Promise<void> {
@@ -127,21 +99,21 @@ export class FeedService {
 
     setRead(id: string, isRead: boolean): void {
         if (typeof id !== "string" || typeof isRead !== "boolean") throw new Error("无效的阅读状态。");
-        if (!this.database.prepare("UPDATE feed_items SET is_read = ? WHERE id = ?").run(isRead ? 1 : 0, id).changes) {
+        if (!this.database.update(feedItems).set({ isRead }).where(eq(feedItems.id, id)).run().changes) {
             throw new Error("条目不存在。");
         }
     }
 
     itemURL(id: string): string {
         if (typeof id !== "string") throw new Error("无效的条目。");
-        const row = this.database.prepare<[string], { url: string | null; }>("SELECT url FROM feed_items WHERE id = ?").get(id);
+        const row = this.database.select({ url: feedItems.url }).from(feedItems).where(eq(feedItems.id, id)).get();
         if (!row?.url) throw new Error("此条目没有可用的原文链接。");
         return feedURL(row.url);
     }
 
     private source(id: string): Pick<FeedSource, "id" | "url"> {
         if (typeof id !== "string") throw new Error("无效的订阅来源。");
-        const source = this.database.prepare<[string], Pick<FeedSource, "id" | "url">>("SELECT id, url FROM feed_sources WHERE id = ?").get(id);
+        const source = this.database.select({ id: feedSources.id, url: feedSources.url }).from(feedSources).where(eq(feedSources.id, id)).get();
         if (!source) throw new Error("订阅来源不存在。");
         return source;
     }
@@ -149,24 +121,29 @@ export class FeedService {
     private async refreshSource(source: Pick<FeedSource, "id" | "url">): Promise<void> {
         try {
             const entries = await this.load(source.url);
-            this.database.transaction(() => this.storeEntries(source.id, entries))();
+            this.database.transaction(() => this.storeEntries(source.id, entries));
         }
         catch (error) {
-            if (!this.database.open) return;
+            if (!this.database.$client.open) return;
             const message = error instanceof Error ? error.message : "抓取失败，请重试。";
-            this.database.prepare("UPDATE feed_sources SET error = ?, last_added = 0 WHERE id = ?").run(message, source.id);
+            this.database.update(feedSources).set({ error: message, lastAdded: 0 }).where(eq(feedSources.id, source.id)).run();
         }
     }
 
     private storeEntries(sourceId: string, entries: FeedEntry[]): void {
-        const insert = this.database.prepare(`
-            INSERT INTO feed_items (id, source_id, external_id, title, url, authors, summary, published_at)
-            VALUES (@id, @sourceId, @externalId, @title, @url, @authors, @summary, @publishedAt)
-            ON CONFLICT(source_id, external_id) DO NOTHING
-        `);
+        const insert = this.database.insert(feedItems).values({
+            id: placeholder("id"),
+            sourceId: placeholder("sourceId"),
+            externalId: placeholder("externalId"),
+            title: placeholder("title"),
+            url: placeholder("url"),
+            authors: placeholder("authors"),
+            summary: placeholder("summary"),
+            publishedAt: placeholder("publishedAt")
+        }).onConflictDoNothing({ target: [feedItems.sourceId, feedItems.externalId] }).prepare();
         let added = 0;
         for (const entry of entries) added += insert.run({ ...entry, id: randomUUID(), sourceId }).changes;
-        this.database.prepare("UPDATE feed_sources SET last_refreshed = ?, last_added = ?, error = NULL WHERE id = ?")
-            .run(new Date().toISOString(), added, sourceId);
+        this.database.update(feedSources).set({ lastRefreshed: new Date().toISOString(), lastAdded: added, error: null })
+            .where(eq(feedSources.id, sourceId)).run();
     }
 }

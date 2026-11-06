@@ -4,6 +4,8 @@ import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import Database from "better-sqlite3";
 import { FeedService } from "../main/feed/service";
+import { createWorkspaceDatabase } from "../main/storage/database";
+import { migrateWorkspaceSchema } from "../main/storage/schema";
 import type { FeedQuery, FeedSourceInput } from "../shared/types/feed";
 import { arxivURL } from "../shared/utils/feed";
 
@@ -20,7 +22,8 @@ export default defineConfig({
                 mkdirSync(folder, { recursive: true });
                 const database = new Database(resolve(folder, "feed.sqlite"));
                 database.pragma("foreign_keys = ON");
-                const feed = new FeedService(database);
+                migrateWorkspaceSchema(database);
+                const feed = new FeedService(createWorkspaceDatabase(database));
                 server.httpServer?.once("close", () => database.close());
 
                 if (!feed.getState({}).sources.length) {

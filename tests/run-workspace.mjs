@@ -23,7 +23,7 @@ function removeTestDirectory() {
 try {
     await build({
         absWorkingDir: projectRoot,
-        entryPoints: ["tests/workspace.test.ts", "tests/builtin-attrs.test.ts"],
+        entryPoints: ["tests/workspace.test.ts", "tests/builtin-attrs.test.ts", "tests/drizzle.test.ts"],
         outdir: testRoot,
         outExtension: { ".js": ".cjs" },
         bundle: true,
@@ -34,7 +34,7 @@ try {
     });
 
     // Use the application's Node runtime for its native SQLite dependency.
-    execFileSync(require("electron"), ["--test", join(testRoot, "workspace.test.cjs"), join(testRoot, "builtin-attrs.test.cjs")], {
+    execFileSync(require("electron"), ["--test", join(testRoot, "workspace.test.cjs"), join(testRoot, "builtin-attrs.test.cjs"), join(testRoot, "drizzle.test.cjs")], {
         cwd: projectRoot,
         env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", LABLOOM_TEST_ROOT: testRoot },
         stdio: "inherit",

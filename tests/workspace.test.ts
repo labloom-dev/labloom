@@ -107,7 +107,7 @@ function snapshot<T>(path: string, action: (database: Database.Database) => T): 
     }
 }
 
-test("new workspaces contain the six strict tables and reopen without changing timestamps", t => {
+test("new workspaces contain the core and feed tables and reopen without changing timestamps", t => {
     const workspace = fresh(t);
     const { database, info } = workspace;
     assert.equal(database.pragma("application_id", { simple: true }), applicationId);
@@ -117,6 +117,8 @@ test("new workspaces contain the six strict tables and reopen without changing t
         { name: "attrs", strict: 1 },
         { name: "block_uses", strict: 1 },
         { name: "blocks", strict: 1 },
+        { name: "feed_items", strict: 0 },
+        { name: "feed_sources", strict: 0 },
         { name: "page_attrs", strict: 1 },
         { name: "pages", strict: 1 },
         { name: "workspace_meta", strict: 1 }
