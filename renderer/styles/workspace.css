@@ -131,3 +131,18 @@
     color: var(--c-ink);
     font-size: 15px;
 }
+
+.text-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 0;
+    color: var(--c-accent);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.text-button:hover:not(:disabled) {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}

@@ -2,7 +2,7 @@
     {#if tab.type === "page"}
         <Editor />
     {:else if tab.type === "overview"}
-        <div>overview</div>
+        <Overview />
     {:else if tab.type === "about"}
         <About />
     {:else if tab.type === "settings"}
@@ -19,6 +19,7 @@
 
 <script lang="ts">
     import About from "../tabs/About.svelte";
+    import Overview from "../tabs/Overview.svelte";
     import Settings from "../tabs/Settings.svelte";
     import Editor from "../Editor/Editor.svelte";
     import ReaderTest from "../tabs/ReaderTest.svelte";
