@@ -1,16 +1,15 @@
 <div class="toolbar">
     <div class="group">
-        <button aria-label="上一页" title="上一页" disabled={disabled || pageNumber <= 1} onclick={previousPage}>
+        <button disabled={disabled || pageNumber <= 1} onclick={previousPage}>
             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
             {@html chevron_up}
         </button>
-        <button aria-label="下一页" title="下一页" disabled={disabled || pageNumber >= pagesCount} onclick={nextPage}>
+        <button disabled={disabled || pageNumber >= pagesCount} onclick={nextPage}>
             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
             {@html chevron_down}
         </button>
         <input
             class="page-input"
-            aria-label="页码"
             inputmode="numeric"
             {disabled}
             value={pageDraft ?? (disabled ? "" : String(pageNumber))}
@@ -22,11 +21,11 @@
     </div>
 
     <div class="group">
-        <button aria-label="缩小" title="缩小" {disabled} onclick={zoomOut}>
+        <button {disabled} onclick={zoomOut}>
             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
             {@html zoom_out}
         </button>
-        <select aria-label="缩放比例" {disabled} value={scaleOption} onchange={event => setScale(parseScale(event.currentTarget.value))}>
+        <select {disabled} value={scaleOption} onchange={event => setScale(parseScale(event.currentTarget.value))}>
             {#each presetOptions as option (option.value)}
                 <option value={option.value}>{option.label}</option>
             {/each}
@@ -37,11 +36,11 @@
                 <option value="custom" disabled hidden>{Math.round(scale * 100)}%</option>
             {/if}
         </select>
-        <button aria-label="放大" title="放大" {disabled} onclick={zoomIn}>
+        <button {disabled} onclick={zoomIn}>
             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
             {@html zoom_in}
         </button>
-        <button aria-label="旋转页面" title="旋转页面" {disabled} onclick={rotate}>
+        <button {disabled} onclick={rotate}>
             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
             {@html rotate_clockwise}
         </button>
@@ -55,7 +54,6 @@
         <input
             type="search"
             placeholder="在文档中搜索"
-            aria-label="在文档中搜索"
             {disabled}
             value={query}
             bind:this={searchInput}
@@ -65,11 +63,11 @@
         <span class="muted find-status">
             {findText}
         </span>
-        <button aria-label="上一个匹配" title="上一个匹配" disabled={disabled || findStatus.kind !== "found"} onclick={() => find(query, true)}>
+        <button disabled={disabled || findStatus.kind !== "found"} onclick={() => find(query, true)}>
             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
             {@html chevron_up}
         </button>
-        <button aria-label="下一个匹配" title="下一个匹配" disabled={disabled || findStatus.kind !== "found"} onclick={() => find(query)}>
+        <button disabled={disabled || findStatus.kind !== "found"} onclick={() => find(query)}>
             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
             {@html chevron_down}
         </button>
@@ -83,7 +81,7 @@
         align-items: center;
         gap: 12px;
         flex-shrink: 0;
-        min-height: 45px;
+        height: 36px;
         padding-inline: 12px;
         overflow-x: auto;
         background-color: var(--c-reader-toolbar-background);

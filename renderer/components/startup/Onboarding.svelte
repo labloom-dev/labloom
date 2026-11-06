@@ -1,14 +1,13 @@
 <header class="titlebar">
     <img src={icon} alt="" />
-    <span>知织，Labloom</span>
+    <span>知织 · Labloom</span>
 </header>
 
 <main class="onboarding">
     <div class="welcome">
-        <span class="eyebrow">WELCOME TO YOUR KNOWLEDGE GARDEN</span>
-        <div class="welcome-art"><Bloom /></div>
-        <h1>{state ? "让知识，从这里生长。" : "正在打开工作区"}</h1>
-        <p class="intro">欢迎来到知织。选一块属于你的空间，种下第一颗灵感。</p>
+        <img class="logo" src={icon} alt="知织" />
+        <h1>{state ? "欢迎使用知织" : "正在打开工作区"}</h1>
+        <p class="intro">选择一个工作文件夹，开始整理你的文献、笔记与研究。</p>
 
         {#if state?.status === "needs-workspace"}
             {#if state.notice}
@@ -71,25 +70,23 @@
         overflow: auto;
         display: flex;
         padding: 32px 28px;
-        background-color: var(--c-cream);
-        background-image: radial-gradient(#d9cfb9 .85px, transparent .85px);
-        background-size: 18px 18px;
+        background: var(--c-surface);
         color: var(--c-popover-text);
     }
     .welcome {
-        width: min(100%, 730px);
+        width: min(100%, 660px);
         margin: auto;
         text-align: center;
     }
-    .welcome-art {
-        width: 190px;
-        margin: 8px auto 0;
-        transform: rotate(-4deg);
+    .logo {
+        width: 64px;
+        height: 64px;
+        -webkit-user-drag: none;
     }
     h1 {
         margin: 16px 0 12px;
-        font-size: 32px;
-        font-weight: 900;
+        font-size: 28px;
+        font-weight: 600;
     }
     p {
         line-height: 1.6;
@@ -111,21 +108,17 @@
         align-items: flex-start;
         gap: 12px;
         padding: 24px;
-        border: 1.5px solid var(--c-ink);
-        border-radius: 15px;
-        background: var(--c-paper);
-        box-shadow: var(--c-shadow);
-        transition: transform .15s;
+        border: 1px solid var(--c-popover-border);
+        border-radius: 12px;
         text-align: left;
         color: inherit;
         font-family: inherit;
     }
     .choice.primary {
         background: var(--c-surface-focus);
-        border-color: var(--c-ink);
+        border-color: var(--c-border-focus);
     }
     .choice:hover:not(:disabled) {
-        transform: translateY(-3px);
         border-color: var(--c-accent);
         background: var(--c-surface-hover);
     }
@@ -202,7 +195,6 @@
 
 
 <script lang="ts">
-    import Bloom from "../utils/Bloom.svelte";
     import icon from "../../assets/icon.png";
     import type { StartupState, WorkspaceAction } from "../../../shared/types/startup";
     type Props = {

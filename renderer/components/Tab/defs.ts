@@ -22,7 +22,7 @@ type Tab_Feed = {
     type: "feed";
 };
 
-// Keep the persisted tab discriminator compatible with earlier sessions.
+//todo: remove once papers can be opened as pages.
 type Tab_ReaderTest = {
     type: "reader-test";
 };
@@ -36,8 +36,7 @@ export type Tab = {
     Tab_About |
     Tab_Settings |
     Tab_Feed |
-    Tab_ReaderTest |
-    { type: "knowledge" | "calendar" | "assistant" }
+    Tab_ReaderTest
 );
 
 export type TabID = string & {

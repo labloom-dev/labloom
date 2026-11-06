@@ -1,6 +1,6 @@
 body {
     overflow: auto;
-    background: var(--c-cream);
+    background: var(--c-surface);
 }
 
 #app {

@@ -1,10 +1,10 @@
 <section class="feed">
     <header>
-        <div class="heading-copy"><span class="eyebrow">A LETTER FROM THE WORLD</span><h1>订阅动态</h1><p>让值得阅读的论文与文章，来到你的知识花园。</p></div>
-        <button disabled={pending || !feedState.sources.length} onclick={() => run(() => api.refresh())}><Icon name="refresh" size={15} />刷新全部</button>
-        <button class="primary" disabled={pending} onclick={() => {
+        <h2>订阅</h2>
+        <button disabled={pending || !state.sources.length} onclick={() => run(() => api.refresh())}>刷新全部</button>
+        <button disabled={pending} onclick={() => {
             editing = undefined; showForm = true;
-        }}><Icon name="plus" size={15} />添加来源</button>
+        }}>添加来源</button>
     </header>
 
     {#if error}
@@ -22,27 +22,24 @@
             来源
             <select bind:value={sourceId} disabled={pending} onchange={filter}>
                 <option value="">全部来源</option>
-                {#each feedState.sources as item (item.id)}
+                {#each state.sources as item (item.id)}
                     <option value={item.id}>{item.name}（{item.unreadCount} 条未读）</option>
                 {/each}
             </select>
         </label>
-        <label>分组<select bind:value={group} onchange={filter}><option value="">全部分组</option>{#each [...new Set(feedState.sources.map(source => source.group).filter(Boolean))] as name}<option value={name}>{name}</option>{/each}</select></label>
-        <label>排序<select bind:value={sort} onchange={filter}><option value="newest">最新发布</option><option value="oldest">最早发布</option><option value="unread">未读优先</option></select></label>
-        <label class="checkbox"><input type="checkbox" bind:checked={preferredOnly} onchange={filter} />偏好关键词</label>
         <label class="search">
             标题或摘要
             <input bind:value={keyword} type="search" placeholder="筛选已获取的内容" disabled={pending} />
         </label>
         <label class="checkbox"><input type="checkbox" bind:checked={unreadOnly} disabled={pending} onchange={filter} />仅未读</label>
-        <button type="submit" disabled={pending}>筛选</button><button type="button" disabled={pending || !feedState.total} onclick={readAll}>筛选结果全部已读</button>
+        <button type="submit" disabled={pending}>筛选</button>
     </form>
 
     {#if source}
         <div class="source">
             <p>{source.lastRefreshed ? `上次成功刷新：${formatDate(source.lastRefreshed)}，新增 ${source.lastAdded} 条` : "尚未成功刷新"}</p>
             <div class="actions">
-                <button disabled={pending} onclick={() => run(() => api.refresh(sourceId))}>刷新此来源</button><button disabled={pending} onclick={() => run(() => api.saveSource({ ...source, paused: !source.paused }))}>{source.paused ? "恢复更新" : "暂停更新"}</button>
+                <button disabled={pending} onclick={() => run(() => api.refresh(sourceId))}>刷新此来源</button>
                 <button disabled={pending} onclick={() => {
                     editing = source; showForm = true;
                 }}>编辑</button>
@@ -57,17 +54,17 @@
             {/if}
         </div>
     {/if}
-    {#each feedState.sources.filter(item => item.error && (!sourceId || item.id === sourceId)) as item (item.id)}
+    {#each state.sources.filter(item => item.error && (!sourceId || item.id === sourceId)) as item (item.id)}
         <p class="error" role="alert">
             {item.name}：{item.error}
             <button disabled={pending} onclick={() => run(() => api.refresh(item.id))}>重试</button>
         </p>
     {/each}
 
-    <p class="status" role="status">{pending ? "正在处理，请稍候…" : `共 ${feedState.total} 条内容。应用运行时按来源设置自动刷新。`}</p>
+    <p class="status" role="status">{pending ? "正在处理，请稍候…" : `共 ${state.total} 条内容。手动刷新获取更新。`}</p>
     <div class="content">
         <div class="list">
-            {#each feedState.items as item (item.id)}
+            {#each state.items as item (item.id)}
                 <button class="item" class:active={selected?.id === item.id} disabled={pending} onclick={() => selectItem(item)}>
                     <span class="meta metadata">
                         <span>{item.sourceName}</span>
@@ -79,19 +76,18 @@
                     <span class="excerpt">{item.summary || "来源未提供摘要。"}</span>
                 </button>
             {:else}
-                <div class="empty-state"><Icon name="feed" size={30} /><strong>{!feedState.sources.length ? "还没有新知来信" : "没有匹配的内容"}</strong><p>{!feedState.sources.length ? "添加论文或博客的订阅来源，开始获取更新。" : "试试刷新来源，或调整上方的筛选条件。"}</p>{#if !feedState.sources.length}<button disabled={pending} onclick={() => { editing = undefined; showForm = true; }}>添加来源</button>{/if}</div>
+                <p class="empty">{!state.sources.length ? "添加论文或博客的订阅来源，开始获取更新。" : "没有匹配的内容，可刷新来源或调整筛选条件。"}</p>
             {/each}
-            {#if feedState.total > 50}
+            {#if state.total > 50}
                 <div class="pagination">
                     <button disabled={pending || offset === 0} onclick={() => page(-50)}>上一页</button>
-                    <span>{offset + 1}–{Math.min(offset + 50, feedState.total)} / {feedState.total}</span>
-                    <button disabled={pending || offset + 50 >= feedState.total} onclick={() => page(50)}>下一页</button>
+                    <span>{offset + 1}–{Math.min(offset + 50, state.total)} / {state.total}</span>
+                    <button disabled={pending || offset + 50 >= state.total} onclick={() => page(50)}>下一页</button>
                 </div>
             {/if}
         </div>
-        <article class:has-selection={selected !== null}>
+        <article>
             {#if selected}
-                <span class="eyebrow">READ & DISCOVER</span>
                 <h3>{selected.title}</h3>
                 <p class="meta metadata">
                     <span>{selected.sourceName}</span>
@@ -100,14 +96,12 @@
                 {#if selected.authors}<p class="authors">{selected.authors}</p>{/if}
                 <div class="actions">
                     <button disabled={pending || !selected.url} onclick={openItem}>打开原文</button>
-                    {#if window.api?.knowledge}<button disabled={pending} onclick={importToLibrary}>收入文献库</button>{/if}
                     <button disabled={pending} onclick={toggleRead}>{selected.isRead ? "标为未读" : "标为已读"}</button>
                 </div>
-                <div class="actions"><button disabled={pending || selectedIndex <= 0} onclick={() => selectItem(feedState.items[selectedIndex - 1])}>上一篇</button><button disabled={pending || selectedIndex < 0 || selectedIndex >= feedState.items.length - 1} onclick={() => selectItem(feedState.items[selectedIndex + 1])}>下一篇</button></div>
                 <p class="summary">{selected.summary || "来源未提供摘要。"}</p>
                 <p class="meta">以上为来源提供的摘要或内容。{selected.url ? "完整内容请打开原文查看。" : "来源未提供可用的原文链接。"}</p>
             {:else}
-                <div class="empty-state"><div class="empty-art"><Bloom /></div><strong>挑一封来信，慢慢读。</strong><p>选择左侧内容，在这里查看摘要，<br />或打开原文继续探索。</p></div>
+                <p class="empty">选择一条内容，查看摘要与原文入口。</p>
             {/if}
         </article>
     </div>
@@ -117,98 +111,69 @@
 <style>
     .feed {
         min-height: 100%;
-        padding: clamp(20px, 3vw, 36px);
-        color: var(--c-ink);
-        font-size: 12px;
-        container-type: inline-size;
+        padding: 16px;
+        background: var(--c-surface);
+        color: var(--c-popover-text);
+        font-size: 13px;
     }
     header, .actions, .pagination {
         display: flex;
         align-items: center;
         flex-wrap: wrap;
-        gap: 10px;
+        gap: 8px;
     }
     header {
-        margin-bottom: 26px;
+        margin-bottom: 16px;
     }
-    .heading-copy {
+    h2 {
         flex: 1;
-        min-width: 200px;
-    }
-    h1 {
-        margin: 7px 0 9px;
-        font-size: 29px;
-        font-weight: 900;
-    }
-    .heading-copy p {
         margin: 0;
-        color: var(--c-muted);
-        font-size: 12px;
-        line-height: 1.7;
+        font-size: 20px;
+        font-weight: 600;
     }
     button, input, select {
         box-sizing: border-box;
-        border: 1px solid var(--c-reader-input-border);
-        border-radius: 8px;
-        background: var(--c-paper);
+        border: var(--border-width) solid var(--c-reader-input-border);
+        border-radius: 6px;
+        background: var(--c-surface);
         color: inherit;
         font: inherit;
     }
     button {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 7px;
-        min-height: 35px;
-        padding: 7px 12px;
-        font-weight: 700;
-    }
-    header > button {
-        border: 1.5px solid var(--c-ink);
-        padding: 9px 13px;
-        border-radius: 10px;
-    }
-    header > button.primary {
-        background: var(--c-gold);
-        box-shadow: 2px 3px 0 var(--c-ink);
+        min-height: 28px;
+        padding: 0 8px;
     }
     button:hover:not(:disabled) {
-        background: var(--c-gold-light);
-        border-color: var(--c-ink);
+        background: var(--c-surface-hover);
     }
     button:disabled, input:disabled, select:disabled {
-        opacity: .45;
-        cursor: not-allowed;
+        opacity: .4;
+        cursor: default;
+    }
+    button:focus-visible, input:focus-visible, select:focus-visible {
+        outline: var(--focus-width) solid var(--c-border-focus);
+        outline-offset: var(--focus-offset);
     }
     .filters {
         display: flex;
         align-items: flex-end;
         flex-wrap: wrap;
-        gap: 14px;
-        padding: 17px;
-        margin: 22px 0 16px;
-        border: 1px solid var(--c-tab-header-border);
-        border-radius: 12px;
-        background: var(--c-paper);
+        gap: 12px;
+        margin: 16px 0;
     }
     label {
         display: flex;
         flex-direction: column;
-        gap: 7px;
+        gap: 4px;
         max-width: 100%;
-        color: var(--c-muted);
-        font-size: 10px;
-        font-weight: 700;
     }
     input, select {
         min-width: 0;
         max-width: 100%;
     }
     input[type="search"], select {
-        height: 35px;
-        padding-inline: 10px;
-        color: var(--c-ink);
-        font-size: 12px;
+        height: 24px;
+        padding-inline: 6px;
     }
     input::placeholder {
         color: var(--c-search-placeholder);
@@ -221,7 +186,7 @@
         flex-direction: row;
         align-items: center;
         align-self: flex-end;
-        min-height: 35px;
+        min-height: 28px;
         gap: 8px;
     }
     input[type="checkbox"] {
@@ -229,200 +194,136 @@
         accent-color: var(--c-accent);
     }
     .source {
-        padding: 16px;
-        border: 1px solid var(--c-popover-border);
-        border-radius: 10px;
-        background: var(--c-gold-light);
+        padding: 12px;
+        border: var(--border-width) solid var(--c-popover-border);
+        border-radius: 6px;
+        background: var(--c-reader-toolbar-background);
     }
     .source p {
-        margin: 0 0 10px;
-        line-height: 1.7;
+        margin: 0 0 8px;
+        line-height: 1.5;
     }
     .confirmation {
-        margin-top: 14px;
-        padding-top: 14px;
-        border-top: 1px dashed var(--c-tab-header-border);
+        margin-top: 12px;
     }
-    .status, .meta {
-        color: var(--c-muted);
-        line-height: 1.7;
-    }
-    .status {
-        margin: 18px 2px 12px;
-        font-size: 10px;
+    .status, .meta, .empty {
+        color: var(--c-reader-muted-text);
+        line-height: 1.6;
     }
     .error {
-        padding: 14px;
-        border: 1px solid var(--c-reader-error-text);
-        border-radius: 10px;
-        background: var(--c-peach);
+        padding: 12px;
+        border: var(--border-width) solid var(--c-reader-error-text);
+        border-radius: 6px;
         color: var(--c-reader-error-text);
         overflow-wrap: anywhere;
         user-select: text;
     }
     .content {
         display: grid;
-        grid-template-columns: minmax(230px, 2fr) minmax(260px, 3fr);
-        align-items: start;
-        gap: 22px;
+        grid-template-columns: minmax(200px, 2fr) minmax(250px, 3fr);
+        border-top: var(--border-width) solid var(--c-popover-border);
     }
     .list {
         min-width: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
     }
     .item {
         display: flex;
         flex-direction: column;
-        align-items: stretch;
-        gap: 9px;
+        gap: 8px;
         width: 100%;
-        padding: 18px;
+        padding: 14px 12px;
+        box-sizing: border-box;
         text-align: left;
-        border: 1px solid var(--c-tab-header-border);
-        border-radius: 12px;
+        border: none;
+        border-bottom: var(--border-width) solid var(--c-search-divider);
+        border-radius: 0;
         overflow-wrap: anywhere;
-        transition: border-color .15s, box-shadow .15s;
-        font-weight: 400;
     }
     .item.active, .item.active:hover:not(:disabled) {
-        border: 1.5px solid var(--c-ink);
-        background: var(--c-gold-light);
-        box-shadow: 2px 3px 0 var(--c-ink);
+        background: var(--c-surface-focus);
     }
     .item strong {
         font-size: 14px;
-        line-height: 1.6;
-        font-weight: 800;
+        line-height: 1.5;
     }
     .meta {
-        font-size: 10px;
+        font-size: 12px;
     }
     .metadata {
         display: flex;
         flex-wrap: wrap;
-        gap: 6px 12px;
-    }
-    .metadata > span:first-child {
-        color: var(--c-accent);
-        font-weight: 700;
+        gap: 4px 12px;
     }
     .excerpt {
         display: -webkit-box;
         -webkit-line-clamp: 3;
-        line-clamp: 3;
         -webkit-box-orient: vertical;
         overflow: hidden;
-        color: var(--c-muted);
-        font-size: 12px;
-        line-height: 1.8;
+        line-height: 1.6;
     }
     article {
         min-width: 0;
-        min-height: 400px;
-        padding: 26px;
-        border: 1.5px solid var(--c-ink);
-        border-radius: 15px;
-        background: var(--c-paper);
-        box-shadow: var(--c-shadow);
+        padding: 16px;
+        border-left: var(--border-width) solid var(--c-popover-border);
         overflow-wrap: anywhere;
         user-select: text;
     }
     h3 {
-        margin: 12px 0 16px;
-        font-size: 22px;
-        font-weight: 900;
+        margin: 0 0 12px;
+        font-size: 18px;
         line-height: 1.5;
     }
-    article .actions {
-        margin: 22px 0;
-        padding-bottom: 22px;
-        border-bottom: 1px dashed var(--c-line);
-    }
     .summary, .authors {
-        line-height: 1.9;
+        line-height: 1.8;
         white-space: pre-wrap;
-    }
-    .summary {
-        font-size: var(--reading-font-size, 16px);
-    }
-    .authors {
-        color: var(--c-muted);
-        font-size: 12px;
     }
     .pagination {
         justify-content: space-between;
         padding: 16px 0;
     }
-    .empty-state {
-        min-height: 280px;
-        padding-inline: 15px;
-    }
-    .empty-art {
-        width: 150px;
-        transform: rotate(-4deg);
-    }
-    .list > .empty-state {
-        border: 1px dashed var(--c-tab-header-border);
-        border-radius: 12px;
-        background: #fffdf799;
-    }
-    @container (max-width: 690px) {
+    @media (max-width: 760px) {
         .content {
             grid-template-columns: 1fr;
         }
-        article.has-selection {
-            grid-row: 1;
-        }
-        article:not(.has-selection) {
-            display: none;
-        }
         article {
-            min-height: 0;
+            grid-row: 1;
+            border-left: none;
+            border-bottom: var(--border-width) solid var(--c-popover-border);
+            padding: 16px 0;
         }
     }
 </style>
 
 
 <script lang="ts">
-    import { onMount, untrack } from "svelte";
-    import { acceptPage, changed } from "../Knowledge/state.svelte";
-    import { openPage } from "../layout/navigation";
+    import { onMount } from "svelte";
     import type { FeedAPI, FeedItem, FeedSource, FeedSourceInput, FeedState } from "../../../shared/types/feed";
-    import Icon from "../utils/Icon.svelte";
-    import Bloom from "../utils/Bloom.svelte";
-    import { feedNavigation } from "./navigation.svelte";
     import SourceForm from "./SourceForm.svelte";
 
     let { api = window.api.feed }: { api?: FeedAPI; } = $props();
 
-    let feedState = $state<FeedState>({ sources: [], items: [], total: 0 });
+    let state = $state<FeedState>({ sources: [], items: [], total: 0 });
     let sourceId = $state("");
     let keyword = $state("");
     let unreadOnly = $state(false);
     let offset = $state(0);
-    let group = $state("");
-    let sort = $state<"newest" | "oldest" | "unread">("newest");
-    let preferredOnly = $state(false);
     let pending = $state(false);
     let error = $state("");
     let selected = $state<FeedItem | null>(null);
     let showForm = $state(false);
     let editing = $state<FeedSource | undefined>();
     let removing = $state("");
-    const selectedIndex = $derived(feedState.items.findIndex(item => item.id === selected?.id));
-    const source = $derived(feedState.sources.find(item => item.id === sourceId));
+    const source = $derived(state.sources.find(item => item.id === sourceId));
 
     function formatDate(date: string | null): string {
         return date ? new Date(date).toLocaleString() : "未提供时间";
     }
 
     async function reload(): Promise<void> {
-        feedState = await api.getState({ sourceId, keyword, unreadOnly, offset, group, sort, preferredOnly });
-        if (offset > 0 && offset >= feedState.total) {
-            offset = Math.max(0, Math.floor((feedState.total - 1) / 50) * 50);
-            feedState = await api.getState({ sourceId, keyword, unreadOnly, offset, group, sort, preferredOnly });
+        state = await api.getState({ sourceId, keyword, unreadOnly, offset });
+        if (offset > 0 && offset >= state.total) {
+            offset = Math.max(0, Math.floor((state.total - 1) / 50) * 50);
+            state = await api.getState({ sourceId, keyword, unreadOnly, offset });
         }
     }
 
@@ -493,29 +394,12 @@
         });
     }
 
-    async function readAll(): Promise<void> { if (!confirm(`将当前筛选的 ${feedState.total} 条内容标记为已读？`)) return; await run(() => api.setReadAll({ sourceId, keyword, unreadOnly, group, sort, preferredOnly })); if (selected) selected.isRead = true; }
-    async function importToLibrary(): Promise<void> { const item = selected; if (!item) return; await run(async () => { const page = await window.api.knowledge.importFeed(item.id); acceptPage(page); changed(); openPage(page); }); }
     async function openItem(): Promise<void> {
         const item = selected;
         if (item) await run(() => api.openItem(item.id));
     }
 
-    $effect(() => {
-        const item = feedNavigation.item;
-        if (!item || pending) return;
-        untrack(() => {
-            feedNavigation.item = null;
-            sourceId = "";
-            keyword = "";
-            unreadOnly = false;
-            offset = 0;
-            void selectItem(item);
-        });
-    });
-
     onMount(() => {
         void run();
-        const timer = setInterval(() => { if (!pending && !showForm) void run(); }, 60000);
-        return () => clearInterval(timer);
     });
 </script>

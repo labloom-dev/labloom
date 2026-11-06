@@ -107,28 +107,19 @@ function snapshot<T>(path: string, action: (database: Database.Database) => T): 
     }
 }
 
-test("new workspaces contain the current strict tables and reopen without changing timestamps", t => {
+test("new workspaces contain the six strict tables and reopen without changing timestamps", t => {
     const workspace = fresh(t);
     const { database, info } = workspace;
     assert.equal(database.pragma("application_id", { simple: true }), applicationId);
     assert.equal(database.pragma("user_version", { simple: true }), workspaceFormatVersion);
     assert.equal(database.pragma("foreign_keys", { simple: true }), 1);
     assert.deepEqual(database.prepare("SELECT name, strict FROM pragma_table_list WHERE name NOT LIKE 'sqlite_%' ORDER BY name").all(), [
-        { name: "annotations", strict: 1 },
-        { name: "attachments", strict: 1 },
         { name: "attrs", strict: 1 },
         { name: "block_uses", strict: 1 },
         { name: "blocks", strict: 1 },
         { name: "page_attrs", strict: 1 },
-        { name: "page_details", strict: 1 },
-        { name: "page_links", strict: 1 },
-        { name: "page_tags", strict: 1 },
         { name: "pages", strict: 1 },
-        { name: "reminders", strict: 1 },
-        { name: "tags", strict: 1 },
-        { name: "visits", strict: 1 },
-        { name: "workspace_meta", strict: 1 },
-        { name: "workspace_settings", strict: 1 }
+        { name: "workspace_meta", strict: 1 }
     ]);
     const before = meta(database);
     assert.equal(before.id, info.id);

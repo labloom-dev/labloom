@@ -1,34 +1,25 @@
 {#key tab.id}
     {#if tab.type === "page"}
-        <PageView pageId={tab.pageId} />
+        <Editor />
     {:else if tab.type === "overview"}
-        <Overview />
+        <div>overview</div>
     {:else if tab.type === "about"}
-        <About />
+        <div>about</div>
     {:else if tab.type === "settings"}
-        <Settings />
+        <div>settings</div>
     {:else if tab.type === "reader-test"}
-        <Library initialView="papers" />
+        <ReaderTest />
     {:else if tab.type === "feed"}
         <FeedView />
-    {:else if tab.type === "knowledge"}
-        <Library />
-    {:else if tab.type === "calendar"}
-        <Calendar />
-    {:else if tab.type === "assistant"}
-        <Assistant />
+    {:else}
+        <div>Unknown tab type!</div>
     {/if}
 {/key}
 
 
 <script lang="ts">
-    import Overview from "../tabs/Overview.svelte";
-    import Settings from "../tabs/Settings.svelte";
-    import About from "../tabs/About.svelte";
-    import Assistant from "../Knowledge/Assistant.svelte";
-    import PageView from "../Knowledge/PageView.svelte";
-    import Library from "../Knowledge/Library.svelte";
-    import Calendar from "../Knowledge/Calendar.svelte";
+    import Editor from "../Editor/Editor.svelte";
+    import ReaderTest from "../tabs/ReaderTest.svelte";
     import FeedView from "../Feed/FeedView.svelte";
     import type { Tab } from "./defs";
 

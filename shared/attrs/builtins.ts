@@ -14,8 +14,5 @@ export type BuiltinAttrValues = {
 
 export const builtinAttrsByPageKind = {
     editable: ["deleted"],
-    paper: ["deleted"],
-    task: ["deleted"],
-    event: ["deleted"],
-    annotation: ["deleted"]
+    paper: ["deleted"]
 } as const satisfies Record<string, readonly BuiltinAttrId[]>;

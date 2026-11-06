@@ -12,8 +12,6 @@
                 {#each toolbarState.formats as format (format.name)}
                     <Toolbar.Button
                         class={format.active ? "tool-button active" : "tool-button"}
-                        aria-label={format.label}
-                        title={format.label}
                         disabled={format.disabled}
                         onclick={() => editor?.chain().focus().toggleMark(format.name).run()}
                     >
@@ -31,8 +29,6 @@
                 <Color {editor} anchor={element} bind:element={colorElement} bind:open={colorOpen} />
                 <Toolbar.Button
                     class="tool-button"
-                    aria-label="清除格式"
-                    title="清除格式"
                     disabled={!toolbarState.canClear}
                     onclick={clearFormat}
                 >
@@ -43,13 +39,13 @@
                 </Toolbar.Button>
                 <span class="separator"></span>
                 <div class="history-actions">
-                    <Toolbar.Button class="tool-button" aria-label="撤销" title="撤销" disabled={!toolbarState.canUndo} onclick={() => editor?.chain().focus().undo().run()}>
+                    <Toolbar.Button class="tool-button" disabled={!toolbarState.canUndo} onclick={() => editor?.chain().focus().undo().run()}>
                         <span class="icon">
                             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
                             {@html undoIcon}
                         </span>
                     </Toolbar.Button>
-                    <Toolbar.Button class="tool-button" aria-label="重做" title="重做" disabled={!toolbarState.canRedo} onclick={() => editor?.chain().focus().redo().run()}>
+                    <Toolbar.Button class="tool-button" disabled={!toolbarState.canRedo} onclick={() => editor?.chain().focus().redo().run()}>
                         <span class="icon">
                             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
                             {@html redoIcon}
@@ -67,11 +63,11 @@
         max-width: calc(100vw - 16px);
         padding: .25rem;
         overflow: visible;
-        border: 1.5px solid var(--c-ink);
+        border: 1px solid var(--dc-c-popover-border);
         border-radius: .5rem;
         color: var(--dc-c-popover-text);
         background: var(--dc-c-surface);
-        box-shadow: 3px 4px 0 var(--c-ink);
+        box-shadow: 0 .25rem 1rem var(--dc-c-popover-shadow-soft);
         font-size: .8125rem;
     }
     .actions, .history-actions {
@@ -299,7 +295,7 @@
 
             if (!inside && instance && !instance.isDestroyed) {
                 const { selection } = instance.state;
-                if (!selection.empty && selection.$head.parent.inlineContent) instance.commands.setTextSelection(selection.head);
+                if (!selection.empty) instance.commands.setTextSelection(selection.head);
                 // Scrollbars and drag handles may keep focus and the browser selection in the editor.
                 dom.blur();
                 const nativeSelection = window.getSelection();
