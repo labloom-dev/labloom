@@ -62,6 +62,7 @@ export default defineConfig({
                             case "saveSource": result = await feed.saveSource(args[0] as FeedSourceInput); break;
                             case "removeSource": result = feed.removeSource(args[0] as string); break;
                             case "refresh": result = await feed.refresh((args[0] ?? undefined) as string | undefined); break;
+                            case "setReadAll": result = feed.setReadAll(args[0] as FeedQuery); break;
                             case "setRead": result = feed.setRead(args[0] as string, args[1] as boolean); break;
                             case "openItem": result = feed.itemURL(args[0] as string); break;
                             default: throw new Error("未知的预览操作。");

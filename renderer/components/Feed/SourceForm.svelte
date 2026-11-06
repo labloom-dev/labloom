@@ -44,6 +44,10 @@
     {#if source && address.url && address.url !== source.url}
         <p class="hint">修改地址会保留此来源已保存的条目。</p>
     {/if}
+    <label>分组<input bind:value={group} maxlength="100" placeholder="例如：人工智能、待读博客" disabled={pending} /></label>
+    <label>自动刷新<select bind:value={interval} disabled={pending}><option value={0}>仅手动刷新</option><option value={15}>每 15 分钟</option><option value={60}>每小时</option><option value={360}>每 6 小时</option><option value={1440}>每天</option></select></label>
+    <label>偏好关键词<input bind:value={preferences} maxlength="2000" placeholder="用逗号分隔，命中任意关键词即可筛选" disabled={pending} /></label>
+    <label>来源状态<select bind:value={paused} disabled={pending}><option value={false}>正常更新</option><option value={true}>暂停自动更新，保留内容</option></select></label>
     <div class="actions">
         <button type="submit" disabled={pending || !address.url}>{pending ? "正在处理…" : "保存并校验来源"}</button>
         <button type="button" disabled={pending} onclick={oncancel}>取消</button>
@@ -53,9 +57,10 @@
 
 <style>
     form {
-        padding: 16px;
-        border: var(--border-width) solid var(--c-popover-border);
-        border-radius: 6px;
+        padding: 24px;
+        border: 1.5px solid var(--c-ink);
+        box-shadow: var(--c-shadow);
+        border-radius: 10px;
         background: var(--c-surface);
     }
     h3 {
@@ -65,17 +70,17 @@
     label {
         display: flex;
         flex-direction: column;
-        gap: 4px;
+        gap: 8px;
         margin-bottom: 12px;
         font-size: 13px;
     }
     input, select {
         width: 100%;
         min-width: 0;
-        height: 24px;
-        padding-inline: 6px;
+        height: 38px;
+        padding-inline: 12px;
         border: var(--border-width) solid var(--c-reader-input-border);
-        border-radius: 6px;
+        border-radius: 10px;
         background: var(--c-surface);
         color: inherit;
         font: inherit;
@@ -101,13 +106,18 @@
     }
     button {
         box-sizing: border-box;
-        min-height: 28px;
-        padding: 0 8px;
+        min-height: 36px;
+        padding: 8px 13px;
         border: var(--border-width) solid var(--c-reader-input-border);
-        border-radius: 6px;
+        border-radius: 10px;
         background: var(--c-surface);
         color: inherit;
         font: inherit;
+    }
+    button[type="submit"] {
+        background: var(--c-gold);
+        border-color: var(--c-ink);
+        font-weight: 800;
     }
     button:hover:not(:disabled) {
         background: var(--c-surface-hover);
@@ -143,6 +153,10 @@
     let name = $state(untrack(() => source?.name ?? ""));
     let url = $state(untrack(() => source?.url ?? ""));
     let kind = $state(untrack(() => blogs.find(blog => blog.url === source?.url)?.url ?? "url"));
+    let group = $state(untrack(() => source?.group ?? ""));
+    let paused = $state(untrack(() => source?.paused ?? false));
+    let interval = $state(untrack(() => source?.interval ?? 60));
+    let preferences = $state(untrack(() => source?.keywords ?? ""));
     let categories = $state("");
     let keyword = $state("");
     const address = $derived.by(() => {
@@ -161,6 +175,6 @@
 
     async function submit(event: SubmitEvent): Promise<void> {
         event.preventDefault();
-        if (!pending && address.url) await onsave({ id: source?.id, name, url: address.url });
+        if (!pending && address.url) await onsave({ id: source?.id, name, url: address.url, group, paused, interval, keywords: preferences });
     }
 </script>

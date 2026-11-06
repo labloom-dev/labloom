@@ -64,6 +64,15 @@ export class Startup {
         return this.state;
     }
 
+    switchWorkspace(path: string): void {
+        const next = openWorkspace(path);
+        try { this.storage.remember(next.info); }
+        catch (error) { next.database.close(); throw error; }
+        this.workspace?.database.close();
+        this.workspace = next;
+        this.state = { status: "ready", workspace: next.info };
+    }
+
     close(): void {
         this.workspace?.database.close();
         this.workspace = null;

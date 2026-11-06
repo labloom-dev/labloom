@@ -5,6 +5,7 @@ import "../styles/colors.css";
 import "../styles/layouts.css";
 import "../styles/base.css";
 import "../styles/elements.css";
+import "../styles/workspace.css";
 import "./feed.css";
 
 async function request<T>(method: keyof FeedAPI, ...args: unknown[]): Promise<T> {
@@ -23,6 +24,7 @@ const api: FeedAPI = {
     saveSource: source => request("saveSource", source),
     removeSource: id => request("removeSource", id),
     refresh: id => request("refresh", id),
+    setReadAll: query => request("setReadAll", query),
     setRead: (id, isRead) => request("setRead", id, isRead),
     openItem: async id => {
         // Open synchronously so the browser keeps this within the user's gesture.

@@ -3,9 +3,10 @@ import { runMigrations } from "./migrations/runner";
 import { v1 } from "./migrations/v1";
 import { v2 } from "./migrations/v2";
 import { v3 } from "./migrations/v3";
+import { v4 } from "./migrations/v4";
 
 // Append new migrations; never edit a published version to introduce a new schema.
-const workspaceMigrations = [v1, v2, v3] as const;
+const workspaceMigrations = [v1, v2, v3, v4] as const;
 export const workspaceFormatVersion = workspaceMigrations[workspaceMigrations.length - 1].to;
 
 export function migrateWorkspaceSchema(database: Database.Database): void {
