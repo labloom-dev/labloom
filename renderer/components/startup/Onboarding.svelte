@@ -72,7 +72,7 @@
         display: flex;
         padding: 32px 28px;
         background-color: var(--c-cream);
-        background-image: radial-gradient(#d9cfb9 .85px, transparent .85px);
+        background-image: radial-gradient(var(--c-dots, #d9cfb9) .85px, transparent .85px);
         background-size: 18px 18px;
         color: var(--c-popover-text);
     }

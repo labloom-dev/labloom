@@ -1,10 +1,14 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { AppAPI } from "../shared/app";
-import { appChannels, feedChannels, startupChannels } from "../shared/ipc";
+import { appChannels, appearanceChannels, feedChannels, startupChannels } from "../shared/ipc";
 
 // The renderer only gets this typed bridge, never ipcRenderer itself.
 const api: AppAPI = {
     openDevTools: () => ipcRenderer.send(appChannels.openDevTools),
+    appearance: {
+        get: () => ipcRenderer.invoke(appearanceChannels.get),
+        save: value => ipcRenderer.invoke(appearanceChannels.save, value)
+    },
     feed: {
         getState: query => ipcRenderer.invoke(feedChannels.getState, query),
         saveSource: source => ipcRenderer.invoke(feedChannels.saveSource, source),

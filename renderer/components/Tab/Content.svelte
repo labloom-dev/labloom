@@ -6,7 +6,7 @@
     {:else if tab.type === "about"}
         <About />
     {:else if tab.type === "settings"}
-        <div>settings</div>
+        <Settings />
     {:else if tab.type === "reader-test"}
         <ReaderTest />
     {:else if tab.type === "feed"}
@@ -19,6 +19,7 @@
 
 <script lang="ts">
     import About from "../tabs/About.svelte";
+    import Settings from "../tabs/Settings.svelte";
     import Editor from "../Editor/Editor.svelte";
     import ReaderTest from "../tabs/ReaderTest.svelte";
     import FeedView from "../Feed/FeedView.svelte";

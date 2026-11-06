@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node
 import { isAbsolute, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { Workspace } from "../../shared/types/startup";
+import { defaultAppearance, isAppearance, type Appearance } from "../../shared/types/appearance";
 
 type AppConfig = {
     version: 1;
@@ -79,7 +80,27 @@ export class AppStorage {
 
     remember(workspace: Workspace): void {
         if (!this.config) throw new Error("The configuration has not been loaded successfully. Try again.");
-        const config: AppConfig = { ...this.config, lastWorkspace: workspace };
+        this.write({ ...this.config, lastWorkspace: workspace });
+    }
+
+    getAppearance(): Appearance {
+        if (!this.config) throw new Error("The configuration has not been loaded successfully. Try again.");
+        return isAppearance(this.config.appearance) ? this.appearanceFields(this.config.appearance) : { ...defaultAppearance };
+    }
+
+    saveAppearance(value: unknown): Appearance {
+        if (!this.config) throw new Error("The configuration has not been loaded successfully. Try again.");
+        if (!isAppearance(value)) throw new Error("Invalid appearance preferences.");
+        const appearance = this.appearanceFields(value);
+        this.write({ ...this.config, appearance });
+        return { ...appearance };
+    }
+
+    private appearanceFields(value: Appearance): Appearance {
+        return { theme: value.theme, readingSize: value.readingSize, motion: value.motion };
+    }
+
+    private write(config: AppConfig): void {
         const temporary = join(this.root, `config-${randomUUID()}.tmp`);
         try {
             writeFileSync(temporary, JSON.stringify(config, null, 4), { encoding: "utf8", flag: "wx" });

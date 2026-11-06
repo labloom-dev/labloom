@@ -2,6 +2,11 @@ export const appChannels = {
     openDevTools: "window:open-devtools"
 } as const;
 
+export const appearanceChannels = {
+    get: "appearance:get",
+    save: "appearance:save"
+} as const;
+
 export const startupChannels = {
     getState: "startup:get-state",
     retry: "startup:retry",

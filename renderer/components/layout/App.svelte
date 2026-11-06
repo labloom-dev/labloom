@@ -33,6 +33,7 @@
     import Main from "./Main.svelte";
     import Onboarding from "../startup/Onboarding.svelte";
     import { logUpgradeFailure } from "../startup/log-upgrade-failure";
+    import { initializeAppearance } from "./preferences.svelte";
 
     let startup = $state<StartupState | null>(null);
     let pending = $state(true);
@@ -65,6 +66,8 @@
     }
 
     onMount(() => {
+        const stopAppearance = initializeAppearance();
         void run(() => window.api.startup.getState());
+        return stopAppearance;
     });
 </script>

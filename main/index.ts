@@ -9,6 +9,7 @@ import { AppStorage, developmentDataPath } from "./storage/app";
 import { Startup } from "./startup/startup";
 import { registerStartupIPCs } from "./startup/ipc";
 import { registerFeedIPCs } from "./feed/ipc";
+import { registerAppearanceIPCs } from "./appearance/ipc";
 
 
 // Set both paths before ready, so development also isolates Chromium state.
@@ -72,6 +73,7 @@ function createWindow(): void {
     contents.on("render-process-gone", (_event, details) => applicationLog?.record("Renderer exited", details));
     registerStartupIPCs(mainWindow, startup);
     registerFeedIPCs(contents, startup);
+    registerAppearanceIPCs(mainWindow, storage);
     on(contents, appChannels.openDevTools, () => contents.openDevTools({ mode: "detach" }));
 
     mainWindow.once("ready-to-show", () => {

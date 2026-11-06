@@ -113,7 +113,7 @@
         padding: 0 12px 16px;
         border: 1px dashed #c8b997;
         border-radius: 12px;
-        background: repeating-linear-gradient(-45deg, #faf6eb, #faf6eb 5px, #f5f0e4 5px, #f5f0e4 6px);
+        background: repeating-linear-gradient(-45deg, var(--c-note-stripe, #faf6eb), var(--c-note-stripe, #faf6eb) 5px, var(--c-note-line, #f5f0e4) 5px, var(--c-note-line, #f5f0e4) 6px);
         text-align: center;
     }
     .small-bloom {
