@@ -1,10 +1,10 @@
 <main>
     <Tab.Root initialTabs={[
-        { id: getTabID(), title: "总览", type: "overview" },
+        { id: getTabID(), title: "我的花园", type: "overview" },
         { id: getTabID(), title: "设置", type: "settings" },
         { id: getTabID(), title: "关于", type: "about" },
         { id: getTabID(), title: "编辑器测试", type: "page", pageId: getUUID() },
-        { id: getTabID(), title: "阅读器测试", type: "reader-test" }
+        { id: getTabID(), title: "文献阅读", type: "reader-test" }
     ]} />
 </main>
 

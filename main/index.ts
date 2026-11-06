@@ -45,12 +45,12 @@ function createWindow(): void {
 
     const mainWindow = new BrowserWindow({
         ...(process.platform !== "darwin" ? { titleBarOverlay: {
-            color: "#ddd",
-            symbolColor: "#000000",
+            color: "#fffdf7",
+            symbolColor: "#302c25",
             height: 36
         }} : {}),
-        width: 960,
-        height: 540,
+        width: 1280,
+        height: 860,
         minWidth: minWindowWidth,
         minHeight: minContentHeight,
         show: false,

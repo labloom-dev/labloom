@@ -1,7 +1,7 @@
 {#if startup?.status === "ready"}
     <NavBar />
     <div class="container">
-        <Sidebar />
+        <Sidebar workspace={startup.workspace} />
         <Main />
     </div>
 {:else}
@@ -26,6 +26,7 @@
     import "../../styles/layouts.css";
     import "../../styles/base.css";
     import "../../styles/elements.css";
+    import "../../styles/workspace.css";
 
     import NavBar from "./NavBar.svelte";
     import Sidebar from "./Sidebar.svelte";
