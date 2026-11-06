@@ -24,7 +24,9 @@
         </div>
         {#if status.kind === "empty"}
             <div class="overlay">
-                <p>没有可显示的 PDF。</p>
+                <div class="reader-art"><Bloom /></div>
+                <strong>读一页，也是一点收获。</strong>
+                <p>点击上方“打开本地 PDF”，开始阅读。</p>
             </div>
         {:else if status.kind === "loading"}
             <div class="overlay">
@@ -35,7 +37,7 @@
                 <p class:error={status.incorrect}>
                     {status.incorrect ? "密码错误，请重新输入。" : "此 PDF 受密码保护，请输入密码。"}
                 </p>
-                <input type="password" autocomplete="off" bind:value={password} {@attach element => element.focus()} />
+                <input aria-label="PDF 密码" type="password" autocomplete="off" bind:value={password} {@attach element => element.focus()} />
                 <div class="actions">
                     <button type="submit" class="primary" disabled={!password}>打开</button>
                     <button type="button" onclick={cancelPassword}>取消</button>
@@ -82,6 +84,13 @@
         color: var(--c-reader-muted-text);
         font-size: 14px;
     }
+    .reader-art {
+        width: 150px;
+    }
+    .overlay strong {
+        color: var(--c-ink);
+        font-size: 17px;
+    }
     .overlay p {
         margin: 0;
         max-width: 80%;
@@ -126,6 +135,7 @@
 
 <script lang="ts">
     import { onMount, untrack } from "svelte";
+    import Bloom from "../utils/Bloom.svelte";
     import Toolbar from "./Toolbar.svelte";
     import type { ReaderError, ReaderFindStatus, ReaderScale, ReaderSource, ReaderViewState } from "./defs";
     import {
