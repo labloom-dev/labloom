@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow } from "electron";
+import { app, shell, dialog, BrowserWindow } from "electron";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import icon from "../resources/labloom-2x-trs.png?asset";
@@ -8,7 +8,9 @@ import { captureConsole, LogDirectory } from "./logging";
 import { AppStorage, developmentDataPath } from "./storage/app";
 import { Startup } from "./startup/startup";
 import { registerStartupIPCs } from "./startup/ipc";
-import { registerFeedIPCs } from "./feed/ipc";
+import { registerAssistantIPCs } from "./assistant/ipc";
+import { registerKnowledgeIPCs } from "./knowledge/ipc";
+import { registerFeedIPCs, startFeedScheduler } from "./feed/ipc";
 
 
 // Set both paths before ready, so development also isolates Chromium state.
@@ -45,12 +47,13 @@ function createWindow(): void {
 
     const mainWindow = new BrowserWindow({
         ...(process.platform !== "darwin" ? { titleBarOverlay: {
-            color: "#ddd",
-            symbolColor: "#000000",
+            color: "#fffdf7",
+            symbolColor: "#302c25",
             height: 36
         }} : {}),
-        width: 960,
-        height: 540,
+        width: 1280,
+        height: 860,
+        backgroundColor: "#f7f3e8",
         minWidth: minWindowWidth,
         minHeight: minContentHeight,
         show: false,
@@ -72,6 +75,8 @@ function createWindow(): void {
     contents.on("render-process-gone", (_event, details) => applicationLog?.record("Renderer exited", details));
     registerStartupIPCs(mainWindow, startup);
     registerFeedIPCs(contents, startup);
+    registerKnowledgeIPCs(mainWindow, startup);
+    registerAssistantIPCs(contents, startup);
     on(contents, appChannels.openDevTools, () => contents.openDevTools({ mode: "detach" }));
 
     mainWindow.once("ready-to-show", () => {
@@ -79,6 +84,19 @@ function createWindow(): void {
         const [, contentHeight] = mainWindow.getContentSize();
         mainWindow.setMinimumSize(minWindowWidth, minContentHeight + windowHeight - contentHeight);
         mainWindow.show();
+    });
+
+    contents.on("will-prevent-unload", event => {
+        const choice = dialog.showMessageBoxSync(mainWindow, {
+            type: "warning",
+            title: "尚未保存的更改",
+            message: "部分页面仍有尚未保存的更改。",
+            detail: "返回编辑可继续等待保存或处理保存错误。仍然关闭会丢弃尚未保存的更改。",
+            buttons: ["返回编辑", "仍然关闭"],
+            defaultId: 0,
+            cancelId: 0
+        });
+        if (choice === 1) event.preventDefault();
     });
 
     contents.setWindowOpenHandler(({ url }) => {
@@ -133,6 +151,8 @@ function createWindow(): void {
 app.whenReady().then(() => {
     app.setAppUserModelId("dev.labloom.app");
     startup.restore();
+    const stopFeed = startFeedScheduler(startup);
+    app.once("will-quit", stopFeed);
     createWindow();
 });
 

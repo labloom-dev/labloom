@@ -1,11 +1,24 @@
+@font-face {
+    font-family: "Nunito";
+    src: url("../assets/fonts/nunito.ttf") format("truetype");
+    font-style: normal;
+    font-weight: 200 900;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "JetBrains Mono";
+    src: url("../assets/fonts/jetbrains-mono.ttf") format("truetype");
+    font-style: normal;
+    font-weight: 100 800;
+    font-display: swap;
+}
+
 *, *::before, *::after {
     box-sizing: border-box;
     text-rendering: optimizeLegibility;
-    outline: none;
-    scroll-behavior: smooth;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    font-smooth: always;
     line-height: normal;
     scrollbar-gutter: auto;
     scrollbar-width: thin;
@@ -24,7 +37,10 @@ body {
     margin: 0;
     height: 100vh;
     width: 100vw;
-    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", Helvetica, "Apple Color Emoji", "Noto Sans Arabic", "Noto Sans Hebrew", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol";
+    color: var(--c-ink);
+    background: var(--c-cream);
+    font-size: 14px;
+    font-family: "Nunito", "PingFang SC", "Microsoft YaHei", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", Helvetica, "Apple Color Emoji", "Noto Sans Arabic", "Noto Sans Hebrew", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol";
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -41,13 +57,14 @@ body {
 }
 
 .tiptap.ProseMirror {
-    min-height: 100cqh;
+    min-height: 55cqh;
     width: 100%;
     cursor: text;
     display: flex;
     flex-flow: column nowrap;
     gap: .125em;
-    padding: 16px 48px 20cqh;
+    padding: 24px clamp(20px, 5cqw, 64px) 80px;
+    user-select: text;
 }
 
 
@@ -60,4 +77,44 @@ body {
         word-break: break-word;
         overflow-wrap: break-word;
     }
+}
+
+button, input, textarea, select {
+    color: inherit;
+    font: inherit;
+}
+
+button, a, input, select, textarea, summary {
+    touch-action: manipulation;
+}
+
+:focus-visible {
+    outline: 3px solid var(--c-border-focus);
+    outline-offset: 3px;
+}
+
+input, textarea, [contenteditable="true"] {
+    user-select: text;
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: .45;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation: none !important;
+        transition: none !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+:root[data-motion="off"] *, :root[data-motion="off"] *::before, :root[data-motion="off"] *::after {
+    animation: none !important;
+    transition: none !important;
+}
+
+.tiptap.ProseMirror {
+    font-size: var(--reading-font-size, 16px);
 }

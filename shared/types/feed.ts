@@ -2,12 +2,20 @@ export type FeedSourceInput = {
     id?: string;
     name: string;
     url: string;
+    group?: string;
+    paused?: boolean;
+    interval?: number;
+    keywords?: string;
 };
 
 export type FeedSource = {
     id: string;
     name: string;
     url: string;
+    group?: string;
+    paused?: boolean;
+    interval?: number;
+    keywords?: string;
     lastRefreshed: string | null;
     lastAdded: number;
     error: string | null;
@@ -35,6 +43,9 @@ export type FeedQuery = {
     keyword?: string;
     unreadOnly?: boolean;
     offset?: number;
+    group?: string;
+    sort?: "newest" | "oldest" | "unread";
+    preferredOnly?: boolean;
 };
 
 export type FeedState = {
@@ -48,6 +59,7 @@ export interface FeedAPI {
     saveSource: (source: FeedSourceInput) => Promise<string>;
     removeSource: (id: string) => Promise<void>;
     refresh: (sourceId?: string) => Promise<void>;
+    setReadAll: (query: FeedQuery) => Promise<void>;
     setRead: (id: string, isRead: boolean) => Promise<void>;
     openItem: (id: string) => Promise<void>;
 }
