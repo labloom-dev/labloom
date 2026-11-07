@@ -10,6 +10,8 @@ import { perform, saveAll } from "../Knowledge/state.svelte";
 export const destinations = [
     { type: "overview", title: "我的花园", icon: "home" },
     { type: "feed", title: "订阅动态", icon: "feed" },
+    { type: "library", title: "知识库", icon: "library" },
+    { type: "papers", title: "文献库", icon: "book" },
     { type: "reader-test", title: "文献阅读", icon: "book" },
     { type: "settings", title: "偏好设置", icon: "settings" },
     { type: "about", title: "关于知织", icon: "home" }

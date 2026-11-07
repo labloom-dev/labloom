@@ -10,7 +10,7 @@ export async function restoreTabs(): Promise<void> {
         if (!record(group) || typeof group.id !== "string" || groupIds.includes(group.id) || !Array.isArray(group.tabs)) return;
         groupIds.push(group.id);
         for (const tab of group.tabs) {
-            if (!record(tab) || typeof tab.id !== "string" || tabIds.includes(tab.id) || typeof tab.title !== "string" || !["page", "overview", "feed", "settings", "about", "reader-test"].includes(String(tab.type)) || (tab.type === "page" && typeof tab.pageId !== "string")) return;
+            if (!record(tab) || typeof tab.id !== "string" || tabIds.includes(tab.id) || typeof tab.title !== "string" || !["page", "overview", "library", "papers", "feed", "settings", "about", "reader-test"].includes(String(tab.type)) || (tab.type === "page" && typeof tab.pageId !== "string")) return;
             tabIds.push(tab.id);
         }
         if (group.activeTabId !== null && !group.tabs.some(tab => tab.id === group.activeTabId)) return;

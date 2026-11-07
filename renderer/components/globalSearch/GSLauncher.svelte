@@ -1,4 +1,4 @@
-<Popover.Root>
+<Popover.Root bind:open>
     <Popover.Trigger>
         {#snippet child({ props })}
             <button {...props} class="trigger">
@@ -20,7 +20,7 @@
             {#snippet child({ wrapperProps, props })}
                 <div {...wrapperProps}>
                     <div {...props} class="popover-content">
-                        <GSPopover />
+                        <GSPopover onclose={() => open = false} />
                     </div>
                 </div>
             {/snippet}
@@ -81,6 +81,7 @@
 
 
 <script lang="ts">
+    let open = $state(false);
     import { Popover } from "bits-ui";
     import GSPopover from "./GSPopover.svelte";
     import search from "../../assets/carbon--search.svg?raw";
