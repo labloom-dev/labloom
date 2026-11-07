@@ -1,5 +1,6 @@
 import { type AttributeDefinition, type AttributeImpact, type AttributeValue } from "./attributes";
 import { type Backlink, type CommitResult, type ContentBlock, type Mutation, type PageKind, type PageList, type PageQuery, type PageRecord, type Target } from "./content";
+import { type AnchorInput, type PaperImport, type PaperResources, type ReadingPosition } from "./papers";
 
 export type HistoryState = { canUndo: boolean; redo: { id: string; time: string }[] };
 export type Notice = { id: string; pageId: string; title: string; createdAt: string; isRead: boolean };
@@ -17,6 +18,13 @@ export type KnowledgeAPI = {
     closeTab(tabId: string): Promise<void>;
     loadTabs(): Promise<unknown>;
     saveTabs(value: unknown): Promise<void>;
+    importPDF(pageId?: string): Promise<PaperImport | null>;
+    resources(pageId: string): Promise<PaperResources>;
+    readFile(fileId: string): Promise<Uint8Array>;
+    position(pageId: string, fileId: string, value: ReadingPosition): Promise<void>;
+    highlight(pageId: string, anchor: AnchorInput, color: string): Promise<void>;
+    removeHighlight(id: string): Promise<void>;
+    annotate(pageId: string, anchor: AnchorInput): Promise<string>;
     onChanged(listener: () => void): () => void;
     onCloseRequested(listener: () => Promise<boolean>): () => void;
 };

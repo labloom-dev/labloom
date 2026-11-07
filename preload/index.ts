@@ -20,6 +20,13 @@ const api: AppAPI = {
         closeTab: id => ipcRenderer.invoke(knowledgeChannel, "closeTab", id),
         loadTabs: () => ipcRenderer.invoke(knowledgeChannel, "loadTabs"),
         saveTabs: value => ipcRenderer.invoke(knowledgeChannel, "saveTabs", value),
+        importPDF: id => ipcRenderer.invoke(knowledgeChannel, "importPDF", id),
+        resources: id => ipcRenderer.invoke(knowledgeChannel, "resources", id),
+        readFile: id => ipcRenderer.invoke(knowledgeChannel, "readFile", id),
+        position: (id, fileId, value) => ipcRenderer.invoke(knowledgeChannel, "position", id, fileId, value),
+        highlight: (id, anchor, color) => ipcRenderer.invoke(knowledgeChannel, "highlight", id, anchor, color),
+        removeHighlight: id => ipcRenderer.invoke(knowledgeChannel, "removeHighlight", id),
+        annotate: (id, anchor) => ipcRenderer.invoke(knowledgeChannel, "annotate", id, anchor),
         onChanged: listener => {
             const handler = (): void => listener();
             ipcRenderer.on(knowledgeChanged, handler);

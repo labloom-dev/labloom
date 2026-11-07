@@ -35,6 +35,9 @@
         {/if}
         <div class="page-body">
             <div class="main-content">
+                {#if page.kind === "paper"}
+                    <PaperPanel {page} anchorId={tab.anchorId} beforeChange={() => current.save()} />
+                {/if}
                 <Editor session={current} tabId={tab.id} />
                 <section class="backlinks">
                     <h3>引用此页</h3>
@@ -86,6 +89,7 @@
     import { updateTab } from "../Tab/api";
     import Editor from "../Editor/Editor.svelte";
     import Properties from "./Properties.svelte";
+    import PaperPanel from "./PaperPanel.svelte";
     let { tab }: { tab: Extract<Tab, { type: "page" }> } = $props();
     const current = untrack(() => session(tab.id, tab.pageId));
     const page = $derived(current.state.page);

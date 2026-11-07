@@ -9,7 +9,7 @@
             <span class="welcome-label">给好奇心留一块地方 <span><Icon name="star" size={13} /></span></span>
             <h2>每个想法，都值得<span>生根发芽。</span></h2>
             <p>从一篇论文、一段阅读或一个小小的灵感开始，<br />慢慢编织属于你的知识世界。</p>
-            <div class="welcome-actions"><button class="button primary" onclick={() => openDestination("reader-test")}><Icon name="book" size={15} />开始阅读</button><button class="text-button" onclick={() => createPage()}>记下一个想法 <Icon name="arrow" size={16} /></button></div>
+            <div class="welcome-actions"><button class="button primary" onclick={() => openDestination("papers")}><Icon name="book" size={15} />开始阅读</button><button class="text-button" onclick={() => createPage()}>记下一个想法 <Icon name="arrow" size={16} /></button></div>
         </div>
         <div class="hero-art"><span class="art-label">a little idea, a little bloom</span><Bloom /><span class="art-caption">GROW AT YOUR OWN PACE</span></div>
     </div>
@@ -49,7 +49,7 @@
             <header class="card-heading"><h2><span class="heading-icon sage"><Icon name="book" size={18} /></span>从这里开始</h2><span class="badge">一步一步来</span></header>
             <div class="steps">
                 <button onclick={() => openDestination("feed")}><span class="step-number">01</span><span><strong>发现值得读的内容</strong><small>连接 RSS、arXiv 与研究博客</small></span><Icon name="arrow" size={15} /></button>
-                <button onclick={() => openDestination("reader-test")}><span class="step-number sage">02</span><span><strong>给阅读留一点时间</strong><small>打开 PDF，专心读一篇论文</small></span><Icon name="arrow" size={15} /></button>
+                <button onclick={() => openDestination("papers")}><span class="step-number sage">02</span><span><strong>给阅读留一点时间</strong><small>打开 PDF，专心读一篇论文</small></span><Icon name="arrow" size={15} /></button>
                 <button onclick={() => openDestination("settings")}><span class="step-number lilac">03</span><span><strong>让阅读更合心意</strong><small>调整主题、字号与动效</small></span><Icon name="arrow" size={15} /></button>
             </div>
             <div class="little-note"><span><Icon name="star" size={28} /></span><p>知识不必一次成林。<br /><strong>今天种下一颗种子就很好。</strong></p></div>

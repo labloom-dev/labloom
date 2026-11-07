@@ -121,3 +121,31 @@ export const undoNodes = sqliteTable("undo_nodes", {
     after: text("after_state", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
     createdAt: text("created_at").notNull()
 }, table => [index("undo_nodes_tab").on(table.tabId)]);
+
+export const attachments = sqliteTable("attachments", {
+    id: text("id").primaryKey().notNull(),
+    storedName: text("stored_name").notNull().unique(),
+    originalName: text("original_name").notNull(),
+    mediaType: text("media_type").notNull(),
+    size: integer("size").notNull(),
+    sha256: text("sha256").notNull()
+});
+export const pageAttachments = sqliteTable("page_attachments", {
+    pageId: text("page_id").notNull().references(() => pages.id),
+    fileId: text("file_id").notNull().references(() => attachments.id),
+    role: text("role").notNull().default("fulltext"),
+    position: integer("position").notNull()
+}, table => [primaryKey({ columns: [table.pageId, table.fileId, table.role] })]);
+export const anchors = sqliteTable("anchors", {
+    id: text("id").primaryKey().notNull(),
+    fileId: text("file_id").notNull().references(() => attachments.id),
+    pageNumber: integer("page_number").notNull(),
+    rectangles: text("rectangles", { mode: "json" }).$type<import("../../shared/types/papers").Rectangle[]>().notNull(),
+    quote: text("quote").notNull(),
+    context: text("context").notNull()
+}, table => [index("anchors_file_page").on(table.fileId, table.pageNumber)]);
+export const highlights = sqliteTable("highlights", {
+    id: text("id").primaryKey().notNull(),
+    anchorId: text("anchor_id").notNull().references(() => anchors.id),
+    color: text("color").notNull()
+});

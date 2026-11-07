@@ -6,10 +6,12 @@ import { blockText } from "../../shared/content/blocks";
 import { knowledgeChannel, knowledgeChanged, saveBeforeClose, saveBeforeCloseReply } from "../../shared/ipc";
 import { type AttributeDefinition, type AttributeValue } from "../../shared/types/attributes";
 import { type Mutation, type PageKind, type PageQuery } from "../../shared/types/content";
+import { type AnchorInput, type ReadingPosition } from "../../shared/types/papers";
 import { handle, on } from "../ipc";
 import { type Startup } from "../startup/startup";
 import { workspaceMeta } from "../storage/tables";
 import { EditHistory } from "./history";
+import { PaperService } from "./papers";
 import { KnowledgeService } from "./service";
 
 function string(value: unknown): string {
@@ -22,16 +24,16 @@ function changed(): void {
 
 export function registerKnowledgeIPCs(window: BrowserWindow, startup: Startup): void {
     let editorStarted = false;
-    let services: { knowledge: KnowledgeService; history: EditHistory } | undefined;
+    let services: { knowledge: KnowledgeService; history: EditHistory; papers: PaperService } | undefined;
     const get = (): NonNullable<typeof services> => {
         if (services) return services;
         const knowledge = new KnowledgeService(startup.getDatabase());
-        const history = new EditHistory(knowledge);
-        services = { knowledge, history };
+        const history = new EditHistory(knowledge), papers = new PaperService(knowledge, startup.getPath());
+        services = { knowledge, history, papers };
         return services;
     };
     handle(window.webContents, knowledgeChannel, async (method, ...args) => {
-        const { knowledge: k, history } = get();
+        const { knowledge: k, history, papers } = get();
         const [a, b, c] = args;
         let result: unknown;
         switch (method) {
@@ -39,6 +41,8 @@ export function registerKnowledgeIPCs(window: BrowserWindow, startup: Startup): 
             case "get": return k.get(string(a));
             case "definitions": return k.attributes.definitions();
             case "backlinks": return k.backlinks(string(a));
+            case "resources": return papers.resources(string(a));
+            case "readFile": return papers.read(string(a));
             case "history": return history.state(string(a));
             case "loadTabs": editorStarted = true;
                 return k.db.select().from(workspaceMeta).get()?.settings.tabs ?? null;
@@ -80,6 +84,29 @@ export function registerKnowledgeIPCs(window: BrowserWindow, startup: Startup): 
                 k.db.update(workspaceMeta).set({ settings: { ...meta.settings, tabs: a } }).where(eq(workspaceMeta.id, meta.id)).run();
                 return;
             }
+            case "importPDF": {
+                if (a !== undefined) string(a);
+                const selection = await dialog.showOpenDialog(window, { properties: ["openFile"], filters: [{ name: "PDF 文献", extensions: ["pdf"] }] });
+                if (selection.canceled || !selection.filePaths[0]) return null;
+                const path = selection.filePaths[0];
+                const match = a === undefined ? papers.matchingPaper(path) : null;
+                let reusePageId: string | undefined;
+                if (match) {
+                    const choice = await dialog.showMessageBox(window, { type: "question", message: `这个附件已关联《${match.title}》。`, buttons: ["打开已有文献", "另建文献页", "取消"], cancelId: 2 });
+                    if (choice.response === 2) return null;
+                    if (choice.response === 0) reusePageId = match.id;
+                }
+                result = papers.importFile(path, a as string | undefined, reusePageId);
+                break;
+            }
+            case "position": papers.position(string(a), string(b), c as ReadingPosition);
+                return;
+            case "highlight": papers.mark(string(a), b as AnchorInput, string(c));
+                break;
+            case "removeHighlight": papers.removeHighlight(string(a));
+                break;
+            case "annotate": result = papers.annotate(string(a), b as AnchorInput);
+                break;
             default: throw new Error("未知工作区操作。");
         }
         changed();

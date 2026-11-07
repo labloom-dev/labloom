@@ -73,4 +73,9 @@ export class Startup {
         if (!this.workspace || this.state.status !== "ready") throw new Error("请先打开工作区。");
         return this.workspace.db;
     }
+
+    getPath(): string {
+        if (!this.workspace) throw new Error("请先打开工作区。");
+        return this.workspace.info.path;
+    }
 }

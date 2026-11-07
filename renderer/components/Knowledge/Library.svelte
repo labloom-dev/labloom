@@ -6,6 +6,7 @@
             <p>笔记、文献与研究计划，都保存在你的工作区。</p>
         </div>
         <div class="actions">
+            <button class="button" disabled={busy} onclick={importPDF}>导入 PDF</button>
             <button class="button primary" onclick={() => createPage()}>新建笔记</button>
         </div>
     </header>
@@ -104,7 +105,7 @@
                     <Bloom />
                 </div>
                 <strong>{pending ? "正在整理页面…" : "这里还有一片空白"}</strong>
-                <p>试试新建笔记或调整筛选条件。</p>
+                <p>试试新建笔记、导入 PDF，或调整筛选条件。</p>
             </div>
         {/each}
     </div>
@@ -193,6 +194,23 @@
     });
     function formatDate(value: AttributeValue): string {
         return typeof value === "string" ? new Date(value).toLocaleDateString() : "";
+    }
+    async function importPDF(): Promise<void> {
+        busy = true;
+        try {
+            if (!await saveAll()) return;
+            const result = await window.api.knowledge.importPDF();
+            if (result) {
+                info = result.reused ? "该文件已在文献库中，已打开原有文献。" : "PDF 已复制到工作区。";
+                openPage(result.pageId);
+            }
+        }
+        catch (problem) {
+            error = message(problem);
+        }
+        finally {
+            busy = false;
+        }
     }
     async function bulk(): Promise<void> {
         busy = true;

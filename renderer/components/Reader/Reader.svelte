@@ -1,4 +1,4 @@
-<div class="reader" onkeydown={onkeydown}>
+<div class="reader" onkeydown={onkeydown} onpointerup={selectText} onkeyup={selectText}>
     <Toolbar
         bind:this={toolbar}
         disabled={status.kind !== "ready"}
@@ -138,6 +138,8 @@
     import Bloom from "../utils/Bloom.svelte";
     import Toolbar from "./Toolbar.svelte";
     import type { ReaderError, ReaderFindStatus, ReaderScale, ReaderSource, ReaderViewState } from "./defs";
+    import { type Anchor, type AnchorInput, type Highlight } from "../../../shared/types/papers";
+    import { normalizeRectangle, pdfRectangle } from "../../../shared/content/anchors";
     import {
         applyViewState, createViewer, FindState, getViewState, hasText, loadDocument, PasswordResponses,
         setDocument, toReaderError, type PDFDocumentProxy, type Viewer, type ViewerLocation
@@ -150,6 +152,10 @@
         /** Throttled; also called once more when the document is closed or the reader unmounts. */
         onViewStateChange?: (state: ReaderViewState, source: ReaderSource) => void;
         onError?: (error: ReaderError) => void;
+        fileId?: string;
+        anchors?: Anchor[];
+        highlights?: Highlight[];
+        onSelection?: (selection: AnchorInput | null) => void;
     };
 
     type Status =
@@ -159,7 +165,7 @@
         | { kind: "ready" }
         | { kind: "error"; error: ReaderError };
 
-    const { source, viewState, onViewStateChange, onError }: Props = $props();
+    const { source, viewState, onViewStateChange, onError, fileId, anchors = [], highlights = [], onSelection }: Props = $props();
 
     const viewStateReportDelay = 250;
 
@@ -185,6 +191,7 @@
     let reportTimer: ReturnType<typeof setTimeout> | null = null;
     let findQuery = "";
     let textCheck: Promise<boolean> | null = null;
+    let anchorToOpen: Anchor | null = null;
 
     onMount(() => {
         const created = createViewer(container);
@@ -194,6 +201,7 @@
             if (viewState) applyViewState(viewer, viewState);
             else viewer.currentScaleValue = "auto";
             restoring = false;
+            if (anchorToOpen) goToAnchor(anchorToOpen);
         });
         eventBus.on("pagechanging", ({ pageNumber: value }: { pageNumber: number }) => {
             pageNumber = value;
@@ -208,12 +216,80 @@
             reportTimer ??= setTimeout(reportViewState, viewStateReportDelay);
         });
         eventBus.on("updatefindcontrolstate", onFindState);
+        eventBus.on("pagerendered", () => {
+            paintHighlights();
+            if (anchorToOpen) goToAnchor(anchorToOpen);
+        });
+        eventBus.on("rotationchanging", paintHighlights);
         eventBus.on("updatefindmatchescount", ({ matchesCount }: { matchesCount: { current: number; total: number } }) => {
             if (findStatus.kind === "found") findStatus = { ...findStatus, ...matchesCount };
         });
 
         pdf = created;
+        window.addEventListener("workspace-flush", reportViewState);
+        return () => window.removeEventListener("workspace-flush", reportViewState);
     });
+
+    $effect(() => {
+        void anchors; void highlights; const viewer = pdf; if (viewer) untrack(paintHighlights);
+    });
+
+    function selectText(): void {
+        if (!onSelection || !fileId || !pdf || status.kind !== "ready") return;
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed || !selection.rangeCount) {
+            onSelection(null); return;
+        }
+        const range = selection.getRangeAt(0);
+        const start = (range.startContainer.nodeType === Node.ELEMENT_NODE ? range.startContainer as Element : range.startContainer.parentElement)?.closest<HTMLElement>(".page");
+        const end = (range.endContainer.nodeType === Node.ELEMENT_NODE ? range.endContainer as Element : range.endContainer.parentElement)?.closest<HTMLElement>(".page");
+        if (!start || start !== end || !container.contains(start)) {
+            onSelection(null); return;
+        }
+        const number = Number(start.dataset.pageNumber), view = pdf.viewer.getPageView(number - 1);
+        if (!view?.pdfPage) return;
+        const bounds = start.getBoundingClientRect();
+        const rectangles = [...range.getClientRects()].filter(rect => rect.width > 0 && rect.height > 0).map(rect => {
+            const a = view.viewport.convertToPdfPoint(rect.left - bounds.left, rect.top - bounds.top), b = view.viewport.convertToPdfPoint(rect.right - bounds.left, rect.bottom - bounds.top);
+            return normalizeRectangle([a[0], a[1], b[0], b[1]], view.pdfPage!.view);
+        }).filter(rect => rect.width > 0 && rect.height > 0);
+        const quote = selection.toString().trim();
+        onSelection(quote && rectangles.length ? { fileId, pageNumber: number, rectangles, quote, context: quote } : null);
+    }
+
+    function paintHighlights(): void {
+        if (!pdf) return;
+        container.querySelectorAll(".knowledge-highlights").forEach(layer => layer.remove());
+        for (const highlight of highlights) {
+            const anchor = anchors.find(item => item.id === highlight.anchorId);
+            if (!anchor || anchor.fileId !== fileId) continue;
+            const view = pdf.viewer.getPageView(anchor.pageNumber - 1);
+            if (!view?.pdfPage) continue;
+            const layer = document.createElement("div");
+            layer.className = "knowledge-highlights";
+            Object.assign(layer.style, { position: "absolute", inset: "0", pointerEvents: "none", zIndex: "2", mixBlendMode: "multiply" });
+            for (const rect of anchor.rectangles) {
+                const [left, top, right, bottom] = pdfRectangle(rect, view.pdfPage.view);
+                const [x1, y1] = view.viewport.convertToViewportPoint(left, top);
+                const [x2, y2] = view.viewport.convertToViewportPoint(right, bottom);
+                const mark = document.createElement("span");
+                Object.assign(mark.style, { position: "absolute", left: `${Math.min(x1, x2)}px`, top: `${Math.min(y1, y2)}px`, width: `${Math.abs(x2 - x1)}px`, height: `${Math.abs(y2 - y1)}px`, backgroundColor: highlight.color, opacity: ".5" });
+                layer.appendChild(mark);
+            }
+            view.div.appendChild(layer);
+        }
+    }
+
+    export function goToAnchor(anchor: Anchor): void {
+        anchorToOpen = anchor;
+        if (!pdf || status.kind !== "ready") return;
+        pdf.viewer.currentPageNumber = anchor.pageNumber;
+        const view = pdf.viewer.getPageView(anchor.pageNumber - 1);
+        if (!view?.pdfPage || !anchor.rectangles.length) return;
+        const [left, top] = pdfRectangle(anchor.rectangles[0], view.pdfPage.view);
+        pdf.viewer.scrollPageIntoView({ pageNumber: anchor.pageNumber, destArray: [null, { name: "XYZ" }, left, top, null], allowNegativeOffset: true });
+        anchorToOpen = null;
+    }
 
     $effect(() => {
         const current = source;
