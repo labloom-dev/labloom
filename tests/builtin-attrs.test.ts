@@ -60,17 +60,16 @@ function versionTwo<T>(setup: (database: Database.Database) => T): { root: strin
     }
 }
 
-test("only deleted is seeded, with an empty value for each supported page kind", t => {
+test("registered builtins are seeded, with an empty value for each supported page kind", t => {
     const { database } = fresh(t);
     const definitions = database.prepare("SELECT id, type, metadata FROM attrs ORDER BY id").all();
-    assert.deepEqual(definitions, Object.entries(builtinAttrs).map(([id, definition]) => ({
+    assert.deepEqual(definitions, Object.entries(builtinAttrs).sort(([a], [b]) => a.localeCompare(b)).map(([id, definition]) => ({
         id, type: definition.type, metadata: JSON.stringify(definition.metadata)
     })));
-    assert.deepEqual(definitions, [{ id: "deleted", type: "boolean", metadata: "{}" }]);
     for (const [kind, attrs] of Object.entries(builtinAttrsByPageKind)) {
         const id = page(database, kind);
         assert.deepEqual(database.prepare("SELECT attr_id, value FROM page_attrs WHERE page_id = ? ORDER BY attr_id").all(id),
-            attrs.map(attrId => ({ attr_id: attrId, value: null })));
+            [...attrs].sort().map(attrId => ({ attr_id: attrId, value: null })));
     }
     assert.equal(database.pragma("user_version", { simple: true }), workspaceFormatVersion);
     assert.deepEqual(database.prepare("SELECT user_version AS labloom_format_version FROM pragma_user_version").get(), {
@@ -113,7 +112,7 @@ test("deleted accepts empty and boolean values but cannot be detached or moved",
     assert.throws(() => database.prepare("UPDATE page_attrs SET page_id = ? WHERE page_id = ? AND attr_id = 'deleted'").run(other, id), /cannot remove a builtin attribute/);
     update.run(1, id);
     database.prepare("UPDATE pages SET kind = 'paper' WHERE id = ?").run(id);
-    assert.deepEqual(database.prepare("SELECT attr_id, value FROM page_attrs WHERE page_id = ?").all(id), [{ attr_id: "deleted", value: 1 }]);
+    assert.deepEqual(database.prepare("SELECT attr_id, value FROM page_attrs WHERE page_id = ? AND attr_id = 'deleted'").all(id), [{ attr_id: "deleted", value: 1 }]);
 });
 
 test("ordinary attributes can be attached, removed, and retyped, and page deletion cleans up its values", t => {
@@ -130,13 +129,13 @@ test("ordinary attributes can be attached, removed, and retyped, and page deleti
     assert.deepEqual(database.pragma("foreign_key_check"), []);
 });
 
-test("version 2 gains deleted and empty ownership rows without changing modification time", t => {
+test("version 2 gains registered attributes without changing modification time", t => {
     const fixture = versionTwo(database => [page(database, "editable"), page(database, "paper")]);
     const database = track(t, openWorkspace(fixture.root, fixture.id).database);
     assert.equal(database.pragma("user_version", { simple: true }), workspaceFormatVersion);
-    assert.deepEqual(database.prepare("SELECT id, type, metadata FROM attrs").all(), [{ id: "deleted", type: "boolean", metadata: "{}" }]);
+    assert.equal(database.prepare("SELECT count(*) FROM attrs").pluck().get(), Object.keys(builtinAttrs).length);
     for (const id of fixture.data) {
-        assert.deepEqual(database.prepare("SELECT attr_id, value FROM page_attrs WHERE page_id = ?").all(id), [{ attr_id: "deleted", value: null }]);
+        assert.deepEqual(database.prepare("SELECT attr_id, value FROM page_attrs WHERE page_id = ? AND attr_id = 'deleted'").all(id), [{ attr_id: "deleted", value: null }]);
     }
     assert.deepEqual(database.prepare("SELECT last_modified_at FROM workspace_meta").get(), { last_modified_at: oldTimestamp });
     const paths = readdirSync(join(fixture.root, "backups"));

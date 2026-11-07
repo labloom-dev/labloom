@@ -6,6 +6,10 @@
         {
             "version": 5,
             "tag": "0005_drizzle_baseline"
+        },
+        {
+            "version": 6,
+            "tag": "0006_generic_attributes"
         }
     ]
 }

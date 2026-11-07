@@ -77,6 +77,9 @@ export function openWorkspace(path: string, expectedId?: string): OpenWorkspace 
         if (!Number.isInteger(version) || version < 1 || version > workspaceFormatVersion) {
             throw new Error("This workspace format is incompatible with this version of Labloom. Open it with a compatible version.");
         }
+        if (database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'page_details'").get()) {
+            throw new Error("此工作区来自旧 knowledge-garden 原型，其版本号与通用属性模型不兼容。请使用原版本读取并迁移数据；本次未修改工作区。");
+        }
         const db = createWorkspaceDatabase(database);
         const rows = db.select({ id: workspaceMeta.id, name: workspaceMeta.name }).from(workspaceMeta).all();
         const row = rows[0];

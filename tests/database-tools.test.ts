@@ -15,6 +15,9 @@ import { v4 } from "../main/storage/migrations/v4";
 const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const localRoot = join(projectRoot, ".local");
 const timestamp = "2001-02-03T04:05:06.789Z";
+const journal = JSON.parse(readFileSync(join(projectRoot, "main/storage/migrations/generated/meta/_journal.json"), "utf8"));
+const nextVersion: number = journal.entries.at(-1).version + 1;
+const nextPrefix = String(nextVersion).padStart(4, "0");
 
 function fixture(t: TestContext): string {
     mkdirSync(localRoot, { recursive: true });
@@ -113,7 +116,7 @@ test("generated table rebuilds preserve legacy rows, STRICT storage, triggers, a
     assert.match(rejected(root, "check"), /definitions have changed/);
     cli(root, "generate", "--name", "defaults");
     cli(root, "check");
-    const sql = readFileSync(join(directory, "0006_defaults.sql"), "utf8");
+    const sql = readFileSync(join(directory, `${nextPrefix}_defaults.sql`), "utf8");
     assert.match(sql, /CREATE TABLE `__new_blocks`[\s\S]*?\) STRICT;/);
     assert.match(sql, /CREATE TABLE `__new_feed_sources`/);
     assert.doesNotMatch(sql, /PRAGMA foreign_keys/);
@@ -130,7 +133,7 @@ test("generated table rebuilds preserve legacy rows, STRICT storage, triggers, a
     cli(root, "migrate", "--workspace", workspace);
     const database = new Database(join(workspace, "workspace.sqlite"));
     database.pragma("foreign_keys = ON");
-    assert.equal(database.pragma("user_version", { simple: true }), 6);
+    assert.equal(database.pragma("user_version", { simple: true }), nextVersion);
     assert.equal(database.prepare("SELECT is_read FROM feed_items WHERE id = 'item'").pluck().get(), 1);
     assert.equal(database.prepare("SELECT content FROM blocks WHERE id = 'title'").pluck().get(), "Original");
     assert.equal(database.prepare("SELECT value FROM page_attrs WHERE attr_id = 'custom'").pluck().get(), "000123");
@@ -152,7 +155,7 @@ test("generated table rebuilds preserve legacy rows, STRICT storage, triggers, a
     assert.deepEqual(readdirSync(join(workspace, "backups")), backups);
     const fresh = join(root, "fresh");
     cli(root, "init", "--workspace", fresh);
-    assert.match(cli(root, "status", "--workspace", fresh), /Stored version: 6/);
+    assert.match(cli(root, "status", "--workspace", fresh), new RegExp(`Stored version: ${nextVersion}`));
     rejected(root, "init", "--workspace", fresh);
     database.close();
 });
@@ -196,7 +199,7 @@ test("custom SQL must be filled in and synchronized before migration", async t =
     finally {
         pending.close();
     }
-    const path = join(root, "main/storage/migrations/generated/0006_seed_attribute.sql");
+    const path = join(root, `main/storage/migrations/generated/${nextPrefix}_seed_attribute.sql`);
     const sql = readFileSync(path, "utf8").replace("-- Add the data migration or table rebuild here before applying.", "INSERT INTO attrs (id, type) VALUES ('fixture:seeded', 'string');");
     writeFileSync(path, sql);
     assert.match(rejected(root, "check"), /Embedded migrations differ/);
