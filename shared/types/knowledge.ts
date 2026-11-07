@@ -25,6 +25,8 @@ export type KnowledgeAPI = {
     highlight(pageId: string, anchor: AnchorInput, color: string): Promise<void>;
     removeHighlight(id: string): Promise<void>;
     annotate(pageId: string, anchor: AnchorInput): Promise<string>;
+    notices(): Promise<Notice[]>;
+    readNotice(id: string): Promise<void>;
     onChanged(listener: () => void): () => void;
     onCloseRequested(listener: () => Promise<boolean>): () => void;
 };

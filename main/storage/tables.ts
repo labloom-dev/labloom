@@ -149,3 +149,19 @@ export const highlights = sqliteTable("highlights", {
     anchorId: text("anchor_id").notNull().references(() => anchors.id),
     color: text("color").notNull()
 });
+// Configuration stays in page attributes. These are actual delivery attempts.
+export const reminderSchedules = sqliteTable("reminder_schedules", {
+    id: text("id").primaryKey().notNull(),
+    pageId: text("page_id").notNull(),
+    scheduledAt: text("scheduled_at").notNull(),
+    zone: text("zone").notNull(),
+    state: text("state", { enum: ["pending", "fired", "disabled"] }).notNull()
+}, table => [index("reminders_due").on(table.state, table.scheduledAt)]);
+export const notifications = sqliteTable("notifications", {
+    id: text("id").primaryKey().notNull(),
+    scheduleId: text("schedule_id").notNull().unique(),
+    pageId: text("page_id").notNull(),
+    title: text("title").notNull(),
+    createdAt: text("created_at").notNull(),
+    isRead: integer("is_read", { mode: "boolean" }).notNull().default(false)
+});

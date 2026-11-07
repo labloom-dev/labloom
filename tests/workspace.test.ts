@@ -124,9 +124,11 @@ test("new workspaces contain the core and feed tables and reopen without changin
         { name: "feed_sources", strict: 0 },
         { name: "highlights", strict: 0 },
         { name: "link_index", strict: 0 },
+        { name: "notifications", strict: 0 },
         { name: "page_attachments", strict: 0 },
         { name: "page_attrs", strict: 1 },
         { name: "pages", strict: 1 },
+        { name: "reminder_schedules", strict: 0 },
         { name: "undo_nodes", strict: 0 },
         { name: "workspace_meta", strict: 1 }
     ]);

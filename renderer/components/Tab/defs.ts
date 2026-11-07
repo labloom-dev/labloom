@@ -37,7 +37,7 @@ export type Tab = {
     Tab_About |
     Tab_Settings |
     Tab_Feed |
-    { type: "library" | "papers" } |
+    { type: "library" | "papers" | "calendar" } |
     Tab_ReaderTest
 );
 

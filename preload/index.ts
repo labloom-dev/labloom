@@ -27,6 +27,8 @@ const api: AppAPI = {
         highlight: (id, anchor, color) => ipcRenderer.invoke(knowledgeChannel, "highlight", id, anchor, color),
         removeHighlight: id => ipcRenderer.invoke(knowledgeChannel, "removeHighlight", id),
         annotate: (id, anchor) => ipcRenderer.invoke(knowledgeChannel, "annotate", id, anchor),
+        notices: () => ipcRenderer.invoke(knowledgeChannel, "notices"),
+        readNotice: id => ipcRenderer.invoke(knowledgeChannel, "readNotice", id),
         onChanged: listener => {
             const handler = (): void => listener();
             ipcRenderer.on(knowledgeChanged, handler);

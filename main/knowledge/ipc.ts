@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { BrowserWindow, dialog } from "electron";
+import { BrowserWindow, dialog, Notification } from "electron";
 import { eq } from "drizzle-orm";
 import { record, validUUID } from "../../shared/attrs/values";
 import { blockText } from "../../shared/content/blocks";
@@ -9,9 +9,10 @@ import { type Mutation, type PageKind, type PageQuery } from "../../shared/types
 import { type AnchorInput, type ReadingPosition } from "../../shared/types/papers";
 import { handle, on } from "../ipc";
 import { type Startup } from "../startup/startup";
-import { workspaceMeta } from "../storage/tables";
+import { notifications, workspaceMeta } from "../storage/tables";
 import { EditHistory } from "./history";
 import { PaperService } from "./papers";
+import { ReminderService } from "./reminders";
 import { KnowledgeService } from "./service";
 
 function string(value: unknown): string {
@@ -24,16 +25,17 @@ function changed(): void {
 
 export function registerKnowledgeIPCs(window: BrowserWindow, startup: Startup): void {
     let editorStarted = false;
-    let services: { knowledge: KnowledgeService; history: EditHistory; papers: PaperService } | undefined;
+    let services: { knowledge: KnowledgeService; history: EditHistory; papers: PaperService; reminders: ReminderService } | undefined;
     const get = (): NonNullable<typeof services> => {
         if (services) return services;
         const knowledge = new KnowledgeService(startup.getDatabase());
-        const history = new EditHistory(knowledge), papers = new PaperService(knowledge, startup.getPath());
-        services = { knowledge, history, papers };
+        const history = new EditHistory(knowledge), papers = new PaperService(knowledge, startup.getPath()), reminders = new ReminderService(knowledge);
+        knowledge.onScheduled = (before, after) => reminders.reconcile(before, after);
+        services = { knowledge, history, papers, reminders };
         return services;
     };
     handle(window.webContents, knowledgeChannel, async (method, ...args) => {
-        const { knowledge: k, history, papers } = get();
+        const { knowledge: k, history, papers, reminders } = get();
         const [a, b, c] = args;
         let result: unknown;
         switch (method) {
@@ -65,7 +67,12 @@ export function registerKnowledgeIPCs(window: BrowserWindow, startup: Startup): 
                 if (!record(initial)) throw new Error("页面属性无效。");
                 for (const id of Object.keys(initial)) if (k.attributes.definition(id).metadata.readonly || id === "deleted") throw new Error("内置只读属性不能通过普通新建操作写入。");
                 if (a === "annotation") throw new Error("请从文献的原文选择创建批注。");
-                result = k.create(a as PageKind, b === undefined ? "" : string(b), initial as Record<string, AttributeValue>);
+                const before = k.snapshot();
+                result = k.db.$client.transaction(() => {
+                    const page = k.create(a as PageKind, b === undefined ? "" : string(b), initial as Record<string, AttributeValue>);
+                    reminders.reconcile(before, k.snapshot());
+                    return page;
+                })();
                 break;
             }
             case "mutate": result = k.mutate(a as Mutation, b === undefined ? undefined : string(b));
@@ -107,11 +114,27 @@ export function registerKnowledgeIPCs(window: BrowserWindow, startup: Startup): 
                 break;
             case "annotate": result = papers.annotate(string(a), b as AnchorInput);
                 break;
+            case "notices": return k.db.select().from(notifications).all().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 100);
+            case "readNotice": k.db.update(notifications).set({ isRead: true }).where(eq(notifications.id, string(a))).run();
+                break;
             default: throw new Error("未知工作区操作。");
         }
         changed();
         return result;
     });
+    const timer = setInterval(() => {
+        if (startup.state.status !== "ready") return;
+        try {
+            const due = get().reminders.due();
+            if (due.length) changed();
+            for (const notice of due) if (Notification.isSupported()) new Notification({ title: "知织提醒", body: notice.title }).show();
+        }
+        catch (error) {
+            console.error("Reminder delivery failed", error);
+        }
+    }, 1000 * 15);
+    window.once("closed", () => clearInterval(timer));
+
     let closeAllowed = false, closeNonce: string | null = null;
     let deadline: ReturnType<typeof setTimeout> | undefined;
     on(window.webContents, saveBeforeCloseReply, (nonce, saved) => {

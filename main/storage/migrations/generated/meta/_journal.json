@@ -18,6 +18,10 @@
         {
             "version": 8,
             "tag": "0008_paper_resources"
+        },
+        {
+            "version": 9,
+            "tag": "0009_reminder_delivery"
         }
     ]
 }
