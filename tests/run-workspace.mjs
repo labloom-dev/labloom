@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
 const require = createRequire(import.meta.url);
-const suites = ["workspace", "builtin-attrs", "drizzle", "attributes"];
+const suites = ["workspace", "builtin-attrs", "drizzle", "attributes", "content"];
 const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const localRoot = join(projectRoot, ".local");
 mkdirSync(localRoot, { recursive: true });

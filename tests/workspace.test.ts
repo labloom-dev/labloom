@@ -117,10 +117,13 @@ test("new workspaces contain the core and feed tables and reopen without changin
         { name: "attrs", strict: 1 },
         { name: "block_uses", strict: 1 },
         { name: "blocks", strict: 1 },
+        { name: "edit_tabs", strict: 0 },
         { name: "feed_items", strict: 0 },
         { name: "feed_sources", strict: 0 },
+        { name: "link_index", strict: 0 },
         { name: "page_attrs", strict: 1 },
         { name: "pages", strict: 1 },
+        { name: "undo_nodes", strict: 0 },
         { name: "workspace_meta", strict: 1 }
     ]);
     const before = meta(database);

@@ -10,6 +10,10 @@
         {
             "version": 6,
             "tag": "0006_generic_attributes"
+        },
+        {
+            "version": 7,
+            "tag": "0007_block_editing"
         }
     ]
 }

@@ -94,3 +94,30 @@ export const feedItems = sqliteTable("feed_items", {
     unique().on(table.sourceId, table.externalId),
     index("feed_items_date").on(desc(table.publishedAt))
 ]);
+
+// Only actual references enter this rebuildable index; shared block uses do not.
+export const linkIndex = sqliteTable("link_index", {
+    sourceKind: text("source_kind", { enum: ["page", "block"] }).notNull(),
+    sourceId: text("source_id").notNull(),
+    sourceField: text("source_field").notNull(),
+    targetKind: text("target_kind", { enum: ["page", "block"] }).notNull(),
+    targetId: text("target_id").notNull()
+}, table => [
+    primaryKey({ columns: [table.sourceKind, table.sourceId, table.sourceField, table.targetKind, table.targetId] }),
+    index("link_index_target").on(table.targetKind, table.targetId)
+]);
+
+export const editTabs = sqliteTable("edit_tabs", {
+    id: text("id").primaryKey().notNull(),
+    cursor: text("cursor")
+});
+
+export const undoNodes = sqliteTable("undo_nodes", {
+    id: text("id").primaryKey().notNull(),
+    tabId: text("tab_id").notNull().references(() => editTabs.id),
+    parentId: text("parent_id"),
+    pageId: text("page_id").notNull(),
+    before: text("before_state", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
+    after: text("after_state", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
+    createdAt: text("created_at").notNull()
+}, table => [index("undo_nodes_tab").on(table.tabId)]);

@@ -1,51 +1,5 @@
-import { type uuid } from "./uuid";
+import { type ContentBlock, type ContentBlockKind } from "./content";
 
-type BlockBase = {
-    id: uuid;
-};
-
-// Blocks that have content and can have children.
-const BlockType_Normal = ["paragraph", "unordered_list", "ordered_list"] as const;
-// Blocks that don't have content, but can have children.
-const BlockType_Container = ["callout", "blockquote"] as const;
-// BLocks that have content, but cannot have children.
-const BlockType_Leaf = ["title", "heading_1", "heading_2", "heading_3", "code"] as const;
-// Blocks that don't have content, and cannot have children.
-const BlockType_Decoration = ["blocked_reference", "hr"] as const;
-
-export type BlockKind =
-    typeof BlockType_Normal[number] |
-    typeof BlockType_Container[number] |
-    typeof BlockType_Leaf[number] |
-    typeof BlockType_Decoration[number];
-
-export type Block_Normal = BlockBase & {
-    type: typeof BlockType_Normal[number];
-    children: Block[];
-    //todo: add inline styles
-    content: string;
-};
-
-export type Block_Container = BlockBase & {
-    type: typeof BlockType_Container[number];
-    children: Block[];
-};
-
-export type Block_Leaf = BlockBase & {
-    type: typeof BlockType_Leaf[number];
-};
-
-export type Block_Decoration = BlockBase & {
-    type: typeof BlockType_Decoration[number];
-};
-
-export type Block = (
-    Block_Normal |
-    Block_Container |
-    Block_Leaf |
-    Block_Decoration
-);
-
-export type BlockOf<T extends BlockKind> = Block & {
-    type: T;
-};
+export type BlockKind = ContentBlockKind;
+export type Block = ContentBlock;
+export type BlockOf<Kind extends BlockKind> = Block & { type: Kind };
