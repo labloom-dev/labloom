@@ -12,6 +12,7 @@
             </button>
         {/each}
     </nav>
+    {#if pinned.length}<section class="pinned"><p class="section-label">固定页面</p>{#each pinned as page (page.id)}<button class="pin" onclick={() => openPage(page.id)}><Icon name="pen" size={14} /><span>{page.title || "未命名"}</span></button>{/each}</section>{/if}
     <div class="garden-note">
         <div class="small-bloom"><Bloom /></div>
         <strong>一点一滴，慢慢生长。</strong>
@@ -26,6 +27,9 @@
 
 
 <style>
+    .pin { display: flex; align-items: center; gap: 9px; padding: 7px 12px; width: 100%; text-align: left; font-size: 11px; }
+    .pin span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pin:hover { background: var(--c-sage); border-radius: 6px; }
     aside {
         display: flex;
         flex-direction: column;
@@ -192,9 +196,19 @@
     import { tabState } from "../Tab/state.svelte";
     import Icon from "../utils/Icon.svelte";
     import Bloom from "../utils/Bloom.svelte";
-    import { destinations, openDestination } from "./navigation";
+    import { destinations, openDestination, openPage } from "./navigation";
+    import { type PageSummary } from "../../../shared/types/content";
+    import { knowledgeState } from "../Knowledge/state.svelte";
 
     let { workspace }: { workspace: Workspace } = $props();
+    let pinned = $state<PageSummary[]>([]);
+    $effect(() => {
+        void knowledgeState.revision; let active = true; void window.api.knowledge.list({ pinned: true, limit: 50 }).then(result => {
+            if (active) pinned = result.items;
+        }, () => {}); return () => {
+            active = false;
+        };
+    });
     const activeType = $derived.by(() => {
         const group = tabState.groups.find(group => group.id === tabState.focusedGroupId);
         return group?.tabs.find(tab => tab.id === group.activeTabId)?.type;

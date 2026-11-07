@@ -55,11 +55,16 @@
             <div class="little-note"><span><Icon name="star" size={28} /></span><p>知识不必一次成林。<br /><strong>今天种下一颗种子就很好。</strong></p></div>
         </section>
     </div>
+    <section class="paper-card recent-pages"><header class="card-heading"><h2>最近整理</h2><button class="text-button" onclick={() => openDestination("library")}>全部页面 <Icon name="arrow" size={14} /></button></header>{#each recent as page (page.id)}<button class="recent-page" onclick={() => openPage(page.id)}><strong>{page.title || "未命名"}</strong><span>{page.excerpt || "还没有正文"}</span></button>{:else}<p>从一篇笔记开始，让想法慢慢生长。</p>{/each}</section>
     <footer class="page-footer"><span><Icon name="flower" size={12} /> 知织，你的知识，慢慢生长</span><span>Where ideas take root.</span></footer>
 </section>
 
 
 <style>
+    .recent-pages { margin-top: 22px; padding: 22px; }
+    .recent-page { display: flex; justify-content: space-between; gap: 20px; width: 100%; padding: 14px 0; text-align: left; border-bottom: 1px dashed var(--c-line); font-size: 12px; }
+    .recent-page span { color: var(--c-muted); max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .recent-pages > p { color: var(--c-muted); font-size: 12px; }
     .heading-spark {
         display: inline-block;
         margin-left: 6px;
@@ -468,19 +473,23 @@
     import { type FeedState } from "../../../shared/types/feed";
     import Bloom from "../utils/Bloom.svelte";
     import Icon, { type IconName } from "../utils/Icon.svelte";
-    import { createPage, openDestination, type Destination } from "../layout/navigation";
+    import { openDestination, openPage, createPage, type Destination } from "../layout/navigation";
     import { openFeedItem } from "../Feed/navigation.svelte";
+    import { type PageSummary } from "../../../shared/types/content";
+    import { knowledgeState } from "../Knowledge/state.svelte";
 
     let feedState = $state<FeedState | null>(null);
+    let counts = $state<{ pages: number; papers: number; tasks: number } | null>(null);
+    let recent = $state<PageSummary[]>([]);
     let pending = $state(true);
     let error = $state("");
     let date = $state(today());
     let loading = false;
     let active = true;
     const stats = $derived([
-        { label: "订阅来源", value: feedState?.sources.length, unit: "个", caption: "关注研究方向", icon: "feed", tone: "gold", destination: "feed" },
-        { label: "已保存内容", value: feedState?.total, unit: "条", caption: "随时回来阅读", icon: "book", tone: "sage", destination: "feed" },
-        { label: "未读内容", value: feedState?.sources.reduce((sum, source) => sum + source.unreadCount, 0), unit: "条", caption: "留待慢慢探索", icon: "pen", tone: "lilac", destination: "feed" }
+        { label: "花园中的页面", value: counts?.pages, unit: "页", caption: "连接积累的想法", icon: "library", tone: "gold", destination: "library" },
+        { label: "收藏的文献", value: counts?.papers, unit: "篇", caption: "随时回来阅读", icon: "book", tone: "sage", destination: "papers" },
+        { label: "待完成任务", value: counts?.tasks, unit: "项", caption: "给研究留出时间", icon: "calendar", tone: "lilac", destination: "calendar" }
     ] satisfies { label: string; value: number | undefined; unit: string; caption: string; icon: IconName; tone: string; destination: Destination }[]);
 
     function today(): string {
@@ -493,8 +502,10 @@
         pending = true;
         error = "";
         try {
-            const result = await window.api.feed.getState({});
-            if (active) feedState = result;
+            const [result, pages, papers, todo, doing] = await Promise.all([window.api.feed.getState({}), window.api.knowledge.list({ limit: 5 }), window.api.knowledge.list({ kind: "paper", limit: 1 }), window.api.knowledge.list({ kind: "task", attributes: { task_status: "todo" }, limit: 1 }), window.api.knowledge.list({ kind: "task", attributes: { task_status: "doing" }, limit: 1 })]);
+            if (active) {
+                feedState = result; counts = { pages: pages.total, papers: papers.total, tasks: todo.total + doing.total }; recent = pages.items;
+            }
         }
         catch (cause) {
             if (active) error = cause instanceof Error ? cause.message : "暂时无法读取订阅内容。";
@@ -513,5 +524,8 @@
         return () => {
             active = false; clearInterval(timer);
         };
+    });
+    $effect(() => {
+        void knowledgeState.revision; void load();
     });
 </script>
