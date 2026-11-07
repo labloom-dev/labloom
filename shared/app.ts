@@ -1,6 +1,7 @@
 import type { FeedAPI } from "./types/feed";
 import { type Appearance } from "./types/appearance";
 import type { StartupState, WorkspaceAction } from "./types/startup";
+import { type KnowledgeAPI } from "./types/knowledge";
 
 // The only surface the renderer can reach; preload implements it over IPC.
 export type AppAPI = {
@@ -10,6 +11,7 @@ export type AppAPI = {
         save(value: Appearance): Promise<Appearance>;
     };
     feed: FeedAPI;
+    knowledge: KnowledgeAPI;
     startup: {
         getState(): Promise<StartupState>;
         chooseWorkspace(action: WorkspaceAction): Promise<StartupState>;

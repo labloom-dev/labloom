@@ -1,6 +1,6 @@
 {#key tab.id}
     {#if tab.type === "page"}
-        <Editor />
+        <PageView {tab} />
     {:else if tab.type === "overview"}
         <Overview />
     {:else if tab.type === "about"}
@@ -21,7 +21,7 @@
     import About from "../tabs/About.svelte";
     import Overview from "../tabs/Overview.svelte";
     import Settings from "../tabs/Settings.svelte";
-    import Editor from "../Editor/Editor.svelte";
+    import PageView from "../Knowledge/PageView.svelte";
     import ReaderTest from "../tabs/ReaderTest.svelte";
     import FeedView from "../Feed/FeedView.svelte";
     import type { Tab } from "./defs";

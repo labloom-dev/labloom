@@ -1,100 +1,35 @@
-<div class="editor">
-    <div class="no-shrink" style={`width: ${panelWidth}px;`}>
-        <SidePanel />
-    </div>
-    <Resizer {changeCB} direction="vertical" origin={panelWidth} min={50} max={300} />
-    <div class="content" spellcheck="false">
-        <Toolbar {editor} />
-        <div bind:this={element}></div>
-    </div>
+<div class="editor content">
+    {#if page}
+        <div class="page-title">
+            <InlineEditor placeholder="未命名" inline={page.blocks[page.titleBlockId].payload.inline} readonly={locked} history={session.state.history} onchange={title} onhistory={direction => void session.undo(direction)} oncomposition={session.composition} />
+        </div>
+        {#each page.children as blockId, index (index)}
+            <BlockRow {session} {blockId} {index} containerId={page.id} {tabId} />
+        {/each}
+        <button class="add-block" disabled={locked} onclick={add}>＋ 添加块</button>
+    {/if}
 </div>
-
-
 <style>
-    .editor {
-        display: flex;
-        flex-flow: row nowrap;
-        height: 100%;
-        width: 100%;
-        flex-shrink: 0;
-    }
-    .content {
-        container-type: size;
-        flex: 1;
-        min-height: 0;
-        overflow-x: clip;
-        overflow-y: auto;
-        color: var(--dc-c-fg-default);
-        background-color: var(--dc-c-bg-default);
-    }
-    .no-shrink {
-        flex-shrink: 0;
-    }
+    .editor { width: 100%; min-width: 0; padding: 22px 30px 60px; color: var(--dc-c-fg-default); background: var(--dc-c-bg-default); }
+    .page-title { font-size: 30px; font-weight: 800; margin: 0 0 24px 25px; line-height: 1.4; }
+    .add-block { margin: 20px 0 0 25px; color: var(--c-muted); font-size: 13px; }
+    @container (max-width: 500px) { .editor { padding-inline: 14px; } .page-title { font-size: 25px; } }
 </style>
-
-
 <script lang="ts">
-    import { onMount } from "svelte";
-    import { Editor } from "@tiptap/core";
-    import Toolbar from "./Toolbar.svelte";
-    import SidePanel from "../utils/SidePanel.svelte";
-    import Resizer from "../utils/Resizer.svelte";
-
-    import History from "@tiptap/extension-history";
-    import Document from "@tiptap/extension-document";
-    import Text from "@tiptap/extension-text";
-    import Paragraph from "./extensions/block/Paragraph";
-    import Dropcursor from "@tiptap/extension-dropcursor";
-    import Placeholder from "@tiptap/extension-placeholder";
-    import trailingP from "./extensions/technical/trailingP";
-    import ClearMarksOnEmptyBlock from "./extensions/ClearMarksOnEmptyBlock";
-
-    import bold from "./extensions/mark/bold";
-    import italic from "./extensions/mark/italic";
-    import underline from "./extensions/mark/underline";
-    import strike from "./extensions/mark/strike";
-    import bgColor from "./extensions/mark/bgColor";
-    import fgColor from "./extensions/mark/fgColor";
-    import code from "./extensions/mark/code";
-
-    let panelWidth = $state(100);
-
-    function changeCB(value: number): void {
-        panelWidth = value;
+    import { type PageSession } from "../Knowledge/state.svelte";
+    import { type InlineNode } from "../../../shared/types/content";
+    import { payload } from "../../../shared/content/blocks";
+    import BlockRow from "./BlockRow.svelte";
+    import InlineEditor from "./InlineEditor.svelte";
+    let { session, tabId }: { session: PageSession; tabId: string } = $props();
+    const page = $derived(session.state.page);
+    const locked = $derived(session.state.loading || session.state.saving || !!page?.attributes.deleted);
+    function title(inline: InlineNode[]): void {
+        const block = page!.blocks[page!.titleBlockId];
+        session.block({ ...block, payload: { ...block.payload, inline } });
     }
-
-    let element: HTMLDivElement;
-    let editor = $state.raw<Editor | null>(null);
-    onMount(() => {
-        const instance = new Editor({
-            element,
-            extensions: [
-                History,
-                ClearMarksOnEmptyBlock,
-                trailingP,
-                Document,
-                Paragraph,
-                Placeholder.configure({
-                    emptyEditorClass: "dc-editor-empty",
-                    emptyNodeClass: "dc-empty",
-                    placeholder: "输入 / 发起命令..."
-                }),
-                Dropcursor.configure({
-                    color: "var(--dc-c-drop-cursor)",
-                    width: 2
-                }),
-                Text,
-                bold, italic, underline, strike,
-                bgColor, fgColor,
-                code
-            ],
-            content: "<div class='dc-paragraph'>Hello World!</div>"
-        });
-
-        editor = instance;
-
-        return () => {
-            instance.destroy();
-        };
-    });
+    function add(): void {
+        const id = crypto.randomUUID();
+        session.children(page!.id, [...page!.children, id], [{ id, type: "paragraph", payload: payload("paragraph"), children: [] }]);
+    }
 </script>

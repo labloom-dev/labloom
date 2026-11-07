@@ -9,7 +9,7 @@
             <span class="welcome-label">给好奇心留一块地方 <span><Icon name="star" size={13} /></span></span>
             <h2>每个想法，都值得<span>生根发芽。</span></h2>
             <p>从一篇论文、一段阅读或一个小小的灵感开始，<br />慢慢编织属于你的知识世界。</p>
-            <div class="welcome-actions"><button class="button primary" onclick={() => openDestination("reader-test")}><Icon name="book" size={15} />开始阅读</button><button class="text-button" onclick={() => openDestination("feed")}>去发现新知 <Icon name="arrow" size={16} /></button></div>
+            <div class="welcome-actions"><button class="button primary" onclick={() => openDestination("reader-test")}><Icon name="book" size={15} />开始阅读</button><button class="text-button" onclick={() => createPage()}>记下一个想法 <Icon name="arrow" size={16} /></button></div>
         </div>
         <div class="hero-art"><span class="art-label">a little idea, a little bloom</span><Bloom /><span class="art-caption">GROW AT YOUR OWN PACE</span></div>
     </div>
@@ -468,7 +468,7 @@
     import { type FeedState } from "../../../shared/types/feed";
     import Bloom from "../utils/Bloom.svelte";
     import Icon, { type IconName } from "../utils/Icon.svelte";
-    import { openDestination, type Destination } from "../layout/navigation";
+    import { createPage, openDestination, type Destination } from "../layout/navigation";
     import { openFeedItem } from "../Feed/navigation.svelte";
 
     let feedState = $state<FeedState | null>(null);

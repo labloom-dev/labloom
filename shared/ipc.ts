@@ -2,6 +2,11 @@ export const appChannels = {
     openDevTools: "window:open-devtools"
 } as const;
 
+export const knowledgeChannel = "knowledge:request";
+export const knowledgeChanged = "knowledge:changed";
+export const saveBeforeClose = "knowledge:before-close";
+export const saveBeforeCloseReply = "knowledge:close-reply";
+
 export const appearanceChannels = {
     get: "appearance:get",
     save: "appearance:save"

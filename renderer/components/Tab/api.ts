@@ -2,6 +2,7 @@ import { v4 } from "uuid";
 import type { GroupID, LayoutNode, Tab, TabGroup, TabID } from "./defs";
 import type { XYDirection } from "../types";
 import { tabState } from "./state.svelte";
+import { tabLifecycle } from "./lifecycle";
 
 export function isTabID(id: string): id is TabID {
     return id.startsWith("tab-");
@@ -46,6 +47,13 @@ export function updateTab(tab: Tab): boolean {
 export function removeTab(id: TabID): boolean {
     const group = findTabGroup(id);
     if (!group) return false;
+    if (tabLifecycle.close) {
+        void tabLifecycle.close(id).then(saved => {
+            const current = findTabGroup(id);
+            if (saved && current) detachTab(current, current.tabs.findIndex(tab => tab.id === id));
+        });
+        return true;
+    }
     detachTab(group, group.tabs.findIndex(tab => tab.id === id));
     return true;
 }

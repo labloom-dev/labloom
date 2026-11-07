@@ -10,6 +10,7 @@ import { Startup } from "./startup/startup";
 import { registerStartupIPCs } from "./startup/ipc";
 import { registerFeedIPCs } from "./feed/ipc";
 import { registerAppearanceIPCs } from "./appearance/ipc";
+import { registerKnowledgeIPCs } from "./knowledge/ipc";
 
 
 // Set both paths before ready, so development also isolates Chromium state.
@@ -74,6 +75,7 @@ function createWindow(): void {
     registerStartupIPCs(mainWindow, startup);
     registerFeedIPCs(contents, startup);
     registerAppearanceIPCs(mainWindow, storage);
+    registerKnowledgeIPCs(mainWindow, startup);
     on(contents, appChannels.openDevTools, () => contents.openDevTools({ mode: "detach" }));
 
     mainWindow.once("ready-to-show", () => {

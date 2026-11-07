@@ -4,6 +4,7 @@ import type { XYDirection } from "../types";
 type Tab_Page = {
     type: "page";
     pageId: uuid;
+    anchorId?: string;
 };
 
 type Tab_Overview = {
