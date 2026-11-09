@@ -83,7 +83,7 @@
                 knowledgeState.error = message(error); return false;
             }
         };
-        const stopChanges = window.api.knowledge.onChanged(() => knowledgeState.revision++);
+        const stopChanges = window.api.knowledge.onChanged(change => { knowledgeState.change = { ...change, seq: knowledgeState.change.seq + 1 }; });
         const stopClose = window.api.knowledge.onCloseRequested(async () => {
             if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
             if (!await saveAll()) {

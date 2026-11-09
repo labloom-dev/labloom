@@ -17,6 +17,7 @@
         {#if page}
             <button disabled={current.state.saving} onclick={trash}>{page.attributes.deleted ? "恢复页面" : "移入回收站"}</button>
         {/if}
+        <div class="format-dock" bind:this={dock}></div>
     </header>
     {#if current.state.error}
         <div class="notice error">{current.state.error}<div class="error-actions">
@@ -36,9 +37,9 @@
         <div class="page-body">
             <div class="main-content">
                 {#if page.kind === "paper"}
-                    <PaperPanel {page} anchorId={tab.anchorId} beforeChange={() => current.save()} />
+                    <PaperPanel {page} tabId={tab.id} anchorId={tab.anchorId} beforeChange={() => current.save()} />
                 {/if}
-                <Editor session={current} tabId={tab.id} />
+                <Editor session={current} tabId={tab.id} {dock} />
                 <section class="backlinks">
                     <h3>引用此页</h3>
                     {#each backlinks as link (link.sourceId)}
@@ -63,6 +64,7 @@
     .page-toolbar { position: sticky; top: 0; z-index: 40; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px 18px; border-bottom: 1px solid var(--c-line); background: var(--c-paper); font-size: 11px; }
     .page-toolbar button { padding: 5px 7px; border-radius: 5px; }
     .page-toolbar button:hover, .active { background: var(--c-sage); }
+    .format-dock { flex: 1 0 100%; height: 39px; }
     .spacer { flex: 1; }
     .save-state { color: var(--c-muted); }
     .failed { color: var(--c-reader-error-text); }
@@ -84,13 +86,14 @@
     import { type AttributeDefinition } from "../../../shared/types/attributes";
     import { type Backlink } from "../../../shared/types/content";
     import { blockText } from "../../../shared/content/blocks";
-    import { session, knowledgeState, message, mutate, perform } from "./state.svelte";
+    import { session, knowledgeState, message, confirmed, perform } from "./state.svelte";
     import { openPage } from "../layout/navigation";
     import { updateTab } from "../Tab/api";
     import Editor from "../Editor/Editor.svelte";
     import Properties from "./Properties.svelte";
     import PaperPanel from "./PaperPanel.svelte";
     let { tab }: { tab: Extract<Tab, { type: "page" }> } = $props();
+    let dock = $state<HTMLDivElement>();
     const current = untrack(() => session(tab.id, tab.pageId));
     const page = $derived(current.state.page);
     let showProperties = $state(false), definitions = $state<AttributeDefinition[]>([]), backlinks = $state<Backlink[]>([]);
@@ -103,7 +106,9 @@
         };
     });
     $effect(() => {
-        void knowledgeState.revision;
+        const change = knowledgeState.change;
+        const relevant = untrack(() => !change.seq || change.pages.includes(tab.pageId) || change.blocks.some(id => current.state.page?.blocks[id]));
+        if (!relevant && (change.pages.length || change.blocks.length)) return;
         let active = true;
         void Promise.all([window.api.knowledge.definitions(), window.api.knowledge.backlinks(tab.pageId)]).then(([defs, links]) => {
             if (active) {
@@ -114,7 +119,7 @@
             if (active) current.state.error = message(error);
         });
         untrack(() => {
-            if (!current.state.loading && !current.state.saving && !current.state.dirty) void current.refresh();
+            if (relevant && change.seq && change.sourceTab !== tab.id && !current.state.loading && !current.state.saving && !current.state.dirty) void current.reread([...change.pages.filter(id => id === tab.pageId), ...change.blocks]);
         });
         return () => {
             active = false;
@@ -130,7 +135,7 @@
     });
     function trash(): void {
         void perform(async () => {
-            if (await current.save() && await mutate({ type: page!.attributes.deleted ? "restore" : "trash", ids: [tab.pageId], tabId: tab.id })) await current.refresh();
+            if (await current.save() && await confirmed(token => page!.attributes.deleted ? window.api.knowledge.restore([tab.pageId], tab.id) : window.api.knowledge.trash([tab.pageId], tab.id, token))) await current.refresh();
         });
     }
 </script>

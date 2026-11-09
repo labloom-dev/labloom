@@ -11,3 +11,5 @@ export type AttributeMetadata = {
 };
 export type AttributeDefinition = { id: string; type: AttributeType; metadata: AttributeMetadata };
 export type AttributeImpact = { token: string; pages: { id: string; title: string }[]; recycled?: { id: string; title: string }[] };
+
+export type AttributeFormat = (definition: AttributeDefinition, value: AttributeValue, context: { zone?: string }) => string;

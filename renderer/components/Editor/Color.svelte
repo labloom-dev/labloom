@@ -154,10 +154,16 @@
 </style>
 
 
+<script module lang="ts">
+    import type { Editor } from "@tiptap/core";
+
+    type ColorMark = "fgColor" | "bgColor";
+
+</script>
+
 <script lang="ts">
     import { tick } from "svelte";
     import { SvelteSet } from "svelte/reactivity";
-    import type { Editor } from "@tiptap/core";
     import { Popover, Toolbar } from "bits-ui";
     import paletteIcon from "../../assets/carbon--color-palette.svg?raw";
     import fgColorIcon from "../../assets/carbon--text-color.svg?raw";
@@ -169,7 +175,7 @@
         element?: HTMLDivElement | null;
         open?: boolean;
     } = $props();
-    type ColorMark = "fgColor" | "bgColor";
+    const lastColors: Partial<Record<ColorMark, string | null>> = {};
     type ActiveColor = string | null | undefined;
     type ColorFormatState = {
         name: ColorMark;
@@ -182,7 +188,6 @@
     let attached = $state(false);
     let returnFocus: HTMLElement | null = null;
     const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
-    const lastColors: Record<ColorMark, string | null | undefined> = { fgColor: undefined, bgColor: undefined };
     const caretAnchor = {
         getBoundingClientRect(): DOMRect {
             if (!editor || editor.isDestroyed) return new DOMRect();

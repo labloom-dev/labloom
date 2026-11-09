@@ -16,31 +16,48 @@ export function pageTargets(page: GraphPage, definitions: AttributeDefinition[])
 
 // Containment follows UUID arrays, never reverse uses of a shared block.
 export function unreachablePages(pages: GraphPage[], blocks: Map<string, ContentBlock>, definitions: AttributeDefinition[]): string[] {
+    const live = pages.filter(page => !page.attributes.deleted);
+    let candidates = live;
+    while (true) {
+        const reached = reachableFromRoots(candidates, blocks, definitions);
+        if (reached.size === candidates.length) return live.filter(page => !reached.has(page.id)).map(page => page.id);
+        // Recycling an owner also disables outgoing links in blocks whose other
+        // occurrences are all recycled. Account for those losses in this preview.
+        candidates = candidates.filter(page => reached.has(page.id));
+    }
+}
+
+function reachableFromRoots(pages: GraphPage[], blocks: Map<string, ContentBlock>, definitions: AttributeDefinition[]): Set<string> {
     const byId = new Map(pages.map(page => [page.id, page]));
+    // For retention, a linked block needs a position in at least one live page.
+    const owned = walkChildren(pages.flatMap(page => [page.titleBlockId, ...page.children]), blocks);
     const visitedPages = new Set<string>(), visitedBlocks = new Set<string>();
-    const queue: Target[] = pages.filter(page => !page.attributes.deleted && page.attributes.independent !== false).map(page => ({ kind: "page", id: page.id }));
+    const queue: Target[] = pages.filter(page => page.attributes.independent !== false).map(page => ({ kind: "page", id: page.id }));
     while (queue.length) {
         const target = queue.pop()!;
         if (target.kind === "page") {
             if (visitedPages.has(target.id)) continue;
             const page = byId.get(target.id);
-            if (!page || page.attributes.deleted) continue;
+            if (!page) continue;
             visitedPages.add(page.id);
             queue.push(...[page.titleBlockId, ...page.children].map(id => ({ kind: "block" as const, id })), ...pageTargets(page, definitions));
         }
         else {
-            if (visitedBlocks.has(target.id)) continue;
+            if (!owned.has(target.id) || visitedBlocks.has(target.id)) continue;
             visitedBlocks.add(target.id);
             const block = blocks.get(target.id);
             if (block) queue.push(...block.children.map(id => ({ kind: "block" as const, id })), ...references(block));
         }
     }
-    return pages.filter(page => !page.attributes.deleted && !visitedPages.has(page.id)).map(page => page.id);
+    return visitedPages;
 }
 
 export function containedBlocks(page: Pick<GraphPage, "titleBlockId" | "children">, blocks: Map<string, ContentBlock>): Set<string> {
+    return walkChildren([page.titleBlockId, ...page.children], blocks);
+}
+
+function walkChildren(queue: string[], blocks: Map<string, ContentBlock>): Set<string> {
     const result = new Set<string>();
-    const queue = [page.titleBlockId, ...page.children];
     while (queue.length) {
         const id = queue.pop()!;
         if (result.has(id)) continue;

@@ -48,7 +48,7 @@ export function parseAnthropic(html: string, sourceURL: string): FeedEntry[] {
             }
             const date = featured ? item.date : item.publishedOn;
             const publishedAt = typeof date === "string" && Number.isFinite(Date.parse(date))
-                ? new Date(date).toISOString() : null;
+                ? Date.parse(date) : null;
             const summary = typeof item.summary === "string" ? item.summary.trim() : "";
             if (!entries.has(url) || (!entries.get(url)?.summary && summary)) {
                 entries.set(url, {

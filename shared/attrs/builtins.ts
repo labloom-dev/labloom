@@ -1,4 +1,4 @@
-import { type AttributeDefinition, type AttributeValue } from "../types/attributes";
+import { type AttributeDefinition, type AttributeFormat, type AttributeValue } from "../types/attributes";
 
 const option = (id: string, name: string): { id: string; name: string } => ({ id, name });
 export const builtinAttrs = {
@@ -34,15 +34,22 @@ export const builtinAttrs = {
 export type BuiltinAttrId = keyof typeof builtinAttrs;
 export type BuiltinAttrValues = { [Id in BuiltinAttrId]: AttributeValue };
 const common = ["deleted", "independent", "created_at", "modified_at", "recycle_reason", "recycled_at", "pinned", "tags", "links"] as const;
-const schedule = ["task_status", "priority", "schedule_date", "schedule_start", "schedule_end", "schedule_zone", "reminder_at"] as const;
+const schedule = ["schedule_date", "schedule_start", "schedule_end", "schedule_zone", "reminder_at"] as const;
 export const builtinAttrsByPageKind = {
     editable: [...common],
     paper: [...common, "paper_authors", "paper_doi", "paper_year", "paper_venue", "paper_url", "paper_abstract", "paper_keywords", "source_snapshot", "reading_position"],
     annotation: [...common, "annotation_paper", "annotation_anchor"],
-    task: [...common, ...schedule],
+    task: [...common, "task_status", "priority", ...schedule],
     event: [...common, ...schedule]
 } as const satisfies Record<string, readonly BuiltinAttrId[]>;
 
 export function isBuiltin(id: string): id is BuiltinAttrId {
     return Object.hasOwn(builtinAttrs, id);
 }
+
+// Presentation overrides stay outside the serializable attribute definitions.
+export const builtinValueFormats: Partial<Record<BuiltinAttrId, { display?: AttributeFormat; search?: AttributeFormat }>> = {
+    recycle_reason: { search: () => "" },
+    recycled_at: { search: () => "" },
+    annotation_anchor: { search: () => "" }
+};

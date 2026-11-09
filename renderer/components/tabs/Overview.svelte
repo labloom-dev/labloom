@@ -192,11 +192,9 @@
         border-radius: 13px;
         background: var(--c-paper);
         text-align: left;
-        transition: border-color .15s, transform .15s;
     }
     .stat-card:hover {
         border-color: var(--c-ink);
-        transform: translateY(-2px);
     }
     .stat-icon {
         display: grid;
@@ -526,6 +524,6 @@
         };
     });
     $effect(() => {
-        void knowledgeState.revision; void load();
+        void knowledgeState.change.seq; void load();
     });
 </script>

@@ -137,7 +137,7 @@ test("generated table rebuilds preserve legacy rows, STRICT storage, triggers, a
     assert.equal(database.prepare("SELECT is_read FROM feed_items WHERE id = 'item'").pluck().get(), 1);
     assert.equal(database.prepare("SELECT content FROM blocks WHERE id = 'title'").pluck().get(), "Original");
     assert.equal(database.prepare("SELECT value FROM page_attrs WHERE attr_id = 'custom'").pluck().get(), "000123");
-    assert.equal(database.prepare("SELECT last_modified_at FROM workspace_meta").pluck().get(), timestamp);
+    assert.equal(database.prepare("SELECT last_modified_at FROM workspace_meta").pluck().get(), Date.parse(timestamp));
     assert.equal(database.prepare("SELECT strict FROM pragma_table_list WHERE name = 'blocks'").pluck().get(), 1);
     assert.equal(database.prepare("SELECT count(*) FROM block_uses").pluck().get(), 2);
     assert.deepEqual(database.pragma("foreign_key_check"), []);

@@ -2,7 +2,7 @@
     {#if pending}
         <span>正在读取引用…</span>
     {:else if targetValue}
-        <button onclick={() => target.kind === "page" ? openPage(target.id) : expanded = !expanded}>↗ {targetValue.title || "空块"}{targetValue.deleted ? "（已回收）" : ""}</button>
+        <button onclick={openTarget}>↗ {targetValue.title || "空块"}{targetValue.status === "recycled" ? "（已回收）" : ""}</button>
         {#if expanded || target.kind === "page"}
             <p>{targetValue.text}</p>
         {/if}
@@ -17,14 +17,19 @@
     .missing { border-style: dashed; color: var(--c-muted); }
 </style>
 <script lang="ts">
-    import { type Target } from "../../../shared/types/content";
+    import { type Target, type ResolvedTarget } from "../../../shared/types/content";
     import { openPage } from "../layout/navigation";
     import { knowledgeState } from "./state.svelte";
     let { target }: { target: Target } = $props();
-    let targetValue = $state<{ title: string; text: string; deleted: boolean } | null>(null), pending = $state(true), expanded = $state(false);
+    let targetValue = $state<ResolvedTarget | null>(null), pending = $state(true), expanded = $state(false);
+    function openTarget(): void {
+        if (targetValue?.status === "deleted") knowledgeState.error = "目标已删除";
+        else if (target.kind === "page") openPage(target.id);
+        else expanded = !expanded;
+    }
     $effect(() => {
         const current: Target = { kind: target.kind, id: target.id };
-        void knowledgeState.revision;
+        void knowledgeState.change.seq;
         let active = true;
         pending = true;
         void window.api.knowledge.resolve(current).then(value => {

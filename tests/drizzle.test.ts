@@ -51,7 +51,7 @@ function versionThree(): { root: string; id: string; } {
 }
 
 function entry(externalId: string): FeedEntry {
-    return { externalId, title: "Research", url: "https://example.org/article", authors: "Author", summary: "Summary", publishedAt: timestamp };
+    return { externalId, title: "Research", url: "https://example.org/article", authors: "Author", summary: "Summary", publishedAt: Date.parse(timestamp) };
 }
 
 test("Drizzle round-trips JSON, nullable columns, and STRICT ANY values on the workspace connection", t => {
@@ -109,7 +109,7 @@ test("version 3 workspaces gain feed tables during the backed-up workspace upgra
     const { database, db } = track(t, openWorkspace(root, id));
     assert.equal(database.pragma("user_version", { simple: true }), workspaceFormatVersion);
     assert.deepEqual(new FeedService(db).getState({}), { sources: [], items: [], total: 0 });
-    assert.equal(db.select().from(workspaceMeta).get()!.lastModifiedAt, timestamp);
+    assert.equal(db.select().from(workspaceMeta).get()!.lastModifiedAt, Date.parse(timestamp));
     const paths = readdirSync(join(root, "backups"));
     assert.equal(paths.length, 1);
     const backup = new Database(join(root, "backups", paths[0]), { readonly: true });
@@ -155,7 +155,7 @@ test("upgrading existing FeedService tables preserves source IDs, entries, and r
     assert.equal(state.items[0].id, "item");
     assert.equal(state.items[0].externalId, "external");
     assert.equal(state.items[0].isRead, true);
-    assert.equal(db.select().from(workspaceMeta).get()!.lastModifiedAt, timestamp);
+    assert.equal(db.select().from(workspaceMeta).get()!.lastModifiedAt, Date.parse(timestamp));
     service.setRead("item", false);
     assert.equal(database.prepare("SELECT is_read FROM feed_items WHERE id = 'item'").pluck().get(), 0);
     assert.equal(service.getState({}).sources[0].unreadCount, 1);

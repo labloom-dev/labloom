@@ -99,7 +99,6 @@
         text-align: left;
         font-size: 12px;
         font-weight: 700;
-        transition: background .15s, transform .15s;
     }
     .nav-item:hover {
         background: var(--c-cream);
@@ -203,7 +202,7 @@
     let { workspace }: { workspace: Workspace } = $props();
     let pinned = $state<PageSummary[]>([]);
     $effect(() => {
-        void knowledgeState.revision; let active = true; void window.api.knowledge.list({ pinned: true, limit: 50 }).then(result => {
+        void knowledgeState.change.seq; let active = true; void window.api.knowledge.list({ pinned: true, limit: 50 }).then(result => {
             if (active) pinned = result.items;
         }, () => {}); return () => {
             active = false;

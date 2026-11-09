@@ -78,7 +78,7 @@
     import Reader from "../Reader/Reader.svelte";
     import { knowledgeState, message, perform, trackWrite } from "./state.svelte";
     import { openPage } from "../layout/navigation";
-    let { page, anchorId, beforeChange }: { page: PageRecord; anchorId?: string; beforeChange: () => Promise<boolean> } = $props();
+    let { page, tabId, anchorId, beforeChange }: { page: PageRecord; tabId: string; anchorId?: string; beforeChange: () => Promise<boolean> } = $props();
     let resources = $state<PaperResources>({ files: [], anchors: [], highlights: [] }), fileId = $state(""), source = $state.raw<ReaderSource | null>(null), viewState = $state<ReaderViewState | undefined>(undefined);
     let reader = $state<Reader | null>(null), selection = $state<AnchorInput | null>(null), color = $state("#F2D675"), expanded = $state(true), busy = $state(false), error = $state("");
     let request = 0;
@@ -99,7 +99,7 @@
         };
     });
     $effect(() => {
-        void knowledgeState.revision;
+        void knowledgeState.change.seq;
         untrack(() => {
             void load();
         });
@@ -138,7 +138,7 @@
     function savePosition(state: ReaderViewState, current: ReaderSource): void {
         const id = sourceFiles.get(current);
         if (page.attributes.deleted || !id) return;
-        const request = window.api.knowledge.position(page.id, id, { page: state.pageNumber, scale: state.scale, rotation: state.rotation, left: state.left, top: state.top });
+        const request = window.api.knowledge.position(page.id, id, { page: state.pageNumber, scale: state.scale, rotation: state.rotation, left: state.left, top: state.top }, tabId);
         trackWrite(request);
         void request.catch(problem => {
             error = message(problem);
@@ -149,7 +149,7 @@
         busy = true;
         try {
             if (!await beforeChange()) return;
-            await window.api.knowledge.importPDF(page.id);
+            await window.api.knowledge.importPDF(page.id, tabId);
             await load();
         }
         catch (problem) {
@@ -165,10 +165,10 @@
         try {
             if (!await beforeChange()) return;
             if (annotation) {
-                const id = await window.api.knowledge.annotate(page.id, $state.snapshot(selection));
+                const id = await window.api.knowledge.annotate(page.id, $state.snapshot(selection), tabId);
                 openPage(id);
             }
-            else await window.api.knowledge.highlight(page.id, $state.snapshot(selection), color);
+            else await window.api.knowledge.highlight(page.id, $state.snapshot(selection), color, tabId);
             selection = null;
             window.getSelection()?.removeAllRanges();
             await load();
@@ -187,7 +187,7 @@
     }
     function remove(id: string): void {
         void perform(async () => {
-            await window.api.knowledge.removeHighlight(id);
+            await window.api.knowledge.removeHighlight(id, tabId);
             await load();
         });
     }

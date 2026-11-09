@@ -40,7 +40,7 @@ export function validateValue(definition: AttributeDefinition, value: unknown): 
             break;
         case "date": valid = typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
             break;
-        case "datetime": valid = typeof value === "string" && /^\d{4}-\d{2}-\d{2}T.*Z$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
+        case "datetime": valid = typeof value === "number" && Number.isSafeInteger(value) && Number.isFinite(new Date(value * 1000).getTime());
             break;
         case "select": valid = typeof value === "string" && options.some(option => option.id === value);
             break;

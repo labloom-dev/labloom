@@ -5,7 +5,10 @@ import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { createWorkspace, openWorkspace } from "../main/storage/workspace";
 import { AttributeService } from "../main/knowledge/attributes";
-import { type AttributeDefinition } from "../shared/types/attributes";
+import { builtinAttrs } from "../shared/attrs/builtins";
+import { display, search } from "../shared/attrs/format";
+import { validateValue } from "../shared/attrs/values";
+import { type AttributeDefinition, type AttributeValue } from "../shared/types/attributes";
 
 function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { id: string; service: AttributeService } {
     const root = process.env.LABLOOM_TEST_ROOT;
@@ -79,4 +82,35 @@ test("legacy knowledge-garden schemas are rejected before migration writes", t =
     database.exec("CREATE TABLE page_details (page_id TEXT); PRAGMA user_version = 4;");
     database.close();
     assert.throws(() => openWorkspace(info.path), /knowledge-garden/);
+});
+
+test("every attribute type has display and search text, with independent builtin overrides", () => {
+    const zone = { zone: "Asia/Singapore" };
+    const metadata = { options: [{ id: "x", name: "甲" }, { id: "y", name: "乙" }] };
+    const cases: [AttributeDefinition["type"], AttributeValue, string, string][] = [
+        ["string", "000123", "000123", "000123"], ["url", "https://labloom.dev", "https://labloom.dev", "https://labloom.dev"],
+        ["number", 0, "0", "0"], ["date", "2026-11-08", "2026-11-08", "2026-11-08"],
+        ["datetime", 1794071576, "2026-11-08 01:12", "2026-11-08 01:12"],
+        ["boolean", true, "是", ""], ["boolean", false, "否", ""],
+        ["select", "x", "甲", "甲"], ["multiselect", ["y", "x"], "乙、甲", "乙、甲"],
+        ["page-link", randomUUID(), "", ""], ["page-links", [randomUUID()], "", ""], ["json", { visible: true }, "", ""]
+    ];
+    for (const [type, value, label, keyword] of cases) {
+        const def = { id: "custom:" + randomUUID(), type, metadata };
+        assert.equal(display(def, value, zone), label);
+        assert.equal(search(def, value, zone), keyword);
+        assert.equal(display(def, null, zone), "");
+        assert.equal(search(def, null, zone), "");
+    }
+    for (const [id, value, label] of [
+        ["recycle_reason", "unreachable", "失去保留关系"], ["recycled_at", 1794071576, "2026-11-08 01:12"],
+        ["annotation_anchor", "anchor", "anchor"]
+    ] as const) {
+        const def = { id, ...builtinAttrs[id] };
+        assert.equal(display(def, value, zone), label);
+        assert.equal(search(def, value, zone), "");
+    }
+    const dt = { id: "created_at", ...builtinAttrs.created_at };
+    for (const value of [1.2, Infinity, Number.MAX_SAFE_INTEGER + 1, "2026-11-07T17:12:56.210Z"]) assert.throws(() => validateValue(dt, value));
+    validateValue(dt, 0);
 });

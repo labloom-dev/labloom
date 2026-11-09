@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
 const require = createRequire(import.meta.url);
-const suites = ["workspace", "builtin-attrs", "drizzle", "attributes", "content", "papers", "schedule"];
+const benchmark = process.argv.includes("--perf");
+const suites = ["workspace", "builtin-attrs", "drizzle", "attributes", "content", "papers", "schedule", "retention", "timestamps", "editor"];
 const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const localRoot = join(projectRoot, ".local");
 mkdirSync(localRoot, { recursive: true });
@@ -24,7 +25,7 @@ function removeTestDirectory() {
 try {
     await build({
         absWorkingDir: projectRoot,
-        entryPoints: suites.map(name => `tests/${name}.test.ts`),
+        entryPoints: benchmark ? ["tests/perf/bench.ts"] : suites.map(name => `tests/${name}.test.ts`),
         outdir: testRoot,
         outExtension: { ".js": ".cjs" },
         bundle: true,
@@ -35,7 +36,8 @@ try {
     });
 
     // Use the application's Node runtime for its native SQLite dependency.
-    execFileSync(require("electron"), ["--test", ...suites.map(name => join(testRoot, `${name}.test.cjs`))], {
+    const args = benchmark ? [join(testRoot, "bench.cjs")] : ["--test", ...suites.map(name => join(testRoot, `${name}.test.cjs`))];
+    execFileSync(require("electron"), args, {
         cwd: projectRoot,
         env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", LABLOOM_TEST_ROOT: testRoot },
         stdio: "inherit",

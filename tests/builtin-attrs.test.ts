@@ -137,7 +137,7 @@ test("version 2 gains registered attributes without changing modification time",
     for (const id of fixture.data) {
         assert.deepEqual(database.prepare("SELECT attr_id, value FROM page_attrs WHERE page_id = ? AND attr_id = 'deleted'").all(id), [{ attr_id: "deleted", value: null }]);
     }
-    assert.deepEqual(database.prepare("SELECT last_modified_at FROM workspace_meta").get(), { last_modified_at: oldTimestamp });
+    assert.deepEqual(database.prepare("SELECT last_modified_at FROM workspace_meta").get(), { last_modified_at: Date.parse(oldTimestamp) });
     const paths = readdirSync(join(fixture.root, "backups"));
     assert.equal(paths.length, 1);
     const backup = track(t, new Database(join(fixture.root, "backups", paths[0]), { readonly: true, fileMustExist: true }));
@@ -161,7 +161,7 @@ test("version 2 retains existing builtin metadata and values, including deleted 
     assert.deepEqual(database.prepare("SELECT metadata FROM attrs WHERE id = 'deleted'").get(), { metadata });
     assert.deepEqual(database.prepare("SELECT value FROM page_attrs WHERE page_id = ? AND attr_id = 'deleted'").get(fixture.data[0]), { value: 1 });
     assert.deepEqual(database.prepare("SELECT value FROM page_attrs WHERE page_id = ? AND attr_id = 'deleted'").get(fixture.data[1]), { value: null });
-    assert.deepEqual(database.prepare("SELECT last_modified_at FROM workspace_meta").get(), { last_modified_at: oldTimestamp });
+    assert.deepEqual(database.prepare("SELECT last_modified_at FROM workspace_meta").get(), { last_modified_at: Date.parse(oldTimestamp) });
 });
 
 test("conflicting builtin definitions or invalid old values abort the upgrade without overwriting data", t => {

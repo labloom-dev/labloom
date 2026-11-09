@@ -37,7 +37,7 @@
 
     {#if source}
         <div class="source">
-            <p>{source.lastRefreshed ? `上次成功刷新：${formatDate(source.lastRefreshed)}，新增 ${source.lastAdded} 条` : "尚未成功刷新"}</p>
+            <p>{source.lastRefreshed !== null ? `上次成功刷新：${formatDate(source.lastRefreshed)}，新增 ${source.lastAdded} 条` : "尚未成功刷新"}</p>
             <div class="actions">
                 <button disabled={pending} onclick={() => run(() => api.refresh(sourceId))}>刷新此来源</button>
                 <button disabled={pending} onclick={() => {
@@ -407,8 +407,8 @@
     const selectedIndex = $derived(feedState.items.findIndex(item => item.id === selected?.id));
     const source = $derived(feedState.sources.find(item => item.id === sourceId));
 
-    function formatDate(date: string | null): string {
-        return date ? new Date(date).toLocaleString() : "未提供时间";
+    function formatDate(date: number | null): string {
+        return date !== null ? new Date(date).toLocaleString() : "未提供时间";
     }
 
     async function reload(): Promise<void> {

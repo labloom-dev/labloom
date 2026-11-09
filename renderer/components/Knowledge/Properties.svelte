@@ -52,7 +52,7 @@
     import { kindNames } from "./labels";
     let { session, definitions }: { session: PageSession; definitions: AttributeDefinition[] } = $props();
     const page = $derived(session.state.page!);
-    const locked = $derived(session.state.loading || session.state.saving || !!page.attributes.deleted);
+    const locked = $derived(session.state.loading || !!page.attributes.deleted);
     const zone = $derived.by(() => {
         const candidate = String(page.attributes.schedule_zone || Intl.DateTimeFormat().resolvedOptions().timeZone);
         try {

@@ -1,121 +1,108 @@
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
-import { blocks, pages, pageAttrs, editTabs, undoNodes } from "../storage/tables";
-import { fingerprint } from "./attributes";
-import { KnowledgeService, type StoredState } from "./service";
-import { unreachablePages } from "../../shared/content/lifecycle";
-import { decodeValue } from "../../shared/attrs/values";
+import { type CommitResult } from "../../shared/types/content";
+import { type HistoryState } from "../../shared/types/knowledge";
+import { EditChanges, type PagePatch, type RowChanges, type StoredState } from "./changes";
+import { decodeBlock } from "./records";
+import { checkTab, KnowledgeService } from "./service";
 
+type Node = { id: string; parent: string | null; page: string; before: string; after: string };
 export class EditHistory {
     constructor(readonly service: KnowledgeService) {
-        service.onCommitted = (before, after, tab, page) => this.capture(before, after, tab, page);
-        service.onInvalidated = keys => this.invalidate(new Set(keys));
-        service.onDefinitionChanged = (id, definition, typeChanged) => {
-            const affected = new Set<string>();
-            for (const node of service.db.select().from(undoNodes).all()) {
-                for (const state of [node.before, node.after] as StoredState[]) for (const [key, value] of Object.entries(state)) {
-                    if (!value || !("attrs" in value)) continue;
-                    const attr = value.attrs.find(row => row.attrId === id);
-                    if (!attr) continue;
-                    if (!definition || typeChanged) affected.add(key);
-                    else {
-                        try {
-                            decodeValue(definition, attr.value);
-                        }
-                        catch {
-                            affected.add(key);
-                        }
-                    }
-                }
-            }
-            if (affected.size) this.invalidate(affected);
-        };
+        service.onCommitted = (tab, page, rows) => this.capture(tab, page, rows);
+        service.onInvalidated = (keys, except) => this.invalidate(keys, except);
     }
 
-    private capture(before: StoredState, after: StoredState, tabId: string, pageId: string): void {
-        const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter(key => fingerprint(before[key] ?? null) !== fingerprint(after[key] ?? null));
+    capture(tabId: string, pageId: string, rows: RowChanges): void {
+        const keys = Object.keys(rows.after);
         if (!keys.length) return;
-        this.invalidate(new Set(keys), tabId);
-        if (tabId === "attribute-definition" || !pageId) return;
-        const db = this.service.db;
-        db.insert(editTabs).values({ id: tabId }).onConflictDoNothing().run();
-        const tab = db.select().from(editTabs).where(eq(editTabs.id, tabId)).get()!;
+        this.invalidate(keys, tabId);
+        const db = this.service;
+        db.statement("INSERT OR IGNORE INTO edit_tabs(id) VALUES (?)").run(tabId);
+        const parent = db.statement("SELECT cursor FROM edit_tabs WHERE id=?").pluck().get(tabId) as string | null;
         const id = randomUUID();
-        db.insert(undoNodes).values({ id, tabId, parentId: tab.cursor, pageId,
-            before: Object.fromEntries(keys.map(key => [key, before[key] ?? null])),
-            after: Object.fromEntries(keys.map(key => [key, after[key] ?? null])), createdAt: new Date().toISOString() }).run();
-        db.update(editTabs).set({ cursor: id }).where(eq(editTabs.id, tabId)).run();
+        db.statement("INSERT INTO undo_nodes(id,tab_id,parent_id,page_id,before_state,after_state,created_at) VALUES (?,?,?,?,?,?,?)")
+            .run(id, tabId, parent, pageId, JSON.stringify(rows.before), JSON.stringify(rows.after), Date.now());
+        for (const k of keys) db.statement("INSERT INTO undo_objects(node_id,object_key) VALUES (?,?)").run(id, k);
+        db.statement("UPDATE edit_tabs SET cursor=? WHERE id=?").run(id, tabId);
     }
 
-    invalidate(keys: Set<string>, exceptTab?: string): void {
-        const db = this.service.db, nodes = db.select().from(undoNodes).all();
-        const byId = new Map(nodes.map(node => [node.id, node]));
-        const removed = new Set(nodes.filter(node => node.tabId !== exceptTab && [...Object.keys(node.before), ...Object.keys(node.after)].some(key => keys.has(key))).map(node => node.id));
-        if (!removed.size) return;
-        const survivingParent = (id: string | null): string | null => {
-            const seen = new Set<string>();
-            while (id && removed.has(id) && !seen.has(id)) {
-                seen.add(id);
-                id = byId.get(id)?.parentId ?? null;
-            }
-            return id;
-        };
-        for (const node of nodes) if (!removed.has(node.id) && node.parentId && removed.has(node.parentId)) db.update(undoNodes).set({ parentId: survivingParent(node.parentId) }).where(eq(undoNodes.id, node.id)).run();
-        for (const tab of db.select().from(editTabs).all()) if (tab.cursor && removed.has(tab.cursor)) db.update(editTabs).set({ cursor: survivingParent(tab.cursor) }).where(eq(editTabs.id, tab.id)).run();
-        for (const id of removed) db.delete(undoNodes).where(eq(undoNodes.id, id)).run();
+    invalidate(keys: string[], exceptTab = ""): void {
+        if (!keys.length) return;
+        const db = this.service;
+        const nodes = db.statement(`SELECT DISTINCT n.id, n.parent_id AS parent, n.tab_id AS tab FROM undo_objects o
+            JOIN undo_nodes n ON n.id=o.node_id WHERE o.object_key IN (SELECT value FROM json_each(?)) AND n.tab_id != ?`).all(JSON.stringify(keys), exceptTab) as { id: string; parent: string | null; tab: string }[];
+        const removed = new Map(nodes.map(n => [n.id, n.parent]));
+        for (const node of nodes) {
+            let parent = node.parent;
+            while (parent && removed.has(parent)) parent = removed.get(parent) ?? null;
+            db.statement("UPDATE undo_nodes SET parent_id=? WHERE parent_id=?").run(parent, node.id);
+            db.statement("UPDATE edit_tabs SET cursor=? WHERE id=? AND cursor=?").run(parent, node.tab, node.id);
+        }
+        for (const node of nodes) db.statement("DELETE FROM undo_nodes WHERE id=?").run(node.id);
     }
 
-    state(tabId: string): { canUndo: boolean; redo: { id: string; time: string }[] } {
-        const db = this.service.db, cursor = db.select().from(editTabs).where(eq(editTabs.id, tabId)).get()?.cursor ?? null;
-        return { canUndo: !!cursor, redo: db.select().from(undoNodes).where(eq(undoNodes.tabId, tabId)).all().filter(node => node.parentId === cursor).map(node => ({ id: node.id, time: node.createdAt })).reverse() };
+    state(tabId: string): HistoryState {
+        checkTab(tabId);
+        const db = this.service;
+        const cursor = db.statement("SELECT cursor FROM edit_tabs WHERE id=?").pluck().get(tabId) as string | null;
+        return { canUndo: !!cursor, redo: db.statement("SELECT id,created_at AS time FROM undo_nodes WHERE tab_id=? AND parent_id IS ? ORDER BY rowid DESC").all(tabId, cursor ?? null) as HistoryState["redo"] };
     }
 
-    apply(tabId: string, direction: "undo" | "redo", branchId?: string): string {
-        const db = this.service.db;
-        return db.$client.transaction(() => {
-            const tab = db.select().from(editTabs).where(eq(editTabs.id, tabId)).get();
-            if (!tab) throw new Error("此标签页没有可恢复的编辑记录。");
-            const nodes = db.select().from(undoNodes).where(eq(undoNodes.tabId, tabId)).all();
-            const node = direction === "undo" ? nodes.find(node => node.id === tab.cursor)
-                : nodes.find(node => node.parentId === tab.cursor && node.id === (branchId ?? this.state(tabId).redo[0]?.id));
+    apply(tabId: string, direction: "undo" | "redo", branchId?: string, confirmation?: string): CommitResult {
+        return this.service.transact(tabId, () => {
+            const db = this.service, cursor = db.statement("SELECT cursor FROM edit_tabs WHERE id=?").pluck().get(tabId) as string | null;
+            if (cursor === undefined || !["undo", "redo"].includes(direction)) throw new Error("此标签页没有可恢复的编辑记录。");
+            const cols = "SELECT id,parent_id AS parent,page_id AS page,before_state AS before,after_state AS after FROM undo_nodes ";
+            const node = (direction === "undo" ? db.statement(cols + "WHERE tab_id=? AND id=?").get(tabId, cursor)
+                : db.statement(cols + "WHERE tab_id=? AND parent_id IS ? AND (? IS NULL OR id=?) ORDER BY rowid DESC LIMIT 1").get(tabId, cursor, branchId ?? null, branchId ?? null)) as Node | undefined;
             if (!node) throw new Error("该撤销或重做分支已失效。");
-            const expected = (direction === "undo" ? node.after : node.before) as StoredState;
-            const desired = (direction === "undo" ? node.before : node.after) as StoredState;
-            const current = this.service.snapshot();
-            for (const [key, value] of Object.entries(expected)) {
-                const existing = current[key] ?? null;
-                // A newly created block is retained on undo, so other occurrences
-                // and history never lose their content through implicit GC.
-                if (key.startsWith("block:") && value === null && fingerprint(existing) === fingerprint(desired[key] ?? null)) continue;
-                if (fingerprint(value) !== fingerprint(existing)) throw new Error("相关对象已变化，不能用旧历史覆盖当前内容。");
-            }
-            for (const [key, value] of Object.entries(desired)) if (key.startsWith("block:") && value && "content" in value) db.insert(blocks).values(value).onConflictDoUpdate({ target: blocks.id, set: value }).run();
+            const desired: StoredState = JSON.parse(direction === "undo" ? node.before : node.after);
+            const plan = new EditChanges(db);
+            const oldDeletes = direction === "redo" && Object.entries(desired).some(([k, v]) => k.startsWith("block:") && !v);
             for (const [key, value] of Object.entries(desired)) {
-                if (!key.startsWith("page:")) continue;
-                if (!value) db.delete(pages).where(eq(pages.id, key.slice(5))).run();
-                else if ("page" in value) {
-                    db.insert(pages).values(value.page).onConflictDoUpdate({ target: pages.id, set: value.page }).run();
-                    const ids = new Set(value.attrs.map(attr => attr.attrId));
-                    for (const current of db.select().from(pageAttrs).where(eq(pageAttrs.pageId, value.page.id)).all()) if (current.attrId.startsWith("custom:") && !ids.has(current.attrId)) db.$client.prepare("DELETE FROM page_attrs WHERE page_id = ? AND attr_id = ?").run(current.pageId, current.attrId);
-                    for (const attr of value.attrs) db.insert(pageAttrs).values(attr).onConflictDoUpdate({ target: [pageAttrs.pageId, pageAttrs.attrId], set: { value: attr.value } }).run();
-                }
+                if (!key.startsWith("block:")) continue;
+                const id = key.slice(6);
+                if (value && "content" in value) plan.putBlock(decodeBlock(value), value);
+                else if (oldDeletes && !value) db.removeEverywhere(plan, id);
+                plan.blocks.add(id);
             }
-            if (direction === "redo") for (const [key, value] of Object.entries(desired)) if (key.startsWith("block:") && value === null) db.delete(blocks).where(eq(blocks.id, key.slice(6))).run();
-            this.service.touch(node.pageId);
-            if (unreachablePages(this.service.graphPages(), this.service.readBlocks(), this.service.attributes.definitions()).length) throw new Error("当前引用关系已变化，无法安全恢复此历史节点。");
-            this.service.rebuildLinks();
-            this.service.onScheduled?.(current, this.service.snapshot());
-            this.invalidate(new Set(Object.keys(desired)), tabId);
-            db.update(editTabs).set({ cursor: direction === "undo" ? node.parentId : node.id }).where(eq(editTabs.id, tabId)).run();
-            return node.pageId;
-        })();
+            for (const [key, value] of Object.entries(desired)) {
+                if (!key.startsWith("page:") || !value || "content" in value) continue;
+                const id = key.slice(5);
+                let patch: PagePatch = value as PagePatch;
+                if ("page" in value) {
+                    // Nodes from older workspaces stored a whole page and all its stable attributes.
+                    const stored = Object.fromEntries(value.attrs.map(row => [row.attrId, { value: row.value }]));
+                    patch = { children: value.page.children, values: { ...stored } };
+                    const existing = db.statement("SELECT attr_id FROM page_attrs WHERE page_id=? AND attr_id LIKE 'custom:%'").pluck().all(id) as string[];
+                    for (const field of existing) if (!Object.hasOwn(stored, field)) patch.values![field] = null;
+                }
+                if (patch.children) plan.pageChildren(id, patch.children);
+                for (const [field, row] of Object.entries(patch.values ?? {})) plan.setValue(id, field, row, db.attributes.definition(field));
+                plan.pages.add(id);
+            }
+            return db.historyCommit(plan, node.page, tabId, { direction, tabId, node: node.id }, confirmation, rows => {
+                this.invalidate([...new Set([...Object.keys(desired), ...Object.keys(rows.after)])], tabId);
+                // Old delete-block nodes omitted the positions. Keep those we just removed for the next undo.
+                if (oldDeletes) {
+                    const before: StoredState = JSON.parse(node.before), after: StoredState = JSON.parse(node.after);
+                    for (const key of Object.keys(rows.after)) if (!Object.hasOwn(after, key)) {
+                        before[key] = rows.before[key];
+                        after[key] = rows.after[key];
+                        db.statement("INSERT OR IGNORE INTO undo_objects(node_id,object_key) VALUES (?,?)").run(node.id, key);
+                    }
+                    db.statement("UPDATE undo_nodes SET before_state=?,after_state=? WHERE id=?").run(JSON.stringify(before), JSON.stringify(after), node.id);
+                }
+                db.statement("UPDATE edit_tabs SET cursor=? WHERE id=?").run(direction === "undo" ? node.parent : node.id, tabId);
+            });
+        });
     }
 
     close(tabId: string): void {
-        const db = this.service.db;
-        db.$client.transaction(() => {
-            db.delete(undoNodes).where(eq(undoNodes.tabId, tabId)).run();
-            db.delete(editTabs).where(eq(editTabs.id, tabId)).run();
+        checkTab(tabId);
+        this.service.sql.transaction(() => {
+            this.service.statement("DELETE FROM undo_nodes WHERE tab_id=?").run(tabId);
+            this.service.statement("DELETE FROM edit_tabs WHERE id=?").run(tabId);
         })();
     }
 }

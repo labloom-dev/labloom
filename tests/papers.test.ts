@@ -54,6 +54,12 @@ test("annotation pages use attributes and reference entries; removing highlights
     assert.equal(annotation.attributes.independent, false);
     assert.equal(annotation.blocks[annotation.children[0]].type, "source");
     assert.equal(knowledge.backlinks(annotationId)[0].sourceId, id);
+    const source = annotation.blocks[annotation.children[0]];
+    const copy = { ...source, id: crypto.randomUUID() };
+    const clone = { pageId: annotationId, tabId: "copy", batch: 1, blocks: [copy], pageChildren: [...annotation.children, copy.id] };
+    assert.equal(knowledge.commitEdit(clone).status, "saved");
+    const altered = { ...copy, payload: { ...copy.payload, source: { ...copy.payload.source!, quote: "Altered" } } };
+    assert.throws(() => knowledge.commitEdit({ ...clone, blocks: [altered] }), /只读/);
     const before = papers.resources(id);
     assert.equal(before.highlights[0].anchorId, annotation.attributes.annotation_anchor);
     papers.removeHighlight(before.highlights[0].id);
@@ -73,7 +79,8 @@ test("reading position is a paper attribute and does not create edit conflicts o
     const before = knowledge.get(id);
     papers.position(id, file.id, { page: 2, scale: "page-width", rotation: 90, left: 10, top: 700 });
     const after = knowledge.get(id);
-    assert.equal(after.version, before.version);
+    assert.deepEqual(after.blocks, before.blocks);
+    assert.deepEqual(after.children, before.children);
     assert.equal(after.attributes.modified_at, before.attributes.modified_at);
     assert.deepEqual(after.attributes.reading_position, { [file.id]: { page: 2, scale: "page-width", rotation: 90, left: 10, top: 700 } });
     assert.throws(() => papers.position(id, randomUUID(), { page: 1, scale: 1, rotation: 0, left: 0, top: 0 }), /无效/);

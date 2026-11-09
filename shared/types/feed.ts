@@ -8,7 +8,7 @@ export type FeedSource = {
     id: string;
     name: string;
     url: string;
-    lastRefreshed: string | null;
+    lastRefreshed: number | null;
     lastAdded: number;
     error: string | null;
     unreadCount: number;
@@ -20,7 +20,7 @@ export type FeedEntry = {
     url: string | null;
     authors: string;
     summary: string;
-    publishedAt: string | null;
+    publishedAt: number | null;
 };
 
 export type FeedItem = FeedEntry & {

@@ -1,11 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { BrowserWindow, dialog, Notification } from "electron";
-import { eq } from "drizzle-orm";
-import { record, validUUID } from "../../shared/attrs/values";
-import { blockText } from "../../shared/content/blocks";
-import { knowledgeChannel, knowledgeChanged, saveBeforeClose, saveBeforeCloseReply } from "../../shared/ipc";
+import { desc, eq } from "drizzle-orm";
+import { record } from "../../shared/attrs/values";
+import { knowledgeChannels as channels, knowledgeChanged, saveBeforeClose, saveBeforeCloseReply } from "../../shared/ipc";
 import { type AttributeDefinition, type AttributeValue } from "../../shared/types/attributes";
-import { type Mutation, type PageKind, type PageQuery } from "../../shared/types/content";
+import { type BlockDeletion, type EditCommit, type KnowledgeChange, type Placement, type Target, type PageKind, type PageQuery } from "../../shared/types/content";
 import { type AnchorInput, type ReadingPosition } from "../../shared/types/papers";
 import { handle, on } from "../ipc";
 import { type Startup } from "../startup/startup";
@@ -13,14 +12,14 @@ import { notifications, workspaceMeta } from "../storage/tables";
 import { EditHistory } from "./history";
 import { PaperService } from "./papers";
 import { ReminderService } from "./reminders";
-import { KnowledgeService } from "./service";
+import { checkTab, KnowledgeService } from "./service";
 
 function string(value: unknown): string {
     if (typeof value !== "string" || value.length > 10000) throw new Error("参数无效。");
     return value;
 }
-function changed(): void {
-    for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(knowledgeChanged);
+function changed(change: KnowledgeChange): void {
+    for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(knowledgeChanged, change);
 }
 
 export function registerKnowledgeIPCs(window: BrowserWindow, startup: Startup): void {
@@ -30,103 +29,102 @@ export function registerKnowledgeIPCs(window: BrowserWindow, startup: Startup): 
         if (services) return services;
         const knowledge = new KnowledgeService(startup.getDatabase());
         const history = new EditHistory(knowledge), papers = new PaperService(knowledge, startup.getPath()), reminders = new ReminderService(knowledge);
-        knowledge.onScheduled = (before, after) => reminders.reconcile(before, after);
+        knowledge.onScheduled = changes => reminders.reconcile(changes);
+        knowledge.onChanged = changed;
         services = { knowledge, history, papers, reminders };
         return services;
     };
-    handle(window.webContents, knowledgeChannel, async (method, ...args) => {
-        const { knowledge: k, history, papers, reminders } = get();
-        const [a, b, c] = args;
-        let result: unknown;
-        switch (method) {
-            case "list": return k.list(a as PageQuery | undefined);
-            case "get": return k.get(string(a));
-            case "definitions": return k.attributes.definitions();
-            case "backlinks": return k.backlinks(string(a));
-            case "resources": return papers.resources(string(a));
-            case "readFile": return papers.read(string(a));
-            case "history": return history.state(string(a));
-            case "loadTabs": editorStarted = true;
-                return k.db.select().from(workspaceMeta).get()?.settings.tabs ?? null;
-            case "resolve": {
-                if (!record(a) || !validUUID(a.id) || !["page", "block"].includes(String(a.kind))) throw new Error("引用目标无效。");
-                if (a.kind === "block") {
-                    const block = k.readBlocks().get(a.id);
-                    return block ? { title: blockText(block), text: blockText(block), deleted: false, block } : null;
-                }
-                try {
-                    const page = k.get(a.id);
-                    return { title: page.title || "未命名", text: page.excerpt, deleted: !!page.attributes.deleted };
-                }
-                catch {
-                    return null;
-                }
-            }
-            case "create": {
-                const initial = c ?? {};
-                if (!record(initial)) throw new Error("页面属性无效。");
-                for (const id of Object.keys(initial)) if (k.attributes.definition(id).metadata.readonly || id === "deleted") throw new Error("内置只读属性不能通过普通新建操作写入。");
-                if (a === "annotation") throw new Error("请从文献的原文选择创建批注。");
-                const before = k.snapshot();
-                result = k.db.$client.transaction(() => {
-                    const page = k.create(a as PageKind, b === undefined ? "" : string(b), initial as Record<string, AttributeValue>);
-                    reminders.reconcile(before, k.snapshot());
-                    return page;
-                })();
-                break;
-            }
-            case "mutate": result = k.mutate(a as Mutation, b === undefined ? undefined : string(b));
-                break;
-            case "define": result = k.setDefinition(string(a), b as AttributeDefinition | null, c === undefined ? undefined : string(c));
-                break;
-            case "undo":
-                if (b !== "undo" && b !== "redo") throw new Error("历史操作无效。");
-                result = history.apply(string(a), b, c === undefined ? undefined : string(c));
-                break;
-            case "closeTab": history.close(string(a));
-                return;
-            case "saveTabs": {
-                if (!record(a) || JSON.stringify(a).length > 1000000 || !Array.isArray(a.groups) || a.groups.length > 32 || !record(a.layout) || typeof a.focusedGroupId !== "string") throw new Error("标签页布局无效。");
-                const meta = k.db.select().from(workspaceMeta).get()!;
-                k.db.update(workspaceMeta).set({ settings: { ...meta.settings, tabs: a } }).where(eq(workspaceMeta.id, meta.id)).run();
-                return;
-            }
-            case "importPDF": {
-                if (a !== undefined) string(a);
-                const selection = await dialog.showOpenDialog(window, { properties: ["openFile"], filters: [{ name: "PDF 文献", extensions: ["pdf"] }] });
-                if (selection.canceled || !selection.filePaths[0]) return null;
-                const path = selection.filePaths[0];
-                const match = a === undefined ? papers.matchingPaper(path) : null;
-                let reusePageId: string | undefined;
-                if (match) {
-                    const choice = await dialog.showMessageBox(window, { type: "question", message: `这个附件已关联《${match.title}》。`, buttons: ["打开已有文献", "另建文献页", "取消"], cancelId: 2 });
-                    if (choice.response === 2) return null;
-                    if (choice.response === 0) reusePageId = match.id;
-                }
-                result = papers.importFile(path, a as string | undefined, reusePageId);
-                break;
-            }
-            case "position": papers.position(string(a), string(b), c as ReadingPosition);
-                return;
-            case "highlight": papers.mark(string(a), b as AnchorInput, string(c));
-                break;
-            case "removeHighlight": papers.removeHighlight(string(a));
-                break;
-            case "annotate": result = papers.annotate(string(a), b as AnchorInput);
-                break;
-            case "notices": return k.db.select().from(notifications).all().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 100);
-            case "readNotice": k.db.update(notifications).set({ isRead: true }).where(eq(notifications.id, string(a))).run();
-                break;
-            default: throw new Error("未知工作区操作。");
+    const ipc = (channel: string, fn: (...args: unknown[]) => unknown): void => handle(window.webContents, channel, fn);
+    const optional = (value: unknown): string | undefined => value === undefined ? undefined : string(value);
+    const tab = (id: unknown): string => { checkTab(id); return id; };
+    const notice = (sourceTab: string, pages: string[] = [], blocks: string[] = []): void => changed({ sourceTab, pages, blocks });
+    ipc(channels.list, query => get().knowledge.list(query as PageQuery | undefined));
+    ipc(channels.get, id => get().knowledge.get(string(id)));
+    ipc(channels.readObjects, (page, ids) => {
+        if (!Array.isArray(ids)) throw new Error("读取对象列表无效。");
+        return get().knowledge.readObjects(string(page), ids.map(string));
+    });
+    ipc(channels.previewEdit, input => get().knowledge.previewEdit(input as EditCommit));
+    ipc(channels.commitEdit, (input, confirmation) => get().knowledge.commitEdit(input as EditCommit, optional(confirmation)));
+    ipc(channels.place, (input, confirmation) => get().knowledge.place(input as Placement, optional(confirmation)));
+    ipc(channels.deleteBlock, (input, confirmation) => get().knowledge.deleteBlock(input as BlockDeletion, optional(confirmation)));
+    ipc(channels.trash, (ids, source, confirmation) => get().knowledge.trash(ids as string[], tab(source), optional(confirmation)));
+    ipc(channels.restore, (ids, source) => get().knowledge.restore(ids as string[], tab(source)));
+    ipc(channels.create, (kind, title, initial = {}, parentId, source) => {
+        if (!record(initial)) throw new Error("页面属性无效。");
+        const k = get().knowledge;
+        for (const id of Object.keys(initial)) if (k.attributes.definition(id).metadata.readonly || id === "deleted") throw new Error("不能通过新建操作写入只读属性。");
+        if (kind === "annotation") throw new Error("请从文献的原文选择创建批注。");
+        return k.create(kind as PageKind, optional(title), initial as Record<string, AttributeValue>, optional(parentId), optional(source));
+    });
+    ipc(channels.definitions, () => get().knowledge.attributes.definitions());
+    ipc(channels.define, (id, input, token) => get().knowledge.setDefinition(string(id), input as AttributeDefinition | null, optional(token)));
+    ipc(channels.resolve, target => get().knowledge.resolve(target as Target));
+    ipc(channels.backlinks, id => get().knowledge.backlinks(string(id)));
+    ipc(channels.history, id => get().history.state(tab(id)));
+    ipc(channels.undo, (id, direction, branch, confirmation) => {
+        if (direction !== "undo" && direction !== "redo") throw new Error("历史操作无效。");
+        return get().history.apply(tab(id), direction, optional(branch), optional(confirmation));
+    });
+    ipc(channels.closeTab, id => { get().history.close(tab(id)); notice(tab(id)); });
+    ipc(channels.loadTabs, () => {
+        editorStarted = true;
+        return get().knowledge.db.select().from(workspaceMeta).get()?.settings.tabs ?? null;
+    });
+    ipc(channels.saveTabs, value => {
+        if (!record(value) || JSON.stringify(value).length > 1000000 || !Array.isArray(value.groups) || value.groups.length > 32 || !record(value.layout) || typeof value.focusedGroupId !== "string") throw new Error("标签页布局无效。");
+        const db = get().knowledge.db, meta = db.select().from(workspaceMeta).get()!;
+        db.update(workspaceMeta).set({ settings: { ...meta.settings, tabs: value } }).where(eq(workspaceMeta.id, meta.id)).run();
+        notice("");
+    });
+    ipc(channels.importPDF, async (id, source) => {
+        const pageId = optional(id), sourceTab = optional(source) ?? "", { papers, knowledge } = get();
+        const selection = await dialog.showOpenDialog(window, { properties: ["openFile"], filters: [{ name: "PDF 文献", extensions: ["pdf"] }] });
+        if (selection.canceled || !selection.filePaths[0]) return null;
+        const path = selection.filePaths[0], match = pageId ? null : papers.matchingPaper(path);
+        let reusePageId: string | undefined;
+        if (match) {
+            const choice = await dialog.showMessageBox(window, { type: "question", message: `这个附件已关联《${match.title}》。`, buttons: ["打开已有文献", "另建文献页", "取消"], cancelId: 2 });
+            if (choice.response === 2) return null;
+            if (choice.response === 0) reusePageId = match.id;
         }
-        changed();
+        const result = papers.importFile(path, pageId, reusePageId);
+        if (!result.reused) notice(sourceTab, [result.pageId], pageId ? [] : Object.keys(knowledge.get(result.pageId).blocks));
         return result;
+    });
+    ipc(channels.resources, id => get().papers.resources(string(id)));
+    ipc(channels.readFile, id => get().papers.read(string(id)));
+    ipc(channels.position, (id, file, value, source) => {
+        get().papers.position(string(id), string(file), value as ReadingPosition);
+        notice(optional(source) ?? "", [string(id)]);
+    });
+    ipc(channels.highlight, (id, anchor, color, source) => {
+        get().papers.mark(string(id), anchor as AnchorInput, string(color));
+        notice(optional(source) ?? "", [string(id)]);
+    });
+    ipc(channels.removeHighlight, (id, source) => {
+        const owners = get().papers.removeHighlight(string(id));
+        notice(optional(source) ?? "", owners);
+    });
+    ipc(channels.annotate, (id, anchor, source) => {
+        const { papers, knowledge } = get();
+        const annotation = papers.annotate(string(id), anchor as AnchorInput);
+        const reference = knowledge.incoming({ kind: "page", id: annotation }).filter(row => row.sourceKind === "block").map(row => row.sourceId);
+        notice(optional(source) ?? "", [string(id), annotation], [...reference, ...Object.keys(knowledge.get(annotation).blocks)]);
+        return annotation;
+    });
+    ipc(channels.notices, () => get().knowledge.db.select().from(notifications).orderBy(desc(notifications.createdAt)).limit(100).all());
+    ipc(channels.readNotice, id => {
+        const db = get().knowledge;
+        const page = db.statement("SELECT page_id FROM notifications WHERE id=?").pluck().get(string(id)) as string | undefined;
+        db.db.update(notifications).set({ isRead: true }).where(eq(notifications.id, string(id))).run();
+        notice("", page ? [page] : []);
     });
     const timer = setInterval(() => {
         if (startup.state.status !== "ready") return;
         try {
             const due = get().reminders.due();
-            if (due.length) changed();
+            if (due.length) notice("", [...new Set(due.map(n => n.pageId))]);
             for (const notice of due) if (Notification.isSupported()) new Notification({ title: "知织提醒", body: notice.title }).show();
         }
         catch (error) {

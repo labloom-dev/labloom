@@ -46,7 +46,7 @@
             }} />
         {/if}
     {:else if definition.type === "datetime"}
-        <input type="datetime-local" value={typeof value === "string" ? wallTime(value, zone) : ""} onchange={event => change(() => event.currentTarget.value ? toInstant(event.currentTarget.value, zone) : null)} />
+        <input type="datetime-local" value={typeof value === "number" ? secondsToWall(value, zone) : ""} onchange={event => change(() => event.currentTarget.value ? wallToSeconds(event.currentTarget.value, zone) : null)} />
         <small>{zone}</small>
     {:else if definition.type === "json"}
         <textarea value={value === null ? "" : JSON.stringify(value, null, 2)} onchange={event => change(() => event.currentTarget.value ? JSON.parse(event.currentTarget.value) : null)} placeholder="JSON 值"></textarea>
@@ -73,7 +73,7 @@
 </style>
 <script lang="ts">
     import { type AttributeDefinition, type AttributeValue } from "../../../shared/types/attributes";
-    import { toInstant, wallTime } from "../../../shared/content/time";
+    import { wallToSeconds, secondsToWall } from "../../../shared/content/time";
     import { openPage } from "../layout/navigation";
     import { message } from "./state.svelte";
     import TargetPicker from "./TargetPicker.svelte";
@@ -89,6 +89,7 @@
         }
     }
     function display(value: AttributeValue): string {
+        if (definition.type === "datetime" && typeof value === "number") return new Date(value * 1000).toISOString();
         return value === null ? "未填写" : typeof value === "object" ? JSON.stringify(value) : String(value);
     }
 </script>

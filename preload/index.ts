@@ -1,36 +1,42 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { AppAPI } from "../shared/app";
 import { appChannels, appearanceChannels, feedChannels, startupChannels } from "../shared/ipc";
-import { knowledgeChannel, knowledgeChanged, saveBeforeClose, saveBeforeCloseReply } from "../shared/ipc";
+import { knowledgeChannels, knowledgeChanged, saveBeforeClose, saveBeforeCloseReply } from "../shared/ipc";
 
 // The renderer only gets this typed bridge, never ipcRenderer itself.
 const api: AppAPI = {
     openDevTools: () => ipcRenderer.send(appChannels.openDevTools),
     knowledge: {
-        list: query => ipcRenderer.invoke(knowledgeChannel, "list", query),
-        get: id => ipcRenderer.invoke(knowledgeChannel, "get", id),
-        create: (kind, title, initial) => ipcRenderer.invoke(knowledgeChannel, "create", kind, title, initial),
-        mutate: (input, token) => ipcRenderer.invoke(knowledgeChannel, "mutate", input, token),
-        definitions: () => ipcRenderer.invoke(knowledgeChannel, "definitions"),
-        define: (id, value, token) => ipcRenderer.invoke(knowledgeChannel, "define", id, value, token),
-        backlinks: id => ipcRenderer.invoke(knowledgeChannel, "backlinks", id),
-        resolve: target => ipcRenderer.invoke(knowledgeChannel, "resolve", target),
-        history: id => ipcRenderer.invoke(knowledgeChannel, "history", id),
-        undo: (id, direction, branch) => ipcRenderer.invoke(knowledgeChannel, "undo", id, direction, branch),
-        closeTab: id => ipcRenderer.invoke(knowledgeChannel, "closeTab", id),
-        loadTabs: () => ipcRenderer.invoke(knowledgeChannel, "loadTabs"),
-        saveTabs: value => ipcRenderer.invoke(knowledgeChannel, "saveTabs", value),
-        importPDF: id => ipcRenderer.invoke(knowledgeChannel, "importPDF", id),
-        resources: id => ipcRenderer.invoke(knowledgeChannel, "resources", id),
-        readFile: id => ipcRenderer.invoke(knowledgeChannel, "readFile", id),
-        position: (id, fileId, value) => ipcRenderer.invoke(knowledgeChannel, "position", id, fileId, value),
-        highlight: (id, anchor, color) => ipcRenderer.invoke(knowledgeChannel, "highlight", id, anchor, color),
-        removeHighlight: id => ipcRenderer.invoke(knowledgeChannel, "removeHighlight", id),
-        annotate: (id, anchor) => ipcRenderer.invoke(knowledgeChannel, "annotate", id, anchor),
-        notices: () => ipcRenderer.invoke(knowledgeChannel, "notices"),
-        readNotice: id => ipcRenderer.invoke(knowledgeChannel, "readNotice", id),
+        list: (...args) => ipcRenderer.invoke(knowledgeChannels.list, ...args),
+        get: (...args) => ipcRenderer.invoke(knowledgeChannels.get, ...args),
+        create: (...args) => ipcRenderer.invoke(knowledgeChannels.create, ...args),
+        readObjects: (...args) => ipcRenderer.invoke(knowledgeChannels.readObjects, ...args),
+        commitEdit: (...args) => ipcRenderer.invoke(knowledgeChannels.commitEdit, ...args),
+        previewEdit: (...args) => ipcRenderer.invoke(knowledgeChannels.previewEdit, ...args),
+        deleteBlock: (...args) => ipcRenderer.invoke(knowledgeChannels.deleteBlock, ...args),
+        place: (...args) => ipcRenderer.invoke(knowledgeChannels.place, ...args),
+        trash: (...args) => ipcRenderer.invoke(knowledgeChannels.trash, ...args),
+        restore: (...args) => ipcRenderer.invoke(knowledgeChannels.restore, ...args),
+        definitions: (...args) => ipcRenderer.invoke(knowledgeChannels.definitions, ...args),
+        define: (...args) => ipcRenderer.invoke(knowledgeChannels.define, ...args),
+        backlinks: (...args) => ipcRenderer.invoke(knowledgeChannels.backlinks, ...args),
+        resolve: (...args) => ipcRenderer.invoke(knowledgeChannels.resolve, ...args),
+        history: (...args) => ipcRenderer.invoke(knowledgeChannels.history, ...args),
+        undo: (...args) => ipcRenderer.invoke(knowledgeChannels.undo, ...args),
+        closeTab: (...args) => ipcRenderer.invoke(knowledgeChannels.closeTab, ...args),
+        loadTabs: (...args) => ipcRenderer.invoke(knowledgeChannels.loadTabs, ...args),
+        saveTabs: (...args) => ipcRenderer.invoke(knowledgeChannels.saveTabs, ...args),
+        importPDF: (...args) => ipcRenderer.invoke(knowledgeChannels.importPDF, ...args),
+        resources: (...args) => ipcRenderer.invoke(knowledgeChannels.resources, ...args),
+        readFile: (...args) => ipcRenderer.invoke(knowledgeChannels.readFile, ...args),
+        position: (...args) => ipcRenderer.invoke(knowledgeChannels.position, ...args),
+        highlight: (...args) => ipcRenderer.invoke(knowledgeChannels.highlight, ...args),
+        removeHighlight: (...args) => ipcRenderer.invoke(knowledgeChannels.removeHighlight, ...args),
+        annotate: (...args) => ipcRenderer.invoke(knowledgeChannels.annotate, ...args),
+        notices: (...args) => ipcRenderer.invoke(knowledgeChannels.notices, ...args),
+        readNotice: (...args) => ipcRenderer.invoke(knowledgeChannels.readNotice, ...args),
         onChanged: listener => {
-            const handler = (): void => listener();
+            const handler = (_event: unknown, change: Parameters<typeof listener>[0]): void => listener(change);
             ipcRenderer.on(knowledgeChanged, handler);
             return () => ipcRenderer.removeListener(knowledgeChanged, handler);
         },

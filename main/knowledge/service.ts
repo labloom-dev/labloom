@@ -1,349 +1,359 @@
+import { nowSeconds } from "../../shared/content/time";
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
-import { decodeValue, record, validUUID } from "../../shared/attrs/values";
-import { assertAcyclic, blockText, payload, references, validateBlock } from "../../shared/content/blocks";
-import { containedBlocks, pageTargets, unreachablePages } from "../../shared/content/lifecycle";
+import { record, validUUID } from "../../shared/attrs/values";
+import { blockText, payload, references, validateBlock, validTarget } from "../../shared/content/blocks";
 import { type AttributeDefinition, type AttributeImpact, type AttributeValue } from "../../shared/types/attributes";
-import { pageKinds, type Backlink, type ChangePreview, type CommitResult, type ContentBlock, type EditPage, type Mutation, type PageKind, type PageList, type PageQuery, type PageRecord, type PageSummary } from "../../shared/types/content";
+import { pageKinds, type Backlink, type BlockDeletion, type ChangePreview, type CommitResult, type ContentBlock, type EditCommit, type KnowledgeChange, type PageKind, type PageRecord, type Placement, type ResolvedTarget, type Target } from "../../shared/types/content";
 import { type WorkspaceDatabase } from "../storage/database";
-import { blocks, pages, linkIndex, pageAttrs } from "../storage/tables";
-import { AttributeService, fingerprint } from "./attributes";
+import { fingerprint } from "./attributes";
+import { EditChanges, type ReminderChange, type RowChanges } from "./changes";
+import { KnowledgeRecords } from "./records";
 
-export type PageRow = typeof pages.$inferSelect;
-export type BlockRow = typeof blocks.$inferSelect;
-export type StoredState = Record<string, BlockRow | { page: PageRow; attrs: (typeof pageAttrs.$inferSelect)[] } | null>;
-class PreviewRollback extends Error {
-    constructor(readonly preview: ChangePreview) {
-        super("preview");
-    }
-}
 class DefinitionRollback extends Error {
-    constructor(readonly impact: AttributeImpact) {
-        super("definition preview");
-    }
+    constructor(readonly impact: AttributeImpact) { super("definition preview"); }
 }
+export function checkTab(id: unknown): asserts id is string {
+    if (typeof id !== "string" || !id || id.length > 100) throw new Error("编辑会话无效。");
+}
+export class KnowledgeService extends KnowledgeRecords {
+    onCommitted?: (tab: string, page: string, rows: RowChanges) => void;
+    onInvalidated?: (keys: string[], exceptTab?: string) => void;
+    onScheduled?: (pages: ReminderChange[]) => void;
+    onChanged?: (change: KnowledgeChange) => void;
 
-export class KnowledgeService {
-    readonly attributes: AttributeService;
-    onCommitted?: (before: StoredState, after: StoredState, tabId: string, pageId: string) => void;
-    onInvalidated?: (keys: string[]) => void;
-    onDefinitionChanged?: (id: string, next: AttributeDefinition | null, typeChanged: boolean) => void;
-    onScheduled?: (before: StoredState, after: StoredState) => void;
+    constructor(db: WorkspaceDatabase) { super(db); }
 
-    constructor(readonly db: WorkspaceDatabase) {
-        this.attributes = new AttributeService(db);
-    }
-
-    readBlocks(): Map<string, ContentBlock> {
-        return new Map(this.db.select().from(blocks).all().map(row => {
-            let body = payload(row.type as ContentBlock["type"], row.content ?? "");
-            // The original reference block had no target field.
-            if (row.type === "blocked_reference") body.target = null;
-            if (row.content) {
-                let parsed: unknown;
-                try {
-                    parsed = JSON.parse(row.content);
-                }
-                catch { /* Legacy plain text is upgraded only when that block is edited. */ }
-                if (record(parsed) && parsed.type === row.type && "schemaVersion" in parsed) {
-                    if (parsed.schemaVersion !== 1) throw new Error("块内容来自不支持的格式版本，原内容未被修改。");
-                    body = parsed as ContentBlock["payload"];
-                }
-            }
-            const block: ContentBlock = { id: row.id, type: row.type as ContentBlock["type"], payload: body, children: row.children };
-            validateBlock(block);
-            return [row.id, block];
-        }));
-    }
-
-    graphPages(): (PageRow & { attributes: Record<string, AttributeValue> })[] {
-        const definitions = new Map(this.attributes.definitions().map(definition => [definition.id, definition]));
-        const values = new Map<string, Record<string, AttributeValue>>();
-        for (const row of this.db.select().from(pageAttrs).all()) {
-            let page = values.get(row.pageId);
-            if (!page) {
-                page = {};
-                values.set(row.pageId, page);
-            }
-            page[row.attrId] = decodeValue(definitions.get(row.attrId)!, row.value);
-        }
-        return this.db.select().from(pages).all().map(page => ({ ...page, attributes: values.get(page.id) ?? {} }));
-    }
-
-    snapshot(): StoredState {
-        const state: StoredState = {};
-        for (const block of this.db.select().from(blocks).all()) state[`block:${block.id}`] = block;
-        const byPage = new Map<string, (typeof pageAttrs.$inferSelect)[]>();
-        for (const row of this.db.select().from(pageAttrs).orderBy(pageAttrs.attrId).all()) {
-            if (row.attrId === "reading_position" || row.attrId === "modified_at") continue;
-            const owned = byPage.get(row.pageId) ?? [];
-            owned.push(row);
-            byPage.set(row.pageId, owned);
-        }
-        for (const page of this.db.select().from(pages).all()) state[`page:${page.id}`] = { page, attrs: byPage.get(page.id) ?? [] };
-        return state;
-    }
-
-    private pageRow(id: string): PageRow {
-        if (!validUUID(id)) throw new Error("页面 UUID 无效。");
-        const page = this.db.select().from(pages).where(eq(pages.id, id)).get();
-        if (!page || !pageKinds.includes(page.kind as PageKind)) throw new Error("页面不存在或类型不受支持。");
+    private writable(id: string): ReturnType<KnowledgeRecords["header"]> {
+        const page = this.header(id);
+        if (this.flags(id).deleted) throw new Error("回收站中的页面不能编辑。");
         return page;
     }
 
-    private summary(row: PageRow, values: Record<string, AttributeValue>, all: Map<string, ContentBlock>): PageSummary {
-        const title = all.get(row.titleBlockId);
-        return { id: row.id, kind: row.kind as PageKind, title: title ? blockText(title) : "", excerpt: row.children.map(id => all.get(id)).filter((block): block is ContentBlock => !!block).map(blockText).join(" ").slice(0, 240), attributes: values };
-    }
-
-    get(id: string): PageRecord {
-        const row = this.pageRow(id), all = this.readBlocks();
-        const attributes = this.attributes.values(id);
-        const visible = [...containedBlocks(row, all)].map(id => all.get(id)).filter((block): block is ContentBlock => !!block);
-        const stableAttributes = Object.fromEntries(Object.entries(attributes).filter(([id]) => !["reading_position", "modified_at"].includes(id)));
-        return { ...this.summary(row, attributes, all), titleBlockId: row.titleBlockId, children: row.children, blocks: Object.fromEntries(visible.map(block => [block.id, block])), version: fingerprint({ row, attributes: stableAttributes }), blockVersions: Object.fromEntries(visible.map(block => [block.id, fingerprint(block)])) };
-    }
-
-    list(query: PageQuery = {}): PageList {
-        if (!record(query) || (query.kind && !pageKinds.includes(query.kind)) || (query.keyword !== undefined && typeof query.keyword !== "string")) throw new Error("页面查询无效。");
-        const offset = query.offset ?? 0, limit = query.limit ?? 50;
-        if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > 200) throw new Error("分页范围无效。");
-        const all = this.readBlocks();
-        const keyword = query.keyword?.trim().toLocaleLowerCase();
-        const graph = this.graphPages();
-        const rows = new Map(graph.map(page => [page.id, page]));
-        const definitions = keyword ? this.attributes.definitions() : [];
-        const items = graph.map(row => this.summary(row, row.attributes, all)).filter(page => {
-            if (!!page.attributes.deleted !== !!query.deleted || (query.kind && page.kind !== query.kind) || (query.pinned !== undefined && !!page.attributes.pinned !== query.pinned)) return false;
-            if (query.tags?.some(id => !Array.isArray(page.attributes.tags) || !page.attributes.tags.includes(id))) return false;
-            if (query.attributes && Object.entries(query.attributes).some(([id, value]) => !Object.hasOwn(page.attributes, id) || fingerprint(page.attributes[id]) !== fingerprint(value))) return false;
-            if (keyword) {
-                const row = rows.get(page.id)!;
-                const text = [...containedBlocks(row, all)].map(id => all.get(id)).filter((block): block is ContentBlock => !!block).map(blockText).join(" ");
-                const labels = definitions.flatMap(definition => {
-                    const value = page.attributes[definition.id];
-                    return definition.metadata.options?.filter(option => value === option.id || Array.isArray(value) && value.includes(option.id)).map(option => option.name) ?? [];
-                }).join(" ");
-                if (!`${page.title} ${text} ${JSON.stringify(page.attributes)} ${labels}`.toLocaleLowerCase().includes(keyword)) return false;
+    private planEdit(input: EditCommit): EditChanges {
+        if (!record(input) || !Number.isSafeInteger(input.batch) || input.batch < 0 || !Array.isArray(input.blocks) || !record(input.attributes ?? {}) ||
+            !Array.isArray(input.detach ?? []) || input.detach?.some(id => typeof id !== "string")) throw new Error("页面编辑参数无效。");
+        checkTab(input.tabId);
+        const page = this.writable(input.pageId), plan = new EditChanges(this), submitted = new Set<string>();
+        for (const block of input.blocks) {
+            validateBlock(block);
+            if (submitted.has(block.id)) throw new Error("一次编辑只能为同一块提交一份内容。");
+            submitted.add(block.id);
+            const previous = this.blockRow(block.id);
+            if (previous?.type === "title" && block.type !== "title" || block.id === page.titleBlockId && block.type !== "title") throw new Error("页面标题必须保持标题块类型。");
+            if (previous?.type === "source") throw new Error("来源片段为只读内容。");
+            if (block.type === "source") {
+                // A shallow clipboard copy can point at an existing, immutable quotation.
+                const source = block.payload.source!;
+                if (previous || block.payload.inline.length || !this.statement("SELECT 1 FROM anchors WHERE id=? AND file_id=? AND quote=?").get(source.anchorId, source.fileId, source.quote))
+                    throw new Error("来源片段为只读内容。");
             }
-            return true;
-        });
-        items.sort((a, b) => query.sort === "title" ? a.title.localeCompare(b.title) || a.id.localeCompare(b.id)
-            : String(b.attributes[query.sort === "created" ? "created_at" : "modified_at"] ?? "").localeCompare(String(a.attributes[query.sort === "created" ? "created_at" : "modified_at"] ?? "")) || a.id.localeCompare(b.id));
-        return { items: items.slice(offset, offset + limit), total: items.length };
-    }
-
-    putBlock(block: ContentBlock): void {
-        validateBlock(block);
-        const row = { id: block.id, type: block.type, content: JSON.stringify(block.payload), children: block.children };
-        this.db.insert(blocks).values(row).onConflictDoUpdate({ target: blocks.id, set: row }).run();
-    }
-
-    create(kind: PageKind = "editable", title = "", initial: Record<string, AttributeValue> = {}, parentId?: string): PageRecord {
-        if (!pageKinds.includes(kind) || typeof title !== "string" || title.length > 1000 || !record(initial)) throw new Error("新页面参数无效。");
-        return this.db.$client.transaction(() => {
-            const id = randomUUID(), titleId = randomUUID(), bodyId = randomUUID();
-            this.putBlock({ id: titleId, type: "title", payload: payload("title", title), children: [] });
-            this.putBlock({ id: bodyId, type: "paragraph", payload: payload("paragraph"), children: [] });
-            this.db.insert(pages).values({ id, kind, titleBlockId: titleId, children: [bodyId] }).run();
-            const now = new Date().toISOString();
-            const schedule: Record<string, AttributeValue> = kind === "task" || kind === "event" ? { task_status: "todo", priority: "normal", schedule_zone: Intl.DateTimeFormat().resolvedOptions().timeZone } : {};
-            this.attributes.write(id, { pinned: false, tags: [], independent: kind !== "annotation", ...schedule, ...initial, deleted: false, created_at: now, modified_at: now }, true);
-            this.validateSchedule(id);
-            if (parentId) {
-                const parent = this.get(parentId);
-                if (parent.attributes.deleted) throw new Error("不能在回收站页面内创建入口。");
-                const reference = randomUUID();
-                this.putBlock({ id: reference, type: "blocked_reference", payload: { ...payload("blocked_reference"), target: { kind: "page", id } }, children: [] });
-                this.db.update(pages).set({ children: [...parent.children, reference] }).where(eq(pages.id, parentId)).run();
-                this.touch(parentId);
-            }
-            if (unreachablePages(this.graphPages(), this.readBlocks(), this.attributes.definitions()).includes(id)) throw new Error("非独立页面需要从存活页面建立引用入口。");
-            this.rebuildLinks();
-            return this.get(id);
-        })();
-    }
-
-    touch(pageId: string): void {
-        this.attributes.write(pageId, { modified_at: new Date().toISOString() }, true);
-    }
-
-    private edit(input: EditPage): void {
-        if (!record(input) || !Array.isArray(input.blocks ?? []) || !record(input.attributes ?? {}) || !Array.isArray(input.detach ?? [])) throw new Error("页面编辑参数无效。");
-        const current = this.get(input.pageId);
-        if (current.attributes.deleted) throw new Error("回收站中的页面不能编辑。");
-        if (input.version !== current.version) throw new Error("页面已被其他视图修改。当前输入仍保留，请先重新读取或保留副本。");
-        const all = this.readBlocks(), previousIds = containedBlocks(current, all);
-        const changedIds = new Set<string>();
-        for (const change of input.blocks ?? []) {
-            validateBlock(change.value);
-            if (changedIds.has(change.value.id)) throw new Error("一次编辑只能为同一块提交一份内容。");
-            changedIds.add(change.value.id);
-            const existing = all.get(change.value.id);
-            if (existing ? fingerprint(existing) !== change.version : change.version !== null) throw new Error("同步块已被其他视图修改，不能覆盖较新的内容。");
-            if (change.value.type === "source" && existing?.type !== "source") throw new Error("来源片段必须由原文批注创建。");
-            if (existing?.type === "source" && fingerprint(existing) !== fingerprint(change.value)) throw new Error("来源片段为只读内容。");
-            all.set(change.value.id, change.value);
+            plan.putBlock(block);
         }
-        const children = input.children ?? current.children;
-        if (!Array.isArray(children) || !children.every(validUUID)) throw new Error("页面子块必须是有序 UUID 数组。");
-        const nextIds = containedBlocks({ titleBlockId: current.titleBlockId, children }, all);
-        for (const id of changedIds) if (!previousIds.has(id) && !nextIds.has(id)) throw new Error("编辑包含不属于当前页面的块。");
-        if (all.get(current.titleBlockId)?.type !== "title") throw new Error("页面标题必须保持标题块类型。");
-        assertAcyclic(all);
-        for (const change of input.blocks ?? []) this.putBlock(change.value);
-        if (input.children) this.db.update(pages).set({ children }).where(eq(pages.id, input.pageId)).run();
-        this.attributes.write(input.pageId, input.attributes ?? {});
-        this.attributes.detach(input.pageId, input.detach ?? []);
-        this.validateSchedule(input.pageId);
-        this.touch(input.pageId);
+        if (input.pageChildren !== undefined) plan.pageChildren(page.id, input.pageChildren);
+        for (const id of submitted) {
+            if (!this.owners(id).includes(page.id) && !plan.owners(id).includes(page.id)) throw new Error("编辑包含不属于当前页面的块。");
+        }
+        plan.verifyContainment();
+        plan.attributes(page.id, input.attributes ?? {}, input.detach);
+        this.validateSchedule(plan, page.id, input.attributes ?? {});
+        plan.pages.add(page.id);
+        plan.touches.add(page.id);
+        return plan;
     }
 
-    private validateSchedule(id: string): void {
-        const attributes = this.attributes.values(id);
-        if (attributes.schedule_start && attributes.schedule_end && String(attributes.schedule_end) < String(attributes.schedule_start)) throw new Error("结束时间不能早于开始时间。");
-        if (attributes.schedule_zone) {
-            try {
-                new Intl.DateTimeFormat("zh-CN", { timeZone: String(attributes.schedule_zone) });
-            }
-            catch {
-                throw new Error("时区无效。");
-            }
+    private validateSchedule(plan: EditChanges, id: string, attrs: Record<string, AttributeValue>): void {
+        if ("schedule_start" in attrs || "schedule_end" in attrs) {
+            const start = plan.readValue(id, "schedule_start")?.value, end = plan.readValue(id, "schedule_end")?.value;
+            if (typeof start === "number" && typeof end === "number" && end < start) throw new Error("结束时间不能早于开始时间。");
+        }
+        if (attrs.schedule_zone) {
+            try { new Intl.DateTimeFormat("zh-CN", { timeZone: String(attrs.schedule_zone) }); }
+            catch { throw new Error("时区无效。"); }
         }
     }
 
-    private apply(mutation: Mutation): { pageId: string; tabId: string; removed: string[] } {
-        if (mutation.type === "edit") {
-            this.edit(mutation.edit);
-            return { pageId: mutation.edit.pageId, tabId: mutation.edit.tabId, removed: [] };
-        }
-        if (mutation.type === "trash" || mutation.type === "restore") {
-            if (!Array.isArray(mutation.ids) || !mutation.ids.length || !mutation.ids.every(validUUID)) throw new Error("页面选择无效。");
-            for (const id of mutation.ids) {
-                this.pageRow(id);
-                this.attributes.write(id, mutation.type === "trash" ? { deleted: true, recycle_reason: "manual_delete", recycled_at: new Date().toISOString() }
-                    : { deleted: false, independent: true, recycle_reason: null, recycled_at: null, ...(Object.hasOwn(this.attributes.values(id), "reminder_at") ? { reminder_at: null } : {}) }, true);
-                this.touch(id);
-            }
-            return { pageId: mutation.ids[0], tabId: mutation.tabId, removed: mutation.type === "trash" ? mutation.ids : [] };
-        }
-        if (mutation.type === "delete-block") {
-            const current = this.get(mutation.pageId);
-            if (current.attributes.deleted || !current.blocks[mutation.blockId] || current.blockVersions[mutation.blockId] !== mutation.version) throw new Error("待删除的块已变化。");
-            if (this.db.select().from(pages).where(eq(pages.titleBlockId, mutation.blockId)).get()) throw new Error("页面标题块不能单独删除。");
-            this.db.delete(blocks).where(eq(blocks.id, mutation.blockId)).run();
-            this.touch(mutation.pageId);
-            return { pageId: mutation.pageId, tabId: mutation.tabId, removed: [mutation.blockId] };
-        }
-        if (mutation.type !== "place") throw new Error("不支持的编辑操作。");
-        const position = mutation.position, current = this.get(position.pageId);
-        if (current.attributes.deleted || !Number.isInteger(position.index)) throw new Error("不能修改此位置。");
-        if (position.kind === "page" && position.containerId !== current.id) throw new Error("页面位置不匹配。");
-        const container = position.kind === "block" ? current.blocks[position.containerId] : null;
-        if (position.kind !== "page" && !container) throw new Error("块容器不存在。");
-        const children = [...(container?.children ?? current.children)];
-        if (fingerprint(children) !== fingerprint(position.children) || position.index < 0 || position.index > children.length) throw new Error("块位置已发生变化，请重新操作。");
-        if (mutation.action === "insert") {
-            const block = this.readBlocks().get(mutation.blockId ?? "");
-            if (!block || block.type === "title") throw new Error("同步块目标不可用。");
-            children.splice(position.index, 0, block.id);
-        }
-        else {
-            if (position.index === children.length) throw new Error("此位置没有块。");
-            if (mutation.action === "remove") children.splice(position.index, 1);
-            else if (mutation.action === "clone" || mutation.action === "duplicate") {
-                const block = this.readBlocks().get(children[position.index]);
-                if (!block) throw new Error("缺失块不能解除同步。");
-                const id = randomUUID();
-                this.putBlock({ ...block, id, children: [...block.children] });
-                if (mutation.action === "duplicate") children.splice(position.index + 1, 0, id);
-                else children[position.index] = id;
-            }
-            else {
-                const target = position.index + (mutation.action === "move-up" ? -1 : mutation.action === "move-down" ? 1 : NaN);
-                if (!Number.isInteger(target) || target < 0 || target >= children.length) throw new Error("无法移动到此位置。");
-                [children[position.index], children[target]] = [children[target], children[position.index]];
-            }
-        }
-        if (container) this.putBlock({ ...container, children });
-        else this.db.update(pages).set({ children }).where(eq(pages.id, current.id)).run();
-        assertAcyclic(this.readBlocks());
-        this.touch(current.id);
-        return { pageId: current.id, tabId: mutation.tabId, removed: [] };
+    private preview(plan: EditChanges, action: unknown, deletedBlocks: ChangePreview["deletedBlocks"] = [], manual: string[] = [], positions?: unknown): ChangePreview | null {
+        const ids = plan.lostPages();
+        if (!ids.length && !deletedBlocks.length && !manual.length) return null;
+        const name = (id: string): { id: string; title: string } => ({ id, title: this.title(id) });
+        return { token: fingerprint({ action, ids, ...(positions ? { positions, deletedBlocks } : {}) }), recycled: ids.map(name),
+            direct: [...new Set([...manual, ...ids.filter(id => plan.direct.has(id))])].map(name), causes: [...plan.causes], deletedBlocks };
     }
 
-    mutate(mutation: Mutation, confirmation?: string, previewOnly = false): CommitResult {
-        if (!record(mutation)) throw new Error("操作参数无效。");
-        try {
-            return this.db.$client.transaction((): CommitResult => {
-                const before = this.snapshot();
-                const token = fingerprint({ before, definitions: this.attributes.definitions(), mutation });
-                const context = this.apply(mutation);
-                if (typeof context.tabId !== "string" || !context.tabId || context.tabId.length > 100) throw new Error("编辑会话无效。");
-                const all = this.readBlocks(), graph = this.graphPages();
-                const recycled = unreachablePages(graph, all, this.attributes.definitions());
-                const describe = (id: string): { id: string; title: string } => ({ id, title: graph.find(page => page.id === id) ? blockText(all.get(graph.find(page => page.id === id)!.titleBlockId)!) || "未命名" : "块" });
-                const preview: ChangePreview = { token, recycled: recycled.map(describe), removed: context.removed.map(describe) };
-                if (previewOnly || ((recycled.length || context.removed.length) && confirmation !== token)) throw new PreviewRollback(preview);
-                for (const id of recycled) this.attributes.write(id, { deleted: true, recycle_reason: "unreachable", recycled_at: new Date().toISOString(), modified_at: new Date().toISOString() }, true);
-                this.rebuildLinks();
-                const after = this.snapshot();
-                this.onScheduled?.(before, after);
-                this.onCommitted?.(before, after, context.tabId, context.pageId);
-                return { status: "saved", pages: [...new Set([context.pageId, ...recycled, ...context.removed])] };
-            })();
-        }
-        catch (error) {
-            if (error instanceof PreviewRollback) return { status: "confirmation", preview: error.preview };
-            throw error;
+    previewEdit(input: EditCommit): ChangePreview | null {
+        return this.sql.transaction(() => this.preview(this.planEdit(input), input))();
+    }
+
+    finish(plan: EditChanges, pageId: string, tabId: string, batch: number, preview: ChangePreview | null, confirmation?: string, capture?: (rows: RowChanges) => void): CommitResult {
+        if (preview && confirmation !== preview.token) return { status: "confirmation", preview };
+        this.recycle(plan, preview?.recycled.map(p => p.id) ?? []);
+        const reminders = plan.reminderChanges();
+        plan.persist();
+        if (reminders.length) this.onScheduled?.(reminders);
+        if (capture) capture(plan.rows);
+        else this.onCommitted?.(tabId, pageId, plan.rows);
+        const changed = plan.changed();
+        return { status: "saved", batch, changed, sharedUses: this.sharedUses(changed.blocks) };
+    }
+
+    private recycle(plan: EditChanges, ids: string[]): void {
+        const now = nowSeconds();
+        for (const id of ids) {
+            plan.attributes(id, { deleted: true, recycle_reason: "unreachable", recycled_at: now }, [], true);
+            plan.touches.add(id);
         }
     }
 
-    rebuildLinks(): void {
-        this.db.delete(linkIndex).run();
-        const all = this.readBlocks();
-        for (const block of all.values()) for (const target of references(block)) this.db.insert(linkIndex).values({ sourceKind: "block", sourceId: block.id, sourceField: "payload", targetKind: target.kind, targetId: target.id }).onConflictDoNothing().run();
-        const definitions = this.attributes.definitions();
-        for (const page of this.graphPages()) for (const definition of definitions) for (const target of pageTargets(page, [definition])) this.db.insert(linkIndex).values({ sourceKind: "page", sourceId: page.id, sourceField: definition.id, targetKind: "page", targetId: target.id }).onConflictDoNothing().run();
-    }
-
-    backlinks(id: string): Backlink[] {
-        this.pageRow(id);
-        const all = this.readBlocks(), graph = this.graphPages();
-        const result: Backlink[] = [];
-        for (const page of graph) {
-            const direct = pageTargets(page, this.attributes.definitions()).some(target => target.id === id);
-            const linked = [...containedBlocks(page, all)].some(blockId => {
-                const block = all.get(blockId);
-                return block && references(block).some(target => target.kind === "page" && target.id === id);
-            });
-            if (direct || linked) result.push({ sourceId: page.id, title: blockText(all.get(page.titleBlockId)!) || "未命名", sourceKind: linked ? "reference" : "attribute", deleted: !!page.attributes.deleted });
-        }
+    transact(tabId: string, action: () => CommitResult): CommitResult {
+        checkTab(tabId);
+        const result = this.sql.transaction(action)();
+        if (result.status === "saved" && !this.sql.inTransaction) this.onChanged?.({ sourceTab: tabId, ...result.changed });
         return result;
     }
 
-    setDefinition(id: string, definition: AttributeDefinition | null, token?: string): AttributeImpact | null {
+    commitEdit(input: EditCommit, confirmation?: string): CommitResult {
+        return this.transact(input?.tabId, () => {
+            const plan = this.planEdit(input);
+            return this.finish(plan, input.pageId, input.tabId, input.batch, this.preview(plan, input), confirmation);
+        });
+    }
+
+    historyCommit(plan: EditChanges, pageId: string, tabId: string, action: unknown, confirmation: string | undefined, moveCursor: (rows: RowChanges) => void): CommitResult {
+        plan.pages.add(pageId);
+        plan.touches.add(pageId);
+        plan.verifyContainment();
+        return this.finish(plan, pageId, tabId, 0, this.preview(plan, action), confirmation, moveCursor);
+    }
+
+    private writeChildren(plan: EditChanges, source: Target, children: string[]): void {
+        if (source.kind === "page") plan.pageChildren(source.id, children);
+        else {
+            const block = plan.block(source.id);
+            if (!block) throw new Error("块容器不存在。");
+            plan.putBlock({ ...block, children });
+        }
+    }
+
+    removeEverywhere(plan: EditChanges, id: string): ReturnType<KnowledgeRecords["uses"]> {
+        const uses = this.uses(id);
+        if (uses.some(u => u.slot === "title")) throw new Error("页面标题块不能单独删除。");
+        const containers = new Map(uses.map(u => [u.kind + ":" + u.id, u]));
+        for (const container of containers.values()) this.writeChildren(plan, container, plan.children(container).filter(child => child !== id));
+        return uses;
+    }
+
+    private deletionSubject(block: ContentBlock): string {
+        const names: Record<ContentBlock["type"], string> = {
+            title: "标题", paragraph: "段落", heading_1: "一级标题", heading_2: "二级标题", heading_3: "三级标题",
+            unordered_list: "无序列表项", ordered_list: "有序列表项", blockquote: "引文", callout: "提示块",
+            code: "代码块", table: "表格", hr: "分隔线", source: "来源片段", blocked_reference: "链接引用"
+        };
+        const target = block.payload.target;
+        if (block.type === "blocked_reference" && target) {
+            let title: string;
+            if (target.kind === "page") title = this.title(target.id);
+            else {
+                const resolved = this.resolve(target);
+                title = resolved?.title || (resolved?.block ? names[resolved.block.type] : "已删除");
+            }
+            return `指向「${title}」的链接引用`;
+        }
+        const excerpt = blockText(block).trim().slice(0, 48);
+        return excerpt ? `“${excerpt}”` : names[block.type];
+    }
+
+    deleteBlock(input: BlockDeletion, confirmation?: string): CommitResult {
+        return this.transact(input?.tabId, () => {
+            const { pageId, blockId, tabId } = input;
+            this.writable(pageId);
+            const plan = new EditChanges(this), block = plan.block(blockId), pages = this.owners(blockId);
+            if (!block || !pages.includes(pageId)) throw new Error("待删除的块不属于此页面。");
+            const uses = this.removeEverywhere(plan, blockId);
+            plan.touches.add(pageId);
+            plan.blocks.add(blockId);
+            for (const id of pages) plan.pages.add(id);
+            const links = this.incoming({ kind: "block", id: blockId });
+            const deleted = [{ id: blockId, excerpt: this.deletionSubject(block), pages: pages.length, positions: uses.length, links: links.length }];
+            const preview = this.preview(plan, input, deleted, [], { uses, links, pages: pages.sort() });
+            return this.finish(plan, pageId, tabId, 0, preview, confirmation);
+        });
+    }
+
+    place(input: Placement, confirmation?: string): CommitResult {
+        return this.transact(input?.tabId, () => {
+            const { position, action, tabId } = input;
+            if (!record(position) || !Number.isSafeInteger(position.index) || position.index < 0 || !validUUID(position.blockId)) throw new Error("块位置无效。");
+            const { pageId, containerId, index } = position;
+            this.writable(pageId);
+            const container: Target = { kind: containerId === pageId ? "page" : "block", id: containerId };
+            if (container.kind === "block" && !this.owners(containerId).includes(pageId)) throw new Error("容器不属于此页面。");
+            const plan = new EditChanges(this), children = [...plan.children(container)];
+            if (children[index] !== position.blockId) throw new Error("块位置已发生变化，请重新操作。");
+            if (action === "insert") {
+                const block = plan.block(input.blockId ?? "");
+                if (!block || block.type === "title" || !plan.owners(block.id).some(id => !plan.flags(id).deleted)) throw new Error("同步块目标不可用。");
+                children.splice(index + 1, 0, block.id);
+            }
+            else if (action === "remove") children.splice(index, 1);
+            else if (action === "clone" || action === "duplicate") {
+                const block = plan.block(position.blockId);
+                if (!block) throw new Error("缺失块不能复制。");
+                const copy = { ...block, id: randomUUID() };
+                plan.putBlock(copy);
+                if (action === "duplicate") children.splice(index + 1, 0, copy.id);
+                else children[index] = copy.id;
+            }
+            else {
+                const dest = action === "move-up" ? index - 1 : action === "move-down" ? index + 1 : -1;
+                if (dest < 0 || dest >= children.length) throw new Error("无法移动到此位置。");
+                [children[index], children[dest]] = [children[dest], children[index]];
+            }
+            this.writeChildren(plan, container, children);
+            plan.verifyContainment();
+            plan.pages.add(pageId);
+            plan.touches.add(pageId);
+            return this.finish(plan, pageId, tabId, 0, this.preview(plan, input), confirmation);
+        });
+    }
+
+    private selectPages(ids: string[]): string[] {
+        if (!Array.isArray(ids) || !ids.length || !ids.every(validUUID)) throw new Error("页面选择无效。");
+        for (const id of ids) this.header(id);
+        return [...new Set(ids)];
+    }
+
+    trash(ids: string[], tabId: string, confirmation?: string): CommitResult {
+        return this.transact(tabId, () => {
+            const selected = this.selectPages(ids), plan = new EditChanges(this);
+            for (const id of selected) {
+                plan.attributes(id, { deleted: true, recycle_reason: "manual_delete", recycled_at: nowSeconds() }, [], true);
+                plan.touches.add(id);
+            }
+            return this.finish(plan, selected[0], tabId, 0, this.preview(plan, { trash: selected, tabId }, [], selected), confirmation);
+        });
+    }
+
+    restore(ids: string[], tabId: string): CommitResult {
+        return this.transact(tabId, () => {
+            const selected = this.selectPages(ids), plan = new EditChanges(this);
+            for (const id of selected) {
+                plan.attributes(id, { deleted: false, independent: true, recycle_reason: null, recycled_at: null, ...(plan.readValue(id, "reminder_at") ? { reminder_at: null } : {}) }, [], true);
+                plan.touches.add(id);
+            }
+            return this.finish(plan, selected[0], tabId, 0, null);
+        });
+    }
+
+    touch(id: string): void {
+        this.statement("UPDATE page_attrs SET value=CAST(? AS INTEGER) WHERE page_id=? AND attr_id='modified_at'").run(nowSeconds(), id);
+    }
+
+    putBlock(block: ContentBlock): void {
+        const plan = new EditChanges(this);
+        plan.putBlock(block);
+        plan.persist();
+    }
+
+    create(kind: PageKind = "editable", title = "", initial: Record<string, AttributeValue> = {}, parentId?: string, tabId = ""): PageRecord {
+        if (!pageKinds.includes(kind) || typeof title !== "string" || title.length > 1000 || !record(initial)) throw new Error("新页面参数无效。");
+        const changed = { pages: [] as string[], blocks: [] as string[] };
+        const page = this.sql.transaction(() => {
+            if (parentId) this.writable(parentId);
+            const id = randomUUID(), titleId = randomUUID(), bodyId = randomUUID(), plan = new EditChanges(this);
+            for (const block of [{ id: titleId, type: "title" as const, payload: payload("title", title), children: [] },
+                { id: bodyId, type: "paragraph" as const, payload: payload("paragraph"), children: [] }]) this.putBlock(block);
+            this.statement("INSERT INTO pages(id,kind,title_block_id,children) VALUES (?,?,?,?)").run(id, kind, titleId, JSON.stringify([bodyId]));
+            const now = nowSeconds();
+            const schedule: Record<string, AttributeValue> = kind === "task" || kind === "event" ? { schedule_zone: Intl.DateTimeFormat().resolvedOptions().timeZone } : {};
+            plan.attributes(id, { pinned: false, tags: [], independent: kind !== "annotation", ...schedule, ...(kind === "task" ? { task_status: "todo", priority: "normal" } : {}), ...initial, deleted: false, created_at: now, modified_at: now }, [], true);
+            this.validateSchedule(plan, id, initial);
+            if (parentId) {
+                const reference = randomUUID();
+                plan.putBlock({ id: reference, type: "blocked_reference", payload: { ...payload("blocked_reference"), target: { kind: "page", id } }, children: [] });
+                plan.pageChildren(parentId, [...this.children({ kind: "page", id: parentId }), reference]);
+                plan.touches.add(parentId);
+            }
+            if (!plan.reachable({ kind: "page", id }, new Set())) throw new Error("非独立页面需要从存活页面建立引用入口。");
+            const reminders = plan.reminderChanges();
+            plan.persist();
+            this.onScheduled?.(reminders);
+            if (parentId) this.onInvalidated?.(["page:" + parentId]);
+            changed.pages = [...plan.pages];
+            changed.blocks = [titleId, bodyId, ...plan.blocks];
+            return this.get(id);
+        })();
+        if (!this.sql.inTransaction) this.onChanged?.({ sourceTab: tabId, ...changed });
+        return page;
+    }
+
+    resolve(target: Target): ResolvedTarget | null {
+        if (!validTarget(target)) throw new Error("引用目标无效。");
+        if (target.kind === "block") {
+            const plan = new EditChanges(this), block = plan.block(target.id), owners = plan.owners(target.id);
+            if (!block || !owners.length) return { status: "deleted", title: "已删除", text: "" };
+            const text = blockText(block);
+            return { status: owners.every(id => plan.flags(id).deleted) ? "recycled" : "ok", title: text, text, block };
+        }
+        if (!this.statement("SELECT 1 FROM pages WHERE id=?").get(target.id)) return null;
+        const page = this.get(target.id);
+        return { title: page.title || "未命名", text: page.excerpt, status: page.attributes.deleted ? "recycled" : "ok" };
+    }
+
+    backlinks(id: string): Backlink[] {
+        this.header(id);
+        const result = new Map<string, Backlink>();
+        for (const edge of this.incoming({ kind: "page", id })) {
+            const block = edge.sourceKind === "block";
+            for (const owner of block ? this.owners(edge.sourceId) : [edge.sourceId]) {
+                if (!result.has(owner) || block) result.set(owner, { sourceId: owner, title: this.title(owner), sourceKind: block ? "reference" : "attribute", deleted: this.flags(owner).deleted });
+            }
+        }
+        return [...result.values()];
+    }
+
+    rebuildLinks(): void {
+        this.sql.transaction(() => {
+            this.statement("DELETE FROM link_index").run();
+            const insert = this.statement("INSERT OR IGNORE INTO link_index(source_kind,source_id,source_field,target_kind,target_id,retains) VALUES (?,?,?,?,?,1)");
+            const ids = this.statement("SELECT id FROM blocks").pluck().all() as string[];
+            for (const block of this.readBatch(ids)) for (const t of references(block)) insert.run("block", block.id, "payload", t.kind, t.id);
+            const rows = this.statement("SELECT page_id AS pageId, attr_id AS field, value, type FROM page_attrs JOIN attrs ON attrs.id=attr_id WHERE type IN ('page-link','page-links') AND value IS NOT NULL").all() as { pageId: string; field: string; value: string; type: string }[];
+            for (const row of rows) for (const id of row.type === "page-link" ? [row.value] : JSON.parse(row.value)) insert.run("page", row.pageId, row.field, "page", id);
+        })();
+    }
+
+    setDefinition(id: string, definition: AttributeDefinition | null, token?: string, sourceTab = "attribute-definition"): AttributeImpact | null {
+        let saved: KnowledgeChange | undefined;
         try {
-            return this.db.$client.transaction(() => {
-                const previous = this.attributes.definitions().find(item => item.id === id);
+            this.sql.transaction(() => {
                 const impact = this.attributes.previewDefinition(id, definition);
-                const before = this.snapshot();
-                const combinedToken = fingerprint({ before, impact });
+                const owners = this.statement("SELECT page_id AS pageId FROM page_attrs WHERE attr_id=?").all(id) as { pageId: string }[];
+                const plan = new EditChanges(this);
+                const old = this.statement("SELECT type FROM attrs WHERE id=?").get(id) as { type: string } | undefined;
                 this.attributes.applyDefinition(id, definition, impact.token);
-                const recycled = unreachablePages(this.graphPages(), this.readBlocks(), this.attributes.definitions());
-                const combined: AttributeImpact = { ...impact, token: combinedToken, recycled: recycled.map(id => ({ id, title: this.get(id).title || "未命名" })) };
-                if ((impact.pages.length || recycled.length) && token !== combinedToken) throw new DefinitionRollback(combined);
-                for (const pageId of recycled) this.attributes.write(pageId, { deleted: true, recycle_reason: "unreachable", recycled_at: new Date().toISOString(), modified_at: new Date().toISOString() }, true);
-                this.rebuildLinks();
-                if (previous) this.onDefinitionChanged?.(id, definition, previous.type !== definition?.type);
-                this.onScheduled?.(before, this.snapshot());
-                this.onCommitted?.(before, this.snapshot(), "attribute-definition", impact.pages[0]?.id ?? "");
-                return null;
+                if ([old?.type, definition?.type].some(type => type === "page-link" || type === "page-links")) {
+                    for (const { pageId } of owners) {
+                        const value = plan.readValue(pageId, id)?.value;
+                        const targets: string[] = typeof value !== "string" ? [] : definition?.type === "page-link" ? [value] : definition?.type === "page-links" ? JSON.parse(value) : [];
+                        plan.setLinks({ kind: "page", id: pageId }, id, targets.map(id => ({ kind: "page", id })));
+                    }
+                }
+                const ids = plan.lostPages();
+                const combined: AttributeImpact = { ...impact, token: fingerprint({ impact: impact.token, ids }), recycled: ids.map(id => ({ id, title: this.title(id) })) };
+                if ((impact.pages.length || ids.length) && token !== combined.token) throw new DefinitionRollback(combined);
+                this.recycle(plan, ids);
+                const reminders = plan.reminderChanges();
+                plan.persist();
+                this.onScheduled?.(reminders);
+                this.onInvalidated?.([...new Set([...impact.pages.map(p => p.id), ...ids])].map(id => "page:" + id));
+                saved = { sourceTab, pages: [...new Set([...owners.map(p => p.pageId), ...ids])], blocks: [] };
             })();
         }
         catch (error) {
             if (error instanceof DefinitionRollback) return error.impact;
             throw error;
         }
+        if (saved) this.onChanged?.(saved);
+        return null;
     }
 }

@@ -28,28 +28,32 @@ export type PageSummary = {
 };
 export type PageRecord = PageSummary & {
     titleBlockId: string;
+    sharedUses?: Record<string, number>;
     children: string[];
     blocks: Record<string, ContentBlock>;
-    version: string;
-    blockVersions: Record<string, string>;
+};
+export type PageObjects = {
+    page?: Pick<PageRecord, "attributes" | "children">;
+    blocks: ContentBlock[];
+    uses: Record<string, number>;
 };
 export type PageQuery = { keyword?: string; kind?: PageKind | ""; deleted?: boolean; pinned?: boolean; tags?: string[]; attributes?: Record<string, AttributeValue>; sort?: "modified" | "created" | "title"; offset?: number; limit?: number };
 export type PageList = { items: PageSummary[]; total: number };
-export type EditPage = {
-    pageId: string;
-    tabId: string;
-    version: string;
-    children?: string[];
-    attributes?: Record<string, AttributeValue>;
-    detach?: string[];
-    blocks?: { value: ContentBlock; version: string | null }[];
+export type EditCommit = {
+    pageId: string; tabId: string; batch: number;
+    blocks: ContentBlock[]; pageChildren?: string[]; attributes?: Record<string, AttributeValue>; detach?: string[];
 };
-export type BlockPosition = { pageId: string; kind: "page" | "block"; containerId: string; index: number; children: string[] };
-export type Mutation =
-    | { type: "edit"; edit: EditPage }
-    | { type: "trash" | "restore"; ids: string[]; tabId: string }
-    | { type: "place"; position: BlockPosition; action: "insert" | "remove" | "clone" | "duplicate" | "move-up" | "move-down"; blockId?: string; tabId: string }
-    | { type: "delete-block"; pageId: string; blockId: string; version: string; tabId: string };
-export type ChangePreview = { token: string; recycled: { id: string; title: string }[]; removed: { id: string; title: string }[] };
-export type CommitResult = { status: "saved"; pages: string[] } | { status: "confirmation"; preview: ChangePreview };
+export type Position = { pageId: string; containerId: string; index: number; blockId: string };
+export type Placement = { position: Position; action: "insert" | "remove" | "clone" | "duplicate" | "move-up" | "move-down"; blockId?: string; tabId: string };
+export type BlockDeletion = { pageId: string; tabId: string; blockId: string };
+export type Changed = { pages: string[]; blocks: string[] };
+export type KnowledgeChange = Changed & { sourceTab: string };
+export type NamedPage = { id: string; title: string };
+export type ChangePreview = {
+    token: string; recycled: NamedPage[]; direct: NamedPage[];
+    deletedBlocks: { id: string; excerpt: string; pages: number; positions: number; links: number }[];
+    causes: string[];
+};
+export type CommitResult = { status: "saved"; batch: number; changed: Changed; sharedUses?: Record<string, number> } | { status: "confirmation"; preview: ChangePreview };
+export type ResolvedTarget = { title: string; text: string; status: "ok" | "recycled" | "deleted"; block?: ContentBlock };
 export type Backlink = { sourceId: string; title: string; sourceKind: "reference" | "attribute"; deleted: boolean };

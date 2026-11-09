@@ -65,7 +65,7 @@
         {/each}
     </details>
     {#if error}
-        <div class="notice error">{error}<button onclick={() => knowledgeState.revision++}>重试</button></div>
+        <div class="notice error">{error}<button onclick={() => retry++}>重试</button></div>
     {/if}
     {#if info}
         <p class="info">{info}</p>
@@ -162,15 +162,16 @@
     import AttributeManager from "./AttributeManager.svelte";
     import { kindNames, kindIcons } from "./labels";
     import { createPage, openPage } from "../layout/navigation";
-    import { copyData, knowledgeState, message, mutate, saveAll } from "./state.svelte";
+    import { copyData, knowledgeState, message, confirmed, saveAll } from "./state.svelte";
     let { initialView = "all" }: { initialView?: string } = $props();
     const views = [{ id: "all", label: "全部页面" }, { id: "papers", label: "文献" }, { id: "pinned", label: "已固定" }, { id: "trash", label: "回收站" }];
     let view = $state(untrack(() => initialView)), keyword = $state(""), applied = $state(""), kind = $state<PageKind | "">(""), sort = $state<PageQuery["sort"]>("modified"), offset = $state(0);
     let selected = $state<string[]>([]), tags = $state<string[]>([]), definitions = $state<AttributeDefinition[]>([]), result = $state<PageList>({ items: [], total: 0 });
+    let retry = $state(0);
     let pending = $state(false), busy = $state(false), error = $state(""), info = $state(""), filterId = $state(""), filterValue = $state<AttributeValue>(null), filters = $state<Record<string, AttributeValue>>({});
     const filterDefinition = $derived(definitions.find(item => item.id === filterId));
     $effect(() => {
-        void knowledgeState.revision;
+        void knowledgeState.change.seq; void retry;
         const query: PageQuery = { keyword: applied, kind: view === "papers" ? "paper" : kind, sort, offset, limit: 40, deleted: view === "trash", ...(view === "pinned" ? { pinned: true } : {}), tags: [...tags], attributes: { ...filters } };
         let active = true;
         pending = true;
@@ -193,7 +194,7 @@
         };
     });
     function formatDate(value: AttributeValue): string {
-        return typeof value === "string" ? new Date(value).toLocaleDateString() : "";
+        return typeof value === "number" ? new Date(value * 1000).toLocaleDateString() : "";
     }
     async function importPDF(): Promise<void> {
         busy = true;
@@ -215,7 +216,8 @@
     async function bulk(): Promise<void> {
         busy = true;
         try {
-            if (await saveAll() && await mutate({ type: view === "trash" ? "restore" : "trash", ids: [...selected], tabId: "library" })) selected = [];
+            const ids = [...selected];
+            if (await saveAll() && await confirmed(token => view === "trash" ? window.api.knowledge.restore(ids, "library") : window.api.knowledge.trash(ids, "library", token))) selected = [];
         }
         catch (problem) {
             error = message(problem);

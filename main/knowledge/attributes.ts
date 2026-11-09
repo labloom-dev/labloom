@@ -1,5 +1,6 @@
+import { nowSeconds } from "../../shared/content/time";
 import { createHash } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { eq, inArray, placeholder, sql } from "drizzle-orm";
 import { builtinAttrs, builtinAttrsByPageKind, isBuiltin } from "../../shared/attrs/builtins";
 import { decodeValue, encodeValue, validUUID, validateDefinition, validateValue } from "../../shared/attrs/values";
 import { type AttributeDefinition, type AttributeImpact, type AttributeValue } from "../../shared/types/attributes";
@@ -14,24 +15,27 @@ export function fingerprint(value: unknown): string {
 }
 
 export class AttributeService {
-    constructor(readonly db: WorkspaceDatabase) {}
+    private readonly byId;
+    constructor(readonly db: WorkspaceDatabase) {
+        this.byId = db.select().from(attrs).where(eq(attrs.id, placeholder("id"))).prepare();
+    }
+
+    private decodeDefinition(row: typeof attrs.$inferSelect): AttributeDefinition {
+        const definition = row as AttributeDefinition;
+        validateDefinition(definition);
+        if (!isBuiltin(row.id)) return definition;
+        const base = builtinAttrs[row.id].metadata;
+        return { ...definition, metadata: { ...definition.metadata, ...(Object.hasOwn(base, "readonly") ? { readonly: true } : {}), ...(Object.hasOwn(base, "hidden") ? { hidden: true } : {}) } };
+    }
 
     definitions(): AttributeDefinition[] {
-        return this.db.select().from(attrs).all().map(row => {
-            const definition = row as AttributeDefinition;
-            validateDefinition(definition);
-            if (isBuiltin(row.id)) {
-                const base = builtinAttrs[row.id].metadata;
-                return { ...definition, metadata: { ...definition.metadata, ...(Object.hasOwn(base, "readonly") ? { readonly: true } : {}), ...(Object.hasOwn(base, "hidden") ? { hidden: true } : {}) } };
-            }
-            return definition;
-        });
+        return this.db.select().from(attrs).all().map(row => this.decodeDefinition(row));
     }
 
     definition(id: string): AttributeDefinition {
-        const definition = this.definitions().find(item => item.id === id);
-        if (!definition) throw new Error("属性定义不存在。");
-        return definition;
+        const row = this.byId.get({ id });
+        if (!row) throw new Error("属性定义不存在。");
+        return this.decodeDefinition(row);
     }
 
     values(pageId: string): Record<string, AttributeValue> {
@@ -53,7 +57,8 @@ export class AttributeService {
             if (!definition) throw new Error("属性定义不存在。");
             if (isBuiltin(id) && !allowed?.includes(id)) throw new Error("此页面类型不支持该内置属性。");
             if (!internal && (definition.metadata.readonly || id === "deleted")) throw new Error("此属性由相应业务操作维护。");
-            const stored = encodeValue(definition, value);
+            const encoded = encodeValue(definition, value);
+            const stored = definition.type === "datetime" ? sql`CAST(${encoded} AS INTEGER)` : encoded;
             this.db.insert(pageAttrs).values({ pageId, attrId: id, value: stored }).onConflictDoUpdate({ target: [pageAttrs.pageId, pageAttrs.attrId], set: { value: stored } }).run();
         }
     }
@@ -88,7 +93,7 @@ export class AttributeService {
                 return true;
             }
         });
-        const titles = new Map(this.db.select({ id: pages.id, title: blocks.content }).from(pages).innerJoin(blocks, eq(pages.titleBlockId, blocks.id)).all().map(row => {
+        const titles = new Map((affected.length ? this.db.select({ id: pages.id, title: blocks.content }).from(pages).innerJoin(blocks, eq(pages.titleBlockId, blocks.id)).where(inArray(pages.id, affected.map(row => row.pageId))).all() : []).map(row => {
             let title = row.title ?? "";
             try {
                 const body = JSON.parse(title);
@@ -126,7 +131,7 @@ export class AttributeService {
                     this.write(row.pageId, { [id]: value }, true);
                 }
             }
-            for (const page of impact.pages) this.write(page.id, { modified_at: new Date().toISOString() }, true);
+            for (const page of impact.pages) this.write(page.id, { modified_at: nowSeconds() }, true);
             return null;
         })();
     }

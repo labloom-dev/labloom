@@ -143,7 +143,7 @@ export class FeedService {
         }).onConflictDoNothing({ target: [feedItems.sourceId, feedItems.externalId] }).prepare();
         let added = 0;
         for (const entry of entries) added += insert.run({ ...entry, id: randomUUID(), sourceId }).changes;
-        this.database.update(feedSources).set({ lastRefreshed: new Date().toISOString(), lastAdded: added, error: null })
+        this.database.update(feedSources).set({ lastRefreshed: Date.now(), lastAdded: added, error: null })
             .where(eq(feedSources.id, sourceId)).run();
     }
 }

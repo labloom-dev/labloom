@@ -78,7 +78,7 @@ test("RSS and Atom retain identities, all authors, summaries and safe links", as
     assert.equal(entry.url, "https://example.org/papers/1");
     assert.equal(entry.summary, "Tool use & evaluation.");
     assert.equal(entry.authors, "Alice");
-    assert.equal(entry.publishedAt, "2026-10-07T10:00:00.000Z");
+    assert.equal(entry.publishedAt, Date.UTC(2026, 9, 7, 10));
     const entries = await parseFeed(atom, "https://rss.arxiv.org/atom/cs.AI");
     assert.equal(entries[0].title, "Language models");
     assert.equal(entries[0].authors, "Alice, Bob");
@@ -167,7 +167,7 @@ test("Anthropic pages provide safe article links, summaries and dates across dat
         assert.equal(new Set(entries.map(entry => entry.externalId)).size, 10);
         assert.equal(entries[0].title, section === "news" ? "Latest announcement" : "Article post-12");
         assert.equal(entries[0].url, section === "news" ? "https://www.anthropic.com/announcement" : `${url}post-12`);
-        assert.equal(entries[0].publishedAt, section === "news" ? "2026-10-13T00:00:00.000Z" : "2026-10-12T00:00:00.000Z");
+        assert.equal(entries[0].publishedAt, Date.UTC(2026, 9, section === "news" ? 13 : 12));
         assert.equal(entries.find(entry => entry.title === "Article post-12").summary, "A summary with \"quotes\", ] brackets and 中文。");
     }
     await assert.rejects(fetchFeed("https://www.anthropic.com/news", async () => new Response("<!DOCTYPE html><h1>Unavailable</h1>")), /未找到 Anthropic 文章/);

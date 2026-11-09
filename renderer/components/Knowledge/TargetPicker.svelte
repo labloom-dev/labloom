@@ -39,11 +39,12 @@
 <script lang="ts">
     import { type PageSummary, type PageRecord, type Target } from "../../../shared/types/content";
     import { blockText } from "../../../shared/content/blocks";
-    import { message } from "./state.svelte";
+    import { knowledgeState, message } from "./state.svelte";
     let { mode = "reference", onselect, onclose }: { mode?: "reference" | "sync"; onselect: (target: Target, label: string) => void; onclose: () => void } = $props();
     let keyword = $state(""), error = $state("");
     let pages = $state<PageSummary[]>([]), chosen = $state<PageRecord | null>(null);
     $effect(() => {
+        void knowledgeState.change.seq;
         const query = keyword;
         let active = true;
         const timer = setTimeout(() => {

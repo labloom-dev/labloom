@@ -60,7 +60,7 @@
     color: var(--c-ink);
     font-size: 12px;
     font-weight: 800;
-    transition: transform .15s, box-shadow .15s, background .15s;
+    transition: transform .15s;
 }
 
 .button.primary {

@@ -114,9 +114,9 @@
 <script lang="ts">
     import { type PageSummary } from "../../../shared/types/content";
     import { type Notice } from "../../../shared/types/knowledge";
-    import { wallTime } from "../../../shared/content/time";
+    import { secondsToWall } from "../../../shared/content/time";
     import { createPage, openPage } from "../layout/navigation";
-    import { knowledgeState, message, mutate, perform, saveAll } from "./state.svelte";
+    import { knowledgeState, message, confirmed, perform, saveAll } from "./state.svelte";
     import { kindNames } from "./labels";
     import Icon from "../utils/Icon.svelte";
     const dateKey = (date: Date): string => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -134,14 +134,14 @@
     }
     function dayOf(page: PageSummary): string {
         if (typeof page.attributes.schedule_date === "string") return page.attributes.schedule_date;
-        if (typeof page.attributes.schedule_start === "string") return wallTime(page.attributes.schedule_start, String(page.attributes.schedule_zone || "UTC")).slice(0, 10);
+        if (typeof page.attributes.schedule_start === "number") return secondsToWall(page.attributes.schedule_start, typeof page.attributes.schedule_zone === "string" ? page.attributes.schedule_zone : undefined).slice(0, 10);
         return "";
     }
     function timeLabel(page: PageSummary): string {
-        return typeof page.attributes.schedule_start === "string" ? wallTime(page.attributes.schedule_start, String(page.attributes.schedule_zone || "UTC")).slice(11) : "全天";
+        return typeof page.attributes.schedule_start === "number" ? secondsToWall(page.attributes.schedule_start, typeof page.attributes.schedule_zone === "string" ? page.attributes.schedule_zone : undefined).slice(11) : "全天";
     }
     $effect(() => {
-        void knowledgeState.revision;
+        void knowledgeState.change.seq;
         let active = true;
         pending = true;
         void (async () => {
@@ -175,7 +175,7 @@
         void perform(async () => {
             if (!await saveAll()) return;
             const page = await window.api.knowledge.get(id);
-            await mutate({ type: "edit", edit: { pageId: id, tabId: "calendar", version: page.version, attributes: { task_status: page.attributes.task_status === "done" ? "todo" : "done" } } });
+            await confirmed(token => window.api.knowledge.commitEdit({ pageId: id, tabId: "calendar", batch: 0, blocks: [], attributes: { task_status: page.attributes.task_status === "done" ? "todo" : "done" } }, token));
         });
     }
     function read(notice: Notice): void {

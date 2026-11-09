@@ -48,7 +48,7 @@ export function createWorkspace(path: string): OpenWorkspace {
             database!.pragma(`application_id = ${applicationId}`);
             createWorkspaceSchema(database!);
             validateBuiltinAttrs(db);
-            const now = new Date().toISOString();
+            const now = Date.now();
             db.insert(workspaceMeta).values({ id: info.id, name: info.name, createdAt: now, lastModifiedAt: now }).run();
             if ((database!.pragma("foreign_key_check") as unknown[]).length) {
                 throw new Error("The new workspace failed its foreign key check.");

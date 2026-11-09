@@ -7,8 +7,8 @@ import { type BlockKind } from "../../shared/types/Block";
 export const workspaceMeta = sqliteTable("workspace_meta", {
     id: text("id").primaryKey().notNull(),
     name: text("name").notNull(),
-    createdAt: text("created_at").notNull(),
-    lastModifiedAt: text("last_modified_at").notNull(),
+    createdAt: integer("created_at").notNull(),
+    lastModifiedAt: integer("last_modified_at").notNull(),
     settings: text("settings", { mode: "json" }).$type<Record<string, unknown>>().notNull().default({})
 }, table => [
     check("workspace_meta_settings_object", sql`json_valid(${table.settings}) AND json_type(${table.settings}) = 'object'`)
@@ -52,7 +52,8 @@ export const pageAttrs = sqliteTable("page_attrs", {
     value: anyValue("value").default(sql`NULL`)
 }, table => [
     primaryKey({ columns: [table.pageId, table.attrId] }),
-    index("page_attrs_by_value").on(table.attrId, table.value)
+    index("page_attrs_by_value").on(table.attrId, table.value),
+    index("page_attrs_order").on(table.attrId, desc(table.value), table.pageId)
 ]);
 
 export const blockUses = sqliteTable("block_uses", {
@@ -75,7 +76,7 @@ export const feedSources = sqliteTable("feed_sources", {
     id: text("id").primaryKey().notNull(),
     name: text("name").notNull(),
     url: text("url").notNull().unique(),
-    lastRefreshed: text("last_refreshed"),
+    lastRefreshed: integer("last_refreshed"),
     lastAdded: integer("last_added").notNull().default(0),
     error: text("error")
 });
@@ -88,7 +89,7 @@ export const feedItems = sqliteTable("feed_items", {
     url: text("url"),
     authors: text("authors").notNull(),
     summary: text("summary").notNull(),
-    publishedAt: text("published_at"),
+    publishedAt: integer("published_at"),
     isRead: integer("is_read", { mode: "boolean" }).notNull().default(false)
 }, table => [
     unique().on(table.sourceId, table.externalId),
@@ -101,7 +102,8 @@ export const linkIndex = sqliteTable("link_index", {
     sourceId: text("source_id").notNull(),
     sourceField: text("source_field").notNull(),
     targetKind: text("target_kind", { enum: ["page", "block"] }).notNull(),
-    targetId: text("target_id").notNull()
+    targetId: text("target_id").notNull(),
+    retains: integer("retains", { mode: "boolean" }).notNull().default(true)
 }, table => [
     primaryKey({ columns: [table.sourceKind, table.sourceId, table.sourceField, table.targetKind, table.targetId] }),
     index("link_index_target").on(table.targetKind, table.targetId)
@@ -119,8 +121,16 @@ export const undoNodes = sqliteTable("undo_nodes", {
     pageId: text("page_id").notNull(),
     before: text("before_state", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
     after: text("after_state", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
-    createdAt: text("created_at").notNull()
-}, table => [index("undo_nodes_tab").on(table.tabId)]);
+    createdAt: integer("created_at").notNull()
+}, table => [index("undo_nodes_tab").on(table.tabId), index("undo_nodes_parent").on(table.parentId)]);
+
+export const undoObjects = sqliteTable("undo_objects", {
+    nodeId: text("node_id").notNull().references(() => undoNodes.id, { onDelete: "cascade" }),
+    objectKey: text("object_key").notNull()
+}, table => [
+    primaryKey({ columns: [table.nodeId, table.objectKey] }),
+    index("undo_objects_key").on(table.objectKey)
+]);
 
 export const attachments = sqliteTable("attachments", {
     id: text("id").primaryKey().notNull(),
@@ -153,7 +163,7 @@ export const highlights = sqliteTable("highlights", {
 export const reminderSchedules = sqliteTable("reminder_schedules", {
     id: text("id").primaryKey().notNull(),
     pageId: text("page_id").notNull(),
-    scheduledAt: text("scheduled_at").notNull(),
+    scheduledAt: integer("scheduled_at").notNull(),
     zone: text("zone").notNull(),
     state: text("state", { enum: ["pending", "fired", "disabled"] }).notNull()
 }, table => [index("reminders_due").on(table.state, table.scheduledAt)]);
@@ -162,6 +172,6 @@ export const notifications = sqliteTable("notifications", {
     scheduleId: text("schedule_id").notNull().unique(),
     pageId: text("page_id").notNull(),
     title: text("title").notNull(),
-    createdAt: text("created_at").notNull(),
+    createdAt: integer("created_at").notNull(),
     isRead: integer("is_read", { mode: "boolean" }).notNull().default(false)
 });

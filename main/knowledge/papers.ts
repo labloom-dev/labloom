@@ -116,9 +116,13 @@ export class PaperService {
         })();
     }
 
-    removeHighlight(id: string): void {
+    removeHighlight(id: string): string[] {
         if (!validUUID(id)) throw new Error("高亮标识无效。");
-        this.knowledge.db.delete(highlights).where(eq(highlights.id, id)).run();
+        return this.knowledge.sql.transaction(() => {
+            const owners = this.knowledge.statement("SELECT DISTINCT p.page_id FROM highlights h JOIN anchors a ON a.id=h.anchor_id JOIN page_attachments p ON p.file_id=a.file_id WHERE h.id=?").pluck().all(id) as string[];
+            this.knowledge.db.delete(highlights).where(eq(highlights.id, id)).run();
+            return owners;
+        })();
     }
 
     annotate(pageId: string, input: AnchorInput): string {
