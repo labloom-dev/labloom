@@ -4,6 +4,7 @@ export const appChannels = {
 
 export const knowledgeChannels = {
     list: "knowledge:list",
+    listUpdates: "knowledge:listUpdates",
     get: "knowledge:get",
     readObjects: "knowledge:readObjects",
     create: "knowledge:create",

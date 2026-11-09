@@ -37,7 +37,7 @@
     <div class="picker-layer"><TargetPicker mode={picker === "sync" ? "sync" : "reference"} onselect={choose} onclose={close} /></div>
 {/if}
 {#if preview}
-    <div class="preview"><ReferenceView target={preview.target} /><button onclick={() => preview = null}>关闭预览</button></div>
+    <div class="preview"><ReferenceView {session} target={preview.target} /><button onclick={() => preview = null}>关闭预览</button></div>
 {/if}
 {#if editor && dock}<Toolbar {editor} {dock} />{/if}
 
@@ -86,6 +86,8 @@
     import { type Target, type ContentBlockKind } from "../../../shared/types/content";
     import { payload } from "../../../shared/content/blocks";
     import { type PageSession, perform } from "../Knowledge/state.svelte";
+    import { readingTabs } from "../Tab/activity.svelte";
+    import { tabState } from "../Tab/state.svelte";
     import ReferenceView from "../Knowledge/ReferenceView.svelte";
     import TargetPicker from "../Knowledge/TargetPicker.svelte";
     import Toolbar from "./Toolbar.svelte";
@@ -95,7 +97,7 @@
     import { inverse, patchDocument, replay } from "./reconcile";
     let { session, tabId, dock }: { session: PageSession; tabId: string; dock?: HTMLDivElement } = $props();
     let root: HTMLDivElement, host: HTMLDivElement, editor = $state.raw<Editor | null>(null);
-    const locked = $derived(session.state.loading || !!session.state.page?.attributes.deleted);
+    const locked = $derived(readingTabs.has(tabId) || session.state.loading || !!session.state.page?.attributes.deleted);
     type Handle = { id: string; pos: number; top: number; left: number; kind: ContentBlockKind; shared: boolean; folded: boolean; children: boolean };
     let handle = $state.raw<Handle | null>(null), menu = $state(false), picker = $state<"inline" | "reference" | "sync" | null>(null);
     let caret: SelectionBookmark | null = null, preview = $state.raw<{ target: Target; pos: number } | null>(null);
@@ -204,7 +206,7 @@
                 dom.dataset.kind = "blocked_reference";
                 dom.dataset.blockId = node.attrs.blockId;
                 dom.contentEditable = "false";
-                const component = node.attrs.target ? mount(ReferenceView, { target: dom, props: { target: node.attrs.target } }) : null;
+                const component = node.attrs.target ? mount(ReferenceView, { target: dom, props: { target: node.attrs.target, session } }) : null;
                 if (!component) dom.textContent = "引用目标缺失";
                 return {
                     dom, stopEvent: e => e.target instanceof Element && !!e.target.closest("button"), destroy: () => {
@@ -227,9 +229,10 @@
         });
         let held: { maps: Mapping } | null = null;
         const instance = new Editor({
-            element: host, content: pageDocument(page), editable: !page.attributes.deleted,
+            element: host, content: pageDocument(page), editable: !locked,
             extensions: [...documentExtensions.filter(e => e !== referenceBlock), card, history, editing, Extension.create({ name: "syncBorders", addProseMirrorPlugins: () => [borderPlugin(() => session.state.page?.sharedUses ?? {})] })],
             editorProps: {
+                attributes: { tabindex: "0" },
                 handlePaste(view, event, slice) {
                     const data = event.clipboardData;
                     if (!data) return false;
@@ -344,7 +347,24 @@
             return true;
         }
         editor = instance;
-        if (!page.blocks[page.titleBlockId].payload.inline.length && !page.attributes.deleted) instance.commands.focus("start", { scrollIntoView: false });
+        const detachInput = session.input.attach(instance);
+        if (!locked) session.input.replay();
+        if (!page.blocks[page.titleBlockId].payload.inline.length && !page.attributes.deleted &&
+            tabState.groups.find(group => group.id === tabState.focusedGroupId)?.activeTabId === tabId) instance.commands.focus("start", { scrollIntoView: false });
+        function hold(event: Event): void {
+            if (!readingTabs.has(tabId) || page.attributes.deleted) return;
+            if (event instanceof MouseEvent) {
+                const at = instance.view.posAtCoords({ left: event.clientX, top: event.clientY });
+                if (at) instance.view.dispatch(selectionIn(instance.state.tr, at.pos));
+                instance.view.dom.focus({ preventScroll: true });
+            }
+            else if (event instanceof KeyboardEvent) session.input.key(event);
+            else if (event instanceof InputEvent && event.inputType === "insertText" && event.data && !event.isComposing) session.input.text(event.data);
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }
+        const inputEvents = ["mousedown", "keydown", "beforeinput", "compositionstart", "paste", "cut", "drop"];
+        for (const name of inputEvents) host.addEventListener(name, hold, true);
         const off = session.listen((ids, whole) => {
             const update = patchDocument(instance.state, session.state.page!, ids, whole);
             instance.view.dispatch((update ?? instance.state.tr).setMeta(borders, true));
@@ -356,6 +376,8 @@
         document.addEventListener("pointerdown", outside, true);
         return () => {
             off();
+            detachInput();
+            for (const name of inputEvents) host.removeEventListener(name, hold, true);
             document.removeEventListener("pointerdown", outside, true);
             instance.destroy();
             editor = null;
@@ -364,5 +386,9 @@
     $effect(() => {
         const instance = editor, enabled = !locked;
         if (instance && instance.isEditable !== enabled) untrack(() => instance.setEditable(enabled, false));
+    });
+    $effect(() => {
+        const shown = tabState.groups.some(group => group.activeTabId === tabId);
+        if (editor) editor.view.dom.tabIndex = shown ? 0 : -1;
     });
 </script>

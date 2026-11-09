@@ -21,7 +21,7 @@
 
 
 <script lang="ts">
-    import { onMount } from "svelte";
+    import { onMount, untrack } from "svelte";
     import type { StartupState, WorkspaceAction } from "../../../shared/types/startup";
     import "../../styles/colors.css";
     import "../../styles/layouts.css";
@@ -36,13 +36,29 @@
     import { logUpgradeFailure } from "../startup/log-upgrade-failure";
     import { initializeAppearance } from "./preferences.svelte";
     import Dialogs from "../Knowledge/Dialogs.svelte";
-    import { closeSession, knowledgeState, message, saveAll } from "../Knowledge/state.svelte";
+    import { closeSession, knowledgeState, message, receiveChange, saveAll } from "../Knowledge/state.svelte";
     import { tabState } from "../Tab/state.svelte";
     import { tabLifecycle } from "../Tab/lifecycle";
     import { persistTabs, restoreTabs } from "../Tab/persistence.svelte";
+    import { visits } from "../Tab/activity.svelte";
 
     let startup = $state<StartupState | null>(null);
     let pending = $state(true);
+    let windowFocused = $state(document.hasFocus());
+    const focusedTab = $derived(tabState.groups.find(group => group.id === tabState.focusedGroupId)?.activeTabId ?? null);
+    let previousTab: string | null = null;
+    $effect.pre(() => {
+        const id = windowFocused && startup?.status === "ready" ? focusedTab : null;
+        untrack(() => {
+            if (previousTab && previousTab !== id) {
+                const control = document.activeElement;
+                if (control instanceof HTMLElement && control.closest<HTMLElement>("[data-tabs-content]")?.dataset.value === previousTab) control.blur();
+                window.dispatchEvent(new Event("workspace-flush"));
+            }
+            previousTab = id;
+            visits.focus(id);
+        });
+    });
 
     async function run(action: () => Promise<StartupState>): Promise<void> {
         pending = true;
@@ -83,7 +99,19 @@
                 knowledgeState.error = message(error); return false;
             }
         };
-        const stopChanges = window.api.knowledge.onChanged(change => { knowledgeState.change = { ...change, seq: knowledgeState.change.seq + 1 }; });
+        const stopChanges = window.api.knowledge.onChanged(receiveChange);
+        function blur(): void {
+            if (document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement) document.activeElement.blur();
+            window.dispatchEvent(new Event("workspace-flush"));
+            windowFocused = false;
+            visits.focus(null);
+        }
+        function focus(): void {
+            windowFocused = true;
+            visits.focus(focusedTab);
+        }
+        window.addEventListener("blur", blur);
+        window.addEventListener("focus", focus);
         const stopClose = window.api.knowledge.onCloseRequested(async () => {
             if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
             if (!await saveAll()) {
@@ -99,6 +127,8 @@
         void run(() => window.api.startup.getState());
         return () => {
             stopAppearance(); stopChanges(); stopClose(); tabLifecycle.close = undefined;
+            window.removeEventListener("blur", blur);
+            window.removeEventListener("focus", focus);
         };
     });
     $effect(() => {

@@ -29,6 +29,9 @@ export class PageWrites {
     get unsaved(): boolean {
         return !!this.dirty.size || !!this.retry;
     }
+    changedBlocks(): string[] {
+        return [...this.dirty.values()].flatMap(row => row.kind === "block" ? [row.value.id] : []);
+    }
     input(edit: Fields): EditCommit {
         return { tabId: this.tabId, pageId: this.pageId, batch: ++this.batch, ...edit };
     }
@@ -43,10 +46,6 @@ export class PageWrites {
     }
     dropNew(id: string): void {
         this.dirty.delete("b:" + id);
-    }
-    clear(): void {
-        this.dirty.clear();
-        this.retry = undefined;
     }
     async flush(all = true, allowed: () => boolean = () => true): Promise<void> {
         if (this.pending) {

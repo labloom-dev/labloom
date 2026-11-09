@@ -30,15 +30,33 @@ export function registerKnowledgeIPCs(window: BrowserWindow, startup: Startup): 
         const knowledge = new KnowledgeService(startup.getDatabase());
         const history = new EditHistory(knowledge), papers = new PaperService(knowledge, startup.getPath()), reminders = new ReminderService(knowledge);
         knowledge.onScheduled = changes => reminders.reconcile(changes);
-        knowledge.onChanged = changed;
+        knowledge.onChanged = publish;
         services = { knowledge, history, papers, reminders };
         return services;
     };
     const ipc = (channel: string, fn: (...args: unknown[]) => unknown): void => handle(window.webContents, channel, fn);
     const optional = (value: unknown): string | undefined => value === undefined ? undefined : string(value);
     const tab = (id: unknown): string => { checkTab(id); return id; };
-    const notice = (sourceTab: string, pages: string[] = [], blocks: string[] = []): void => changed({ sourceTab, pages, blocks });
+    function publish(change: KnowledgeChange): void {
+        const db = get().knowledge;
+        if (change.blocks.length) {
+            // A shared paragraph also changes the summaries and search results of its other owners.
+            const owners = db.statement(`WITH RECURSIVE owners(kind,id) AS (
+                SELECT container_kind,container_id FROM block_uses WHERE block_id IN (SELECT value FROM json_each(?))
+                UNION SELECT u.container_kind,u.container_id FROM owners o JOIN block_uses u ON o.kind='block' AND u.block_id=o.id
+            ) SELECT id FROM owners WHERE kind='page'`).pluck().all(JSON.stringify(change.blocks)) as string[];
+            change.summaryPages = [...new Set([...change.pages, ...owners])];
+        }
+        const pages = change.summaryPages ?? change.pages;
+        if (pages.length) {
+            const rows = db.statement("SELECT id,kind FROM pages WHERE id IN (SELECT value FROM json_each(?))").all(JSON.stringify(pages)) as { id: string; kind: PageKind }[];
+            change.kinds = Object.fromEntries(rows.map(row => [row.id, row.kind]));
+        }
+        changed(change);
+    }
+    const notice = (sourceTab: string, pages: string[] = [], blocks: string[] = []): void => publish({ sourceTab, pages, blocks });
     ipc(channels.list, query => get().knowledge.list(query as PageQuery | undefined));
+    ipc(channels.listUpdates, (query, unchanged) => get().knowledge.listUpdates(query as PageQuery, unchanged as string[]));
     ipc(channels.get, id => get().knowledge.get(string(id)));
     ipc(channels.readObjects, (page, ids) => {
         if (!Array.isArray(ids)) throw new Error("读取对象列表无效。");
@@ -58,7 +76,7 @@ export function registerKnowledgeIPCs(window: BrowserWindow, startup: Startup): 
         return k.create(kind as PageKind, optional(title), initial as Record<string, AttributeValue>, optional(parentId), optional(source));
     });
     ipc(channels.definitions, () => get().knowledge.attributes.definitions());
-    ipc(channels.define, (id, input, token) => get().knowledge.setDefinition(string(id), input as AttributeDefinition | null, optional(token)));
+    ipc(channels.define, (id, input, source, token) => get().knowledge.setDefinition(string(id), input as AttributeDefinition | null, tab(source), optional(token)));
     ipc(channels.resolve, target => get().knowledge.resolve(target as Target));
     ipc(channels.backlinks, id => get().knowledge.backlinks(string(id)));
     ipc(channels.history, id => get().history.state(tab(id)));
@@ -66,7 +84,7 @@ export function registerKnowledgeIPCs(window: BrowserWindow, startup: Startup): 
         if (direction !== "undo" && direction !== "redo") throw new Error("历史操作无效。");
         return get().history.apply(tab(id), direction, optional(branch), optional(confirmation));
     });
-    ipc(channels.closeTab, id => { get().history.close(tab(id)); notice(tab(id)); });
+    ipc(channels.closeTab, id => get().history.close(tab(id)));
     ipc(channels.loadTabs, () => {
         editorStarted = true;
         return get().knowledge.db.select().from(workspaceMeta).get()?.settings.tabs ?? null;
@@ -75,7 +93,6 @@ export function registerKnowledgeIPCs(window: BrowserWindow, startup: Startup): 
         if (!record(value) || JSON.stringify(value).length > 1000000 || !Array.isArray(value.groups) || value.groups.length > 32 || !record(value.layout) || typeof value.focusedGroupId !== "string") throw new Error("标签页布局无效。");
         const db = get().knowledge.db, meta = db.select().from(workspaceMeta).get()!;
         db.update(workspaceMeta).set({ settings: { ...meta.settings, tabs: value } }).where(eq(workspaceMeta.id, meta.id)).run();
-        notice("");
     });
     ipc(channels.importPDF, async (id, source) => {
         const pageId = optional(id), sourceTab = optional(source) ?? "", { papers, knowledge } = get();
@@ -114,17 +131,17 @@ export function registerKnowledgeIPCs(window: BrowserWindow, startup: Startup): 
         return annotation;
     });
     ipc(channels.notices, () => get().knowledge.db.select().from(notifications).orderBy(desc(notifications.createdAt)).limit(100).all());
-    ipc(channels.readNotice, id => {
-        const db = get().knowledge;
-        const page = db.statement("SELECT page_id FROM notifications WHERE id=?").pluck().get(string(id)) as string | undefined;
-        db.db.update(notifications).set({ isRead: true }).where(eq(notifications.id, string(id))).run();
-        notice("", page ? [page] : []);
+    ipc(channels.readNotice, (id, source) => {
+        const db = get().knowledge, sourceTab = tab(source), noticeId = string(id);
+        const page = db.statement("SELECT page_id FROM notifications WHERE id=?").pluck().get(noticeId) as string | undefined;
+        db.db.update(notifications).set({ isRead: true }).where(eq(notifications.id, noticeId)).run();
+        if (page) publish({ sourceTab, pages: [page], blocks: [], notices: true });
     });
     const timer = setInterval(() => {
         if (startup.state.status !== "ready") return;
         try {
             const due = get().reminders.due();
-            if (due.length) notice("", [...new Set(due.map(n => n.pageId))]);
+            if (due.length) publish({ sourceTab: "", pages: [...new Set(due.map(n => n.pageId))], blocks: [], notices: true });
             for (const notice of due) if (Notification.isSupported()) new Notification({ title: "知织提醒", body: notice.title }).show();
         }
         catch (error) {

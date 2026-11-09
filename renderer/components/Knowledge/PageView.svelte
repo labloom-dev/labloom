@@ -1,10 +1,10 @@
 <section class="page-view">
     <header class="page-toolbar">
         <div class="save-state" class:failed={!!current.state.error}>{current.state.loading ? "正在读取…" : current.state.saving ? "正在保存…" : current.state.dirty ? "未保存" : "已保存"}</div>
-        <button disabled={current.state.saving || !current.state.history.canUndo} onclick={() => current.undo("undo")}>撤销</button>
-        <button disabled={current.state.saving || !current.state.history.redo.length} onclick={() => current.undo("redo")}>重做</button>
+        <button disabled={syncing || (!current.state.dirty && !current.state.history.canUndo)} onclick={() => current.undo("undo")}>撤销</button>
+        <button disabled={syncing || !current.state.history.redo.length} onclick={() => current.undo("redo")}>重做</button>
         {#if current.state.history.redo.length > 1}
-            <select value="" onchange={event => void current.undo("redo", event.currentTarget.value)}>
+            <select value="" disabled={syncing} onchange={event => void current.undo("redo", event.currentTarget.value)}>
                 <option value="">选择重做分支</option>
                 {#each current.state.history.redo as branch (branch.id)}
                     <option value={branch.id}>{new Date(branch.time).toLocaleString()}</option>
@@ -15,15 +15,12 @@
         <button onclick={() => openPage(tab.pageId, { duplicate: true })}>另开标签页</button>
         <button class:active={showProperties} onclick={() => showProperties = !showProperties}>属性</button>
         {#if page}
-            <button disabled={current.state.saving} onclick={trash}>{page.attributes.deleted ? "恢复页面" : "移入回收站"}</button>
+            <button disabled={syncing} onclick={trash}>{page.attributes.deleted ? "恢复页面" : "移入回收站"}</button>
         {/if}
         <div class="format-dock" bind:this={dock}></div>
     </header>
     {#if current.state.error}
-        <div class="notice error">{current.state.error}<div class="error-actions">
-            <button class="button" onclick={() => current.save()}>重试保存</button>
-            <button class="button" onclick={() => current.state.dirty ? current.discard() : current.refresh()}>{current.state.dirty ? "放弃输入并重读" : "重新读取"}</button>
-        </div></div>
+        <div class="notice error">{current.state.error}</div>
     {/if}
     {#if page}
         {#if page.attributes.deleted}
@@ -37,12 +34,12 @@
         <div class="page-body">
             <div class="main-content">
                 {#if page.kind === "paper"}
-                    <PaperPanel {page} tabId={tab.id} anchorId={tab.anchorId} beforeChange={() => current.save()} />
+                    <div inert={syncing}><PaperPanel {page} session={current} tabId={tab.id} anchorId={tab.anchorId} /></div>
                 {/if}
                 <Editor session={current} tabId={tab.id} {dock} />
                 <section class="backlinks">
                     <h3>引用此页</h3>
-                    {#each backlinks as link (link.sourceId)}
+                    {#each current.state.backlinks as link (link.sourceId)}
                         <button onclick={() => openPage(link.sourceId)}>{link.title}{link.deleted ? "（已回收）" : ""}</button>
                     {:else}
                         <p>还没有其他页面引用此页。</p>
@@ -50,8 +47,8 @@
                 </section>
             </div>
             {#if showProperties}
-                <aside>
-                    <Properties session={current} {definitions} />
+                <aside inert={syncing}>
+                    <Properties session={current} definitions={current.state.definitions} />
                 </aside>
             {/if}
         </div>
@@ -72,7 +69,6 @@
     .main-content { min-width: 0; flex: 1; }
     aside { width: 310px; flex-shrink: 0; border-left: 1px solid var(--c-line); }
     .notice { margin: 14px; }
-    .error-actions { display: flex; gap: 10px; margin-top: 10px; }
     .recycled, .origin { padding: 12px 26px; color: var(--c-muted); font-size: 12px; background: var(--c-cream); }
     .backlinks { padding: 20px 40px 40px; border-top: 1px dashed var(--c-line); font-size: 12px; }
     h3 { font-size: 13px; }
@@ -81,12 +77,11 @@
     @container (max-width: 850px) { .page-body { flex-direction: column; } aside { width: 100%; border-left: 0; border-top: 1px solid var(--c-line); } }
 </style>
 <script lang="ts">
-    import { onMount, untrack } from "svelte";
+    import { untrack } from "svelte";
     import { type Tab } from "../Tab/defs";
-    import { type AttributeDefinition } from "../../../shared/types/attributes";
-    import { type Backlink } from "../../../shared/types/content";
     import { blockText } from "../../../shared/content/blocks";
-    import { session, knowledgeState, message, confirmed, perform } from "./state.svelte";
+    import { session, perform } from "./state.svelte";
+    import { readingTabs } from "../Tab/activity.svelte";
     import { openPage } from "../layout/navigation";
     import { updateTab } from "../Tab/api";
     import Editor from "../Editor/Editor.svelte";
@@ -96,35 +91,8 @@
     let dock = $state<HTMLDivElement>();
     const current = untrack(() => session(tab.id, tab.pageId));
     const page = $derived(current.state.page);
-    let showProperties = $state(false), definitions = $state<AttributeDefinition[]>([]), backlinks = $state<Backlink[]>([]);
-    onMount(() => {
-        void current.refresh();
-        return () => {
-            void current.save().then(ok => {
-                if (!ok) knowledgeState.error = "有页面未保存，输入已保留在原标签页。";
-            });
-        };
-    });
-    $effect(() => {
-        const change = knowledgeState.change;
-        const relevant = untrack(() => !change.seq || change.pages.includes(tab.pageId) || change.blocks.some(id => current.state.page?.blocks[id]));
-        if (!relevant && (change.pages.length || change.blocks.length)) return;
-        let active = true;
-        void Promise.all([window.api.knowledge.definitions(), window.api.knowledge.backlinks(tab.pageId)]).then(([defs, links]) => {
-            if (active) {
-                definitions = defs;
-                backlinks = links;
-            }
-        }, error => {
-            if (active) current.state.error = message(error);
-        });
-        untrack(() => {
-            if (relevant && change.seq && change.sourceTab !== tab.id && !current.state.loading && !current.state.saving && !current.state.dirty) void current.reread([...change.pages.filter(id => id === tab.pageId), ...change.blocks]);
-        });
-        return () => {
-            active = false;
-        };
-    });
+    const syncing = $derived(readingTabs.has(tab.id));
+    let showProperties = $state(false);
     $effect(() => {
         if (page) {
             const title = blockText(page.blocks[page.titleBlockId]) || "未命名";
@@ -134,8 +102,6 @@
         }
     });
     function trash(): void {
-        void perform(async () => {
-            if (await current.save() && await confirmed(token => page!.attributes.deleted ? window.api.knowledge.restore([tab.pageId], tab.id) : window.api.knowledge.trash([tab.pageId], tab.id, token))) await current.refresh();
-        });
+        void perform(() => current.action(token => page!.attributes.deleted ? window.api.knowledge.restore([tab.pageId], tab.id) : window.api.knowledge.trash([tab.pageId], tab.id, token)));
     }
 </script>

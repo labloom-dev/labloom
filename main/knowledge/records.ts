@@ -14,6 +14,7 @@ export type LinkRow = { sourceKind: Target["kind"]; sourceId: string; sourceFiel
 export type Use = { kind: Target["kind"]; id: string; slot: string; position: number };
 const linkColumns = "source_kind AS sourceKind, source_id AS sourceId, source_field AS sourceField, target_kind AS targetKind, target_id AS targetId";
 type RawBlock = Omit<BlockRow, "children"> & { children: string };
+type ListRow = { id: string; kind: PageKind; titleBlockId: string; children: string; total?: number };
 
 export function decodeBlock(row: BlockRow): ContentBlock {
     const type = row.type as ContentBlock["type"];
@@ -184,7 +185,7 @@ export class KnowledgeRecords {
         return text.slice(0, 240);
     }
 
-    list(query: PageQuery = {}): PageList {
+    private listRows(query: PageQuery): { selected: ListRow[]; total: number } {
         if (!record(query) || (query.kind && !pageKinds.includes(query.kind)) || (query.keyword !== undefined && typeof query.keyword !== "string") ||
             (query.pinned !== undefined && typeof query.pinned !== "boolean") || (query.deleted !== undefined && typeof query.deleted !== "boolean") ||
             (query.sort && !["modified", "created", "title"].includes(query.sort)) || (query.tags && (!Array.isArray(query.tags) || !query.tags.every(t => typeof t === "string"))) ||
@@ -192,6 +193,11 @@ export class KnowledgeRecords {
         const offset = query.offset ?? 0, limit = query.limit ?? 50;
         if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > 200) throw new Error("分页范围无效。");
         const where = ["coalesce(d.value,0) = ?"], params: unknown[] = [Number(!!query.deleted)];
+        if (query.ids !== undefined) {
+            if (!Array.isArray(query.ids) || !query.ids.every(validUUID)) throw new Error("页面编号列表无效。");
+            where.push("p.id IN (SELECT value FROM json_each(?))");
+            params.push(JSON.stringify(query.ids));
+        }
         if (query.kind) { where.push("p.kind = ?"); params.push(query.kind); }
         if (query.pinned !== undefined) {
             where.push("coalesce((SELECT value FROM page_attrs WHERE page_id=p.id AND attr_id='pinned'),0) = ?");
@@ -227,20 +233,34 @@ export class KnowledgeRecords {
             " JOIN page_attrs s ON s.page_id=p.id AND s.attr_id='" + (query.sort === "created" ? "created_at" : "modified_at") + "'";
         // Materialize keyword hits once. The window count precedes pagination.
         const count = keyword ? ", count(*) OVER() AS total" : "";
-        const simple = !keyword && !query.kind && query.pinned === undefined && !query.tags?.length && !Object.keys(query.attributes ?? {}).length && query.sort !== "title";
+        const simple = !query.ids && !keyword && !query.kind && query.pinned === undefined && !query.tags?.length && !Object.keys(query.attributes ?? {}).length && query.sort !== "title";
         const dateId = query.sort === "created" ? "created_at" : "modified_at";
         const selected = (simple ? this.statement(`SELECT p.id, p.kind, p.title_block_id AS titleBlockId, p.children
             FROM page_attrs s INDEXED BY page_attrs_order CROSS JOIN pages p ON p.id=s.page_id
             JOIN page_attrs d ON d.page_id=p.id AND d.attr_id='deleted'
             WHERE s.attr_id=? AND coalesce(d.value,0)=? ORDER BY s.value DESC,s.page_id LIMIT ? OFFSET ?`).all(dateId, Number(!!query.deleted), limit, offset)
             : this.statement(cte + "SELECT p.id, p.kind, p.title_block_id AS titleBlockId, p.children" + count + from + join + filter +
-            " ORDER BY " + order + ", p.id LIMIT ? OFFSET ?").all(...params, limit, offset)) as { id: string; kind: PageKind; titleBlockId: string; children: string; total?: number }[];
+            " ORDER BY " + order + ", p.id LIMIT ? OFFSET ?").all(...params, limit, offset)) as ListRow[];
         const total = simple ? this.statement(query.deleted ? "SELECT count(*) FROM page_attrs WHERE attr_id='deleted' AND value=1" : "SELECT count(*) FROM page_attrs WHERE attr_id='deleted' AND (value=0 OR value IS NULL)").pluck().get() as number : selected[0]?.total ?? (keyword && !offset ? 0 : this.statement(cte + "SELECT count(*)" + from + filter).pluck().get(...params) as number);
+        return { selected, total };
+    }
+
+    private summaries(selected: ListRow[]): PageSummary[] {
         const heads = selected.map(p => ({ ...p, children: (JSON.parse(p.children) as string[]).slice(0, 4) }));
         const blocks = Object.fromEntries(this.readBatch([...new Set(heads.flatMap(p => [p.titleBlockId, ...p.children]))]).map(b => [b.id, b]));
         const attrs = this.valuesFor(heads.map(p => p.id));
-        const items: PageSummary[] = heads.map(p => ({ id: p.id, kind: p.kind, title: blocks[p.titleBlockId] ? blockText(blocks[p.titleBlockId]) : "",
+        return heads.map(p => ({ id: p.id, kind: p.kind, title: blocks[p.titleBlockId] ? blockText(blocks[p.titleBlockId]) : "",
             excerpt: this.excerpt(p.children, blocks), attributes: attrs.get(p.id) ?? {} }));
-        return { items, total };
+    }
+
+    list(query: PageQuery = {}): PageList {
+        const { selected, total } = this.listRows(query);
+        return { items: this.summaries(selected), total };
+    }
+
+    listUpdates(query: PageQuery, unchanged: string[]): PageList & { order: string[] } {
+        if (!Array.isArray(unchanged) || unchanged.length > 200 || !unchanged.every(validUUID)) throw new Error("页面编号列表无效。");
+        const { selected, total } = this.listRows(query), keep = new Set(unchanged);
+        return { order: selected.map(row => row.id), items: this.summaries(selected.filter(row => !keep.has(row.id))), total };
     }
 }

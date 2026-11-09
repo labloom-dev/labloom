@@ -322,7 +322,8 @@ export class KnowledgeService extends KnowledgeRecords {
         })();
     }
 
-    setDefinition(id: string, definition: AttributeDefinition | null, token?: string, sourceTab = "attribute-definition"): AttributeImpact | null {
+    setDefinition(id: string, definition: AttributeDefinition | null, sourceTab: string, token?: string): AttributeImpact | null {
+        checkTab(sourceTab);
         let saved: KnowledgeChange | undefined;
         try {
             this.sql.transaction(() => {
@@ -346,7 +347,7 @@ export class KnowledgeService extends KnowledgeRecords {
                 plan.persist();
                 this.onScheduled?.(reminders);
                 this.onInvalidated?.([...new Set([...impact.pages.map(p => p.id), ...ids])].map(id => "page:" + id));
-                saved = { sourceTab, pages: [...new Set([...owners.map(p => p.pageId), ...ids])], blocks: [] };
+                saved = { ...plan.changed(), sourceTab, definition: id, pages: [...new Set([...owners.map(p => p.pageId), ...ids])] };
             })();
         }
         catch (error) {

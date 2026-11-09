@@ -52,8 +52,8 @@
 <script lang="ts">
     import { attributeTypes, type AttributeDefinition } from "../../../shared/types/attributes";
     import { isBuiltin } from "../../../shared/attrs/builtins";
-    import { define, message, saveAll } from "./state.svelte";
-    let { definitions }: { definitions: AttributeDefinition[] } = $props();
+    import { define, message, writeFromTab } from "./state.svelte";
+    let { definitions, tabId }: { definitions: AttributeDefinition[]; tabId: string } = $props();
     let draft = $state<AttributeDefinition | null>(null), busy = $state(false), error = $state("");
     const labels = { string: "文本", number: "数字", boolean: "勾选", date: "日期", datetime: "日期与时间", select: "单选", multiselect: "多选", url: "网址", "page-link": "页面链接", "page-links": "多个页面链接", json: "JSON" };
     function select(id: string): void {
@@ -68,8 +68,7 @@
     async function apply(value: AttributeDefinition | null): Promise<void> {
         busy = true;
         try {
-            if (!await saveAll()) throw new Error("请先处理未保存的页面。");
-            if (await define(draft!.id, value ? JSON.parse(JSON.stringify(value)) : null)) {
+            if (await writeFromTab(tabId, () => define(draft!.id, value ? JSON.parse(JSON.stringify(value)) : null, tabId))) {
                 draft = null;
                 error = "";
             }

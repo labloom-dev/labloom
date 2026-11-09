@@ -110,6 +110,21 @@ test("shared edits need no version and invalid duplicate records or containment 
     assert.equal(snapshot(service), before);
 });
 
+test("library refresh reorders results without hydrating unchanged summaries, and calendar reads only changed tasks", t => {
+    const { service } = fixture(t);
+    const a = service.create("task", "A"), b = service.create("task", "B"), c = service.create("event", "C");
+    const query = { kind: "task" as const, sort: "title" as const };
+    const updated = service.listUpdates(query, [b.id]);
+    assert.deepEqual(updated.order, [a.id, b.id]);
+    assert.deepEqual(updated.items.map(row => row.id), [a.id]);
+    assert.equal(updated.total, 2);
+    const renamed = edit(service, a, [text(a.blocks[a.titleBlockId], "Z")]);
+    assert.equal(renamed.status, "saved");
+    assert.deepEqual(service.listUpdates(query, [b.id]).order, [b.id, a.id]);
+    assert.deepEqual(service.list({ ids: [a.id, c.id], kind: "task" }).items.map(row => row.id), [a.id]);
+    assert.deepEqual(service.list({ ids: [] }), { total: 0, items: [] });
+});
+
 test("reference cycles lose retention together and only after the complete preview is confirmed", t => {
     const { service, database } = fixture(t);
     const root = service.create("editable", "Root");
@@ -168,17 +183,24 @@ test("removing a retaining property previews both its owners and dependent pages
     const root = service.create("editable", "Owner");
     const dependent = service.create("editable", "Dependent");
     const id = `custom:${randomUUID()}`;
-    service.setDefinition(id, { id, type: "page-link", metadata: { name: "Citation" } });
+    const tabId = randomUUID();
+    service.setDefinition(id, { id, type: "page-link", metadata: { name: "Citation" } }, tabId);
     service.commitEdit({ pageId: root.id, tabId: "owner", batch: 1, blocks: [], attributes: { [id]: dependent.id } });
     service.commitEdit({ pageId: dependent.id, tabId: "dependent", batch: 1, blocks: [], attributes: { independent: false } });
-    const preview = service.setDefinition(id, null)!;
+    const preview = service.setDefinition(id, null, tabId)!;
     assert.deepEqual(preview.pages.map(page => page.id), [root.id]);
     assert.deepEqual(preview.recycled?.map(page => page.id), [dependent.id]);
     assert.equal(service.get(root.id).attributes[id], dependent.id);
     assert.equal(service.get(dependent.id).attributes.deleted, false);
     assert.equal(history.state("owner").canUndo, true);
     service.create("editable", "Another edit");
-    assert.equal(service.setDefinition(id, null, preview.token), null);
+    let source: string | undefined;
+    service.onChanged = change => {
+        source = change.sourceTab;
+    };
+    assert.equal(service.setDefinition(id, null, tabId, preview.token), null);
+    assert.equal(source, tabId);
+    assert.equal(history.state(tabId).canUndo, false);
     assert.equal(Object.hasOwn(service.get(root.id).attributes, id), false);
     assert.equal(service.get(dependent.id).attributes.recycle_reason, "unreachable");
     assert.equal(history.state("owner").canUndo, false);
@@ -292,7 +314,7 @@ test("keywords match visible names and local times including created and modifie
     for (const keyword of ["tags", "true", "modified", anchor, "1794", "17:12", "未开始"]) assert.equal(service.list({ keyword }).total, 0, keyword);
     for (const keyword of ["2026", "01:12", "02:12", "03:12", "asia"]) assert.deepEqual(service.list({ keyword }).items.map(p => p.id), [e.id], keyword);
     const tag = randomUUID(), definition = service.attributes.definition("tags");
-    service.setDefinition("tags", { ...definition, metadata: { ...definition.metadata, options: [{ id: tag, name: "Research" }] } });
+    service.setDefinition("tags", { ...definition, metadata: { ...definition.metadata, options: [{ id: tag, name: "Research" }] } }, randomUUID());
     service.commitEdit({ pageId: e.id, tabId: "edit", batch: 1, blocks: [], attributes: { tags: [tag] } });
     assert.equal(service.list({ keyword: tag }).total, 0);
     assert.equal(service.list({ keyword: "research" }).total, 1);

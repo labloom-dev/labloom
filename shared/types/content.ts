@@ -37,7 +37,7 @@ export type PageObjects = {
     blocks: ContentBlock[];
     uses: Record<string, number>;
 };
-export type PageQuery = { keyword?: string; kind?: PageKind | ""; deleted?: boolean; pinned?: boolean; tags?: string[]; attributes?: Record<string, AttributeValue>; sort?: "modified" | "created" | "title"; offset?: number; limit?: number };
+export type PageQuery = { ids?: string[]; keyword?: string; kind?: PageKind | ""; deleted?: boolean; pinned?: boolean; tags?: string[]; attributes?: Record<string, AttributeValue>; sort?: "modified" | "created" | "title"; offset?: number; limit?: number };
 export type PageList = { items: PageSummary[]; total: number };
 export type EditCommit = {
     pageId: string; tabId: string; batch: number;
@@ -46,8 +46,8 @@ export type EditCommit = {
 export type Position = { pageId: string; containerId: string; index: number; blockId: string };
 export type Placement = { position: Position; action: "insert" | "remove" | "clone" | "duplicate" | "move-up" | "move-down"; blockId?: string; tabId: string };
 export type BlockDeletion = { pageId: string; tabId: string; blockId: string };
-export type Changed = { pages: string[]; blocks: string[] };
-export type KnowledgeChange = Changed & { sourceTab: string };
+export type Changed = { pages: string[]; blocks: string[]; backlinks?: string[] };
+export type KnowledgeChange = Changed & { sourceTab: string; kinds?: Record<string, PageKind>; summaryPages?: string[]; definition?: string; notices?: boolean };
 export type NamedPage = { id: string; title: string };
 export type ChangePreview = {
     token: string; recycled: NamedPage[]; direct: NamedPage[];

@@ -6,6 +6,7 @@
             <p>笔记、文献与研究计划，都保存在你的工作区。</p>
         </div>
         <div class="actions">
+            <ListHistory {tabId} bind:history />
             <button class="button" disabled={busy} onclick={importPDF}>导入 PDF</button>
             <button class="button primary" onclick={() => createPage()}>新建笔记</button>
         </div>
@@ -116,7 +117,7 @@
             <button class="button" disabled={pending || offset + 40 >= result.total} onclick={() => offset += 40}>下一页</button>
         </div>
     {/if}
-    <AttributeManager {definitions} />
+    <AttributeManager {definitions} {tabId} />
 </section>
 <style>
     .actions, .list-toolbar, .pagination { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
@@ -153,54 +154,79 @@
     @container (max-width: 550px) { .updated { display: none; } .page-icon { width: 30px; height: 34px; } .page-list { padding-inline: 12px; } }
 </style>
 <script lang="ts">
-    import { untrack } from "svelte";
+    import { onMount, untrack } from "svelte";
     import { type AttributeDefinition, type AttributeValue } from "../../../shared/types/attributes";
     import { type PageKind, type PageList, type PageQuery } from "../../../shared/types/content";
     import Icon from "../utils/Icon.svelte";
     import Bloom from "../utils/Bloom.svelte";
     import AttributeInput from "./AttributeInput.svelte";
     import AttributeManager from "./AttributeManager.svelte";
+    import ListHistory from "./ListHistory.svelte";
+    import type { HistoryState } from "../../../shared/types/knowledge";
     import { kindNames, kindIcons } from "./labels";
     import { createPage, openPage } from "../layout/navigation";
-    import { copyData, knowledgeState, message, confirmed, saveAll } from "./state.svelte";
-    let { initialView = "all" }: { initialView?: string } = $props();
+    import { copyData, message, confirmed, registerList, writeFromTab } from "./state.svelte";
+    import { visits } from "../Tab/activity.svelte";
+    let { tabId, initialView = "all" }: { tabId: string; initialView?: string } = $props();
+    let history = $state.raw<HistoryState>({ canUndo: false, redo: [] });
     const views = [{ id: "all", label: "全部页面" }, { id: "papers", label: "文献" }, { id: "pinned", label: "已固定" }, { id: "trash", label: "回收站" }];
     let view = $state(untrack(() => initialView)), keyword = $state(""), applied = $state(""), kind = $state<PageKind | "">(""), sort = $state<PageQuery["sort"]>("modified"), offset = $state(0);
     let selected = $state<string[]>([]), tags = $state<string[]>([]), definitions = $state<AttributeDefinition[]>([]), result = $state<PageList>({ items: [], total: 0 });
     let retry = $state(0);
     let pending = $state(false), busy = $state(false), error = $state(""), info = $state(""), filterId = $state(""), filterValue = $state<AttributeValue>(null), filters = $state<Record<string, AttributeValue>>({});
     const filterDefinition = $derived(definitions.find(item => item.id === filterId));
+    const query = $derived<PageQuery>({ keyword: applied, kind: view === "papers" ? "paper" : kind, sort, offset, limit: 40, deleted: view === "trash", ...(view === "pinned" ? { pinned: true } : {}), tags: [...tags], attributes: { ...filters } });
+    let definitionsDirty = false;
+    onMount(() => registerList(tabId, change => {
+        definitionsDirty ||= !!change.definition;
+        return [
+            ...(change.summaryPages ?? change.pages).filter(id => !query.kind || !change.kinds || change.kinds[id] === query.kind),
+            ...(change.definition ? [change.definition] : [])
+        ];
+    }, load));
     $effect(() => {
-        void knowledgeState.change.seq; void retry;
-        const query: PageQuery = { keyword: applied, kind: view === "papers" ? "paper" : kind, sort, offset, limit: 40, deleted: view === "trash", ...(view === "pinned" ? { pinned: true } : {}), tags: [...tags], attributes: { ...filters } };
-        let active = true;
-        pending = true;
-        void Promise.all([window.api.knowledge.list(copyData(query)), window.api.knowledge.definitions()]).then(([pages, attrs]) => {
-            if (active) {
-                result = pages;
-                definitions = attrs;
-                error = "";
-                selected = selected.filter(id => pages.items.some(page => page.id === id));
-                pending = false;
-            }
-        }, problem => {
-            if (active) {
-                error = message(problem);
-                pending = false;
-            }
-        });
-        return () => {
-            active = false;
-        };
+        void query; void retry;
+        untrack(() => visits.refresh(tabId));
     });
+    async function load(ids: string[], initial: boolean): Promise<void> {
+        pending = initial;
+        try {
+            const changed = new Set(ids);
+            // This lookup exists only until the query result is assembled.
+            // eslint-disable-next-line svelte/prefer-svelte-reactivity
+            const kept = new Map(result.items.filter(row => !initial && !changed.has(row.id)).map(row => [row.id, row]));
+            const pages = await window.api.knowledge.listUpdates(copyData(query), [...kept.keys()]);
+            for (const row of pages.items) kept.set(row.id, row);
+            result = { items: pages.order.map(id => kept.get(id)!), total: pages.total };
+            history = await window.api.knowledge.history(tabId);
+            if (initial || definitionsDirty) {
+                definitionsDirty = false;
+                try {
+                    definitions = await window.api.knowledge.definitions();
+                }
+                catch (problem) {
+                    definitionsDirty = true;
+                    throw problem;
+                }
+            }
+            selected = selected.filter(id => pages.order.includes(id));
+            error = "";
+        }
+        catch (problem) {
+            error = message(problem);
+            throw problem;
+        }
+        finally {
+            pending = false;
+        }
+    }
     function formatDate(value: AttributeValue): string {
         return typeof value === "number" ? new Date(value * 1000).toLocaleDateString() : "";
     }
     async function importPDF(): Promise<void> {
         busy = true;
         try {
-            if (!await saveAll()) return;
-            const result = await window.api.knowledge.importPDF();
+            const result = await writeFromTab(tabId, () => window.api.knowledge.importPDF(undefined, tabId));
             if (result) {
                 info = result.reused ? "该文件已在文献库中，已打开原有文献。" : "PDF 已复制到工作区。";
                 openPage(result.pageId);
@@ -217,7 +243,7 @@
         busy = true;
         try {
             const ids = [...selected];
-            if (await saveAll() && await confirmed(token => view === "trash" ? window.api.knowledge.restore(ids, "library") : window.api.knowledge.trash(ids, "library", token))) selected = [];
+            if (await writeFromTab(tabId, () => confirmed(token => view === "trash" ? window.api.knowledge.restore(ids, tabId) : window.api.knowledge.trash(ids, tabId, token)))) selected = [];
         }
         catch (problem) {
             error = message(problem);

@@ -6,6 +6,7 @@ export type HistoryState = { canUndo: boolean; redo: { id: string; time: number 
 export type Notice = { id: string; pageId: string; title: string; createdAt: number; isRead: boolean };
 export type KnowledgeAPI = {
     list(query?: PageQuery): Promise<PageList>;
+    listUpdates(query: PageQuery, unchanged: string[]): Promise<PageList & { order: string[] }>;
     get(id: string): Promise<PageRecord>;
     readObjects(pageId: string, ids: string[]): Promise<PageObjects>;
     create(kind: PageKind, title?: string, initial?: Record<string, AttributeValue>, parentId?: string, tabId?: string): Promise<PageRecord>;
@@ -16,7 +17,7 @@ export type KnowledgeAPI = {
     trash(ids: string[], tabId: string, confirmation?: string): Promise<CommitResult>;
     restore(ids: string[], tabId: string): Promise<CommitResult>;
     definitions(): Promise<AttributeDefinition[]>;
-    define(id: string, value: AttributeDefinition | null, token?: string): Promise<AttributeImpact | null>;
+    define(id: string, value: AttributeDefinition | null, tabId: string, token?: string): Promise<AttributeImpact | null>;
     backlinks(id: string): Promise<Backlink[]>;
     resolve(target: Target): Promise<ResolvedTarget | null>;
     history(tabId: string): Promise<HistoryState>;
@@ -32,7 +33,7 @@ export type KnowledgeAPI = {
     removeHighlight(id: string, tabId?: string): Promise<void>;
     annotate(pageId: string, anchor: AnchorInput, tabId?: string): Promise<string>;
     notices(): Promise<Notice[]>;
-    readNotice(id: string): Promise<void>;
+    readNotice(id: string, tabId: string): Promise<void>;
     onChanged(listener: (change: KnowledgeChange) => void): () => void;
     onCloseRequested(listener: () => Promise<boolean>): () => void;
 };

@@ -66,6 +66,15 @@ export function references(block: ContentBlock): Target[] {
     return targets;
 }
 
+// Reordering a container preserves use counts. Repeated occurrences count separately.
+export function changedUses(before: string[], after: string[]): Map<string, number> {
+    const delta = new Map<string, number>();
+    for (const id of before) delta.set(id, (delta.get(id) ?? 0) - 1);
+    for (const id of after) delta.set(id, (delta.get(id) ?? 0) + 1);
+    for (const [id, count] of delta) if (!count) delta.delete(id);
+    return delta;
+}
+
 export function assertAcyclic(blocks: Map<string, ContentBlock>): void {
     const done = new Set<string>();
     const visiting = new Set<string>();

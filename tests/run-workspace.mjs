@@ -7,7 +7,7 @@ import { build } from "esbuild";
 
 const require = createRequire(import.meta.url);
 const benchmark = process.argv.includes("--perf");
-const suites = ["workspace", "builtin-attrs", "drizzle", "attributes", "content", "papers", "schedule", "retention", "timestamps", "editor"];
+const suites = ["workspace", "builtin-attrs", "drizzle", "attributes", "content", "papers", "schedule", "retention", "timestamps", "editor", "tabs"];
 const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const localRoot = join(projectRoot, ".local");
 mkdirSync(localRoot, { recursive: true });

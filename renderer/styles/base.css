@@ -68,13 +68,19 @@ body {
 
 *[contenteditable]:not([contenteditable="false"]) {
     -webkit-user-modify: read-write-plaintext-only;
+}
 
-    & * {
-        white-space: pre-wrap;
-        word-wrap: normal;
-        word-break: break-word;
-        overflow-wrap: break-word;
-    }
+/* Synchronizing a page changes editability, but its text keeps the same line breaks. */
+.tiptap.ProseMirror *, [contenteditable]:not(.ProseMirror):not([contenteditable="false"]) * {
+    white-space: pre-wrap;
+    word-wrap: normal;
+    word-break: break-word;
+    overflow-wrap: break-word;
+}
+
+/* Parked tab panels keep their layout. Their controls stay outside keyboard navigation. */
+.group-content [data-tabs-content][hidden] :is(button, input, textarea, select, a, summary, [tabindex]:not(.ProseMirror)) {
+    interactivity: inert;
 }
 
 button, input, textarea, select {

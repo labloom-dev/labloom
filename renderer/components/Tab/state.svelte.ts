@@ -1,7 +1,9 @@
-import { v4 } from "uuid";
-import type { GroupID, TabState } from "./defs";
+import { getGroupID } from "./ids";
+import type { TabState } from "./defs";
+import { SvelteSet } from "svelte/reactivity";
 
-const initialGroupId = `group-${v4()}` as GroupID;
+const initialGroupId = getGroupID();
+export const visitedTabs = new SvelteSet<string>();
 
 export const tabState = $state<TabState>({
     groups: [{ id: initialGroupId, tabs: [], activeTabId: null }],

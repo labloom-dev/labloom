@@ -6,6 +6,7 @@
             <p>给重要的想法，留出专注的时间。</p>
         </div>
         <div class="actions">
+            <ListHistory {tabId} bind:history />
             <button class="button" onclick={() => createPage("event", { schedule_date: selected })}>新建日程</button>
             <button class="button primary" onclick={() => createPage("task", { schedule_date: selected })}>新建任务</button>
         </div>
@@ -112,13 +113,17 @@
     @container (max-width: 900px) { .calendar-layout { grid-template-columns: 1fr; } .day { min-height: 75px; padding: 6px; } }
 </style>
 <script lang="ts">
+    import { onMount } from "svelte";
     import { type PageSummary } from "../../../shared/types/content";
-    import { type Notice } from "../../../shared/types/knowledge";
+    import { type Notice, type HistoryState } from "../../../shared/types/knowledge";
+    import ListHistory from "./ListHistory.svelte";
     import { secondsToWall } from "../../../shared/content/time";
     import { createPage, openPage } from "../layout/navigation";
-    import { knowledgeState, message, confirmed, perform, saveAll } from "./state.svelte";
+    import { message, confirmed, perform, registerList, writeFromTab } from "./state.svelte";
     import { kindNames } from "./labels";
     import Icon from "../utils/Icon.svelte";
+    let { tabId }: { tabId: string } = $props();
+    let history = $state.raw<HistoryState>({ canUndo: false, redo: [] });
     const dateKey = (date: Date): string => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
     const today = dateKey(new Date());
     let month = $state(new Date()), selected = $state(today), scheduled = $state<PageSummary[]>([]), notices = $state<Notice[]>([]), pending = $state(false), error = $state("");
@@ -140,48 +145,61 @@
     function timeLabel(page: PageSummary): string {
         return typeof page.attributes.schedule_start === "number" ? secondsToWall(page.attributes.schedule_start, typeof page.attributes.schedule_zone === "string" ? page.attributes.schedule_zone : undefined).slice(11) : "全天";
     }
-    $effect(() => {
-        void knowledgeState.change.seq;
-        let active = true;
-        pending = true;
-        void (async () => {
-            try {
-                const result: PageSummary[] = [];
-                for (const kind of ["task", "event"] as const) for (let offset = 0; ; offset += 200) {
-                    const batch = await window.api.knowledge.list({ kind, offset, limit: 200 });
+    let noticesDirty = false;
+    onMount(() => registerList(tabId, change => {
+        noticesDirty ||= !!change.notices;
+        return (change.summaryPages ?? change.pages).filter(id => !change.kinds || ["task", "event"].includes(change.kinds[id]));
+    }, load));
+    async function load(ids: string[], initial: boolean): Promise<void> {
+        pending = initial;
+        try {
+            const changed = new Set(ids);
+            const result = initial ? [] : scheduled.filter(row => !changed.has(row.id));
+            for (const kind of ["task", "event"] as const) {
+                for (let offset = 0; ; offset += 200) {
+                    const batch = await window.api.knowledge.list({ kind, ids: initial ? undefined : ids, offset, limit: 200 });
                     result.push(...batch.items);
-                    if (!active) return;
                     if (offset + batch.items.length >= batch.total) break;
                 }
-                const alerts = await window.api.knowledge.notices();
-                if (active) {
-                    scheduled = result;
-                    notices = alerts;
-                    error = "";
+            }
+            if (initial || noticesDirty) {
+                noticesDirty = false;
+                try {
+                    notices = await window.api.knowledge.notices();
+                }
+                catch (problem) {
+                    noticesDirty = true;
+                    throw problem;
                 }
             }
-            catch (problem) {
-                if (active) error = message(problem);
-            }
-            finally {
-                if (active) pending = false;
-            }
-        })();
-        return () => {
-            active = false;
-        };
-    });
+            history = await window.api.knowledge.history(tabId);
+            scheduled = result.sort((a, b) => Number(a.kind === "event") - Number(b.kind === "event")
+                || Number(b.attributes.modified_at) - Number(a.attributes.modified_at) || a.id.localeCompare(b.id));
+            error = "";
+        }
+        catch (problem) {
+            error = message(problem);
+            throw problem;
+        }
+        finally {
+            pending = false;
+        }
+    }
     function toggle(id: string): void {
         void perform(async () => {
-            if (!await saveAll()) return;
-            const page = await window.api.knowledge.get(id);
-            await confirmed(token => window.api.knowledge.commitEdit({ pageId: id, tabId: "calendar", batch: 0, blocks: [], attributes: { task_status: page.attributes.task_status === "done" ? "todo" : "done" } }, token));
+            await writeFromTab(tabId, async () => {
+                const { page } = await window.api.knowledge.readObjects(id, [id]);
+                if (!page) throw new Error("找不到这项任务。");
+                await confirmed(token => window.api.knowledge.commitEdit({ pageId: id, tabId, batch: 0, blocks: [], attributes: { task_status: page.attributes.task_status === "done" ? "todo" : "done" } }, token));
+            });
         });
     }
     function read(notice: Notice): void {
         void perform(async () => {
-            await window.api.knowledge.readNotice(notice.id);
-            openPage(notice.pageId);
+            await writeFromTab(tabId, async () => {
+                await window.api.knowledge.readNotice(notice.id, tabId);
+                openPage(notice.pageId);
+            });
         });
     }
 </script>

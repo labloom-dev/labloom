@@ -30,7 +30,7 @@
             session.attr(attachId, null); attachId = "";
         }}>附加</button>
     </div>
-    <AttributeManager {definitions} />
+    <AttributeManager {definitions} tabId={session.tabId} />
 </section>
 <style>
     .properties { padding: 20px; background: var(--c-paper); font-size: 12px; }

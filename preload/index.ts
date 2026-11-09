@@ -8,6 +8,7 @@ const api: AppAPI = {
     openDevTools: () => ipcRenderer.send(appChannels.openDevTools),
     knowledge: {
         list: (...args) => ipcRenderer.invoke(knowledgeChannels.list, ...args),
+        listUpdates: (...args) => ipcRenderer.invoke(knowledgeChannels.listUpdates, ...args),
         get: (...args) => ipcRenderer.invoke(knowledgeChannels.get, ...args),
         create: (...args) => ipcRenderer.invoke(knowledgeChannels.create, ...args),
         readObjects: (...args) => ipcRenderer.invoke(knowledgeChannels.readObjects, ...args),

@@ -474,8 +474,10 @@
     import { openDestination, openPage, createPage, type Destination } from "../layout/navigation";
     import { openFeedItem } from "../Feed/navigation.svelte";
     import { type PageSummary } from "../../../shared/types/content";
-    import { knowledgeState } from "../Knowledge/state.svelte";
+    import { registerList } from "../Knowledge/state.svelte";
+    import { visits } from "../Tab/activity.svelte";
 
+    let { tabId }: { tabId: string } = $props();
     let feedState = $state<FeedState | null>(null);
     let counts = $state<{ pages: number; papers: number; tasks: number } | null>(null);
     let recent = $state<PageSummary[]>([]);
@@ -515,15 +517,12 @@
     }
 
     onMount(() => {
-        void load();
+        const release = registerList(tabId, change => change.pages, load);
         const timer = setInterval(() => {
-            date = today(); void load();
+            date = today(); visits.refresh(tabId);
         }, 60000);
         return () => {
-            active = false; clearInterval(timer);
+            active = false; clearInterval(timer); release();
         };
-    });
-    $effect(() => {
-        void knowledgeState.change.seq; void load();
     });
 </script>

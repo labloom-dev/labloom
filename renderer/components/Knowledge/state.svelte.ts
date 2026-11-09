@@ -1,12 +1,14 @@
 import { PageWrites, fallbackFields, fields, reviewEdit, type Fields } from "./page-writes";
 import { confirmationText } from "../../../shared/content/confirmation";
+import { changedUses, references } from "../../../shared/content/blocks";
 import { type AttributeDefinition, type AttributeValue } from "../../../shared/types/attributes";
-import { type ChangePreview, type Changed, type CommitResult, type KnowledgeChange, type PageRecord } from "../../../shared/types/content";
+import { type Backlink, type ChangePreview, type Changed, type CommitResult, type KnowledgeChange, type PageRecord } from "../../../shared/types/content";
 import { type HistoryState } from "../../../shared/types/knowledge";
-
-export const knowledgeState = $state<{ change: KnowledgeChange & { seq: number }; error: string; busy: boolean }>({
-    change: { sourceTab: "", pages: [], blocks: [], seq: 0 }, error: "", busy: false
-});
+import { PendingInput } from "../Editor/pending-input";
+import { readingTabs, visits } from "../Tab/activity.svelte";
+import type { TabChange, TabView } from "../Tab/visits";
+import { knowledgeState, message, perform } from "./feedback.svelte";
+export { knowledgeState, message, perform } from "./feedback.svelte";
 export const confirmation = $state<{ heading: string; text: string; names: string[]; resolve: ((value: boolean) => void) | null }>({ heading: "", text: "", names: [], resolve: null });
 export function ask(heading: string, text: string, names: string[] = []): Promise<boolean> {
     if (confirmation.resolve) return Promise.resolve(false);
@@ -17,16 +19,6 @@ export function answer(value: boolean): void {
     confirmation.resolve = null;
     resolve?.(value);
 }
-export const message = (error: unknown): string => error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : String(error);
-export async function perform(action: () => Promise<void>): Promise<void> {
-    try {
-        knowledgeState.error = "";
-        await action();
-    }
-    catch (error) {
-        knowledgeState.error = message(error);
-    }
-}
 export async function confirmed(commit: (token?: string) => Promise<CommitResult>): Promise<boolean> {
     let result = await commit();
     while (result.status === "confirmation") {
@@ -36,11 +28,11 @@ export async function confirmed(commit: (token?: string) => Promise<CommitResult
     }
     return true;
 }
-export async function define(id: string, value: AttributeDefinition | null): Promise<boolean> {
-    let impact = await window.api.knowledge.define(id, value);
+export async function define(id: string, value: AttributeDefinition | null, tabId: string): Promise<boolean> {
+    let impact = await window.api.knowledge.define(id, value, tabId);
     while (impact) {
         if (!await ask("修改共享属性", `以下页面的属性值会被清空、移除或调整。${impact.recycled?.length ? `同时有 ${impact.recycled.length} 个页面失去保留关系，将进入回收站。` : ""}`, [...impact.pages, ...(impact.recycled ?? [])].map(page => page.title))) return false;
-        impact = await window.api.knowledge.define(id, value, impact.token);
+        impact = await window.api.knowledge.define(id, value, tabId, impact.token);
     }
     return true;
 }
@@ -53,12 +45,17 @@ class PageState {
     dirty = $state(false);
     error = $state("");
     history = $state<HistoryState>({ canUndo: false, redo: [] });
+    definitions = $state.raw<AttributeDefinition[]>([]);
+    backlinks = $state.raw<Backlink[]>([]);
 }
 export type PageSession = {
     state: PageState; refresh(): Promise<void>; reread(ids: string[]): Promise<void>; objects(ids: string[]): Promise<void>;
-    flush(): Promise<boolean>; save(): Promise<boolean>; stage(edit: Fields): void;
+    tabId: string; input: PendingInput; release(): void;
+    flush(): Promise<boolean>; stage(edit: Fields): void;
     review(edit: Fields, rollback: () => void, accept: (saved: boolean) => void, finish: () => void): void;
-    action(commit: (token?: string) => Promise<CommitResult>): Promise<void>; discard(): Promise<void>;
+    action(commit: (token?: string) => Promise<CommitResult>): Promise<void>;
+    watchObject(id: string, read: () => Promise<void>, own?: boolean): () => void;
+    ownChange(change: KnowledgeChange): void;
     undo(direction: "undo" | "redo", branch?: string): Promise<void>; composition(active: boolean): void;
     attr(id: string, value: AttributeValue): void; detach(id: string): void; listen(fn: Listener): () => void;
 };
@@ -68,17 +65,79 @@ type Listener = (ids: string[], whole: boolean) => void;
 const sessions = new Map<string, PageSession>();
 // Pending writes are awaited at navigation boundaries, never rendered.
 // eslint-disable-next-line svelte/prefer-svelte-reactivity
-const auxiliary = new Set<Promise<unknown>>();
-export function trackWrite(promise: Promise<unknown>): void {
-    auxiliary.add(promise);
+const auxiliary = new Map<Promise<unknown>, string>();
+export function trackWrite<T>(tabId: string, promise: Promise<T>): Promise<T> {
+    auxiliary.set(promise, tabId);
     void promise.finally(() => auxiliary.delete(promise)).catch(() => { });
+    return promise;
+}
+function otherWrites(tabId: string): Promise<unknown>[] {
+    return [...auxiliary].filter(([, owner]) => owner === tabId).map(([write]) => write);
+}
+export function registerList(tabId: string, intersection: TabView["intersection"], read: TabView["read"]): () => void {
+    return visits.register(tabId, { intersection, read, ownChanges: true,
+        pending: () => otherWrites(tabId).length ? "unknown" : undefined,
+        flush: async () => {
+            await Promise.all(otherWrites(tabId));
+            return true;
+        } });
 }
 
 function makeSession(tabId: string, pageId: string): PageSession {
-    const state = new PageState(), api = window.api.knowledge;
+    const state = new PageState(), api = window.api.knowledge, input = new PendingInput();
+    // Unacknowledged container edits may change a sync border in another page.
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity
+    const pendingUses = new Set<string>();
+    let broadChange = false;
+    let readingObjects = false;
+    // Cache membership follows containment, including every occurrence of a synchronous block.
+    function pruneDetached(): void {
+        const page = state.page;
+        if (!page) return;
+        // Traversal is local to this call and never observed by the UI.
+        // eslint-disable-next-line svelte/prefer-svelte-reactivity
+        const visible = new Set<string>(), stack = [page.titleBlockId, ...page.children];
+        while (stack.length) {
+            const id = stack.pop()!;
+            if (visible.has(id)) continue;
+            visible.add(id);
+            stack.push(...(page.blocks[id]?.children ?? []));
+        }
+        for (const id of Object.keys(page.blocks)) if (!visible.has(id)) {
+            if (newBlocks.delete(id)) writes.dropNew(id);
+            delete page.blocks[id];
+        }
+    }
     // Subscription bookkeeping is independent of Svelte rendering.
     // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const listeners = new Set<Listener>();
+    // Mounted reference cards and PDF resources have their own object dependencies.
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity
+    const observers = new Map<string, Map<() => Promise<void>, boolean>>();
+    function watchObject(id: string, read: () => Promise<void>, own = false): () => void {
+        // eslint-disable-next-line svelte/prefer-svelte-reactivity
+        const group = observers.get(id) ?? new Map();
+        group.set(read, own);
+        observers.set(id, group);
+        void visits.settled(tabId).then(ok => {
+            if (ok && group.has(read)) return read();
+            return undefined;
+        }).catch(error => {
+            knowledgeState.error = message(error);
+        });
+        return () => {
+            group.delete(read);
+            if (!group.size) observers.delete(id);
+        };
+    }
+    function ownChange(change: KnowledgeChange): void {
+        for (const id of [...(change.summaryPages ?? change.pages), ...change.blocks]) {
+            for (const [read, own] of observers.get(id) ?? []) if (own) void perform(read);
+        }
+        if (change.backlinks?.includes(pageId)) void perform(async () => {
+            state.backlinks = await api.backlinks(pageId);
+        });
+    }
     // Only uncommitted newly allocated IDs can disappear entirely within a debounce interval.
     // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const newBlocks = new Set<string>();
@@ -151,30 +210,36 @@ function makeSession(tabId: string, pageId: string): PageSession {
         state.dirty = writes.unsaved || !!reviewing;
         if (state.dirty && !composing && !reviewing) timer = setTimeout(() => void drain(false), 600);
     }
+    function changedChildren(before: string[], after: string[]): boolean {
+        return before.length !== after.length || after.some((id, index) => id !== before[index]);
+    }
     function stage(edit: Fields): void {
         const page = state.page;
         if (!page) return;
         for (const block of edit.blocks) if (!page.blocks[block.id]) newBlocks.add(block.id);
-        const structural = edit.pageChildren !== undefined || edit.blocks.some(b => b.children.length !== (page.blocks[b.id]?.children.length ?? 0)
-            || b.children.some((id, i) => id !== page.blocks[b.id]?.children[i]));
-        apply(edit);
-        writes.stage(edit);
-        if (structural && newBlocks.size) {
-            // Reachability is temporary batch bookkeeping.
-            // eslint-disable-next-line svelte/prefer-svelte-reactivity
-            const reachable = new Set<string>(), stack = [...page.children];
-            while (stack.length) {
-                const id = stack.pop()!;
-                if (reachable.has(id)) continue;
-                reachable.add(id);
-                stack.push(...(page.blocks[id]?.children ?? []));
-            }
-            for (const id of newBlocks) if (!reachable.has(id)) {
-                writes.dropNew(id);
-                newBlocks.delete(id);
-                delete page.blocks[id];
+        let structural = false;
+        function trackChildren(before: string[], after: string[]): void {
+            if (!changedChildren(before, after)) return;
+            structural = true;
+            for (const [id, delta] of changedUses(before, after)) {
+                pendingUses.add(id);
+                const removed = page!.blocks[id];
+                if (delta < 0 && removed && (removed.children.length || references(removed).length)) broadChange = true;
             }
         }
+        if (edit.pageChildren) trackChildren(page.children, edit.pageChildren);
+        for (const block of edit.blocks) trackChildren(page.blocks[block.id]?.children ?? [], block.children);
+        const attributes = [...Object.keys(edit.attributes ?? {}), ...edit.detach ?? []];
+        // A change to the last reference can recycle pages outside the current document.
+        const linksChanged = edit.blocks.some(block => {
+            const before = page.blocks[block.id] ? references(page.blocks[block.id]) : [], after = references(block);
+            return before.length !== after.length || before.some((target, index) => target.kind !== after[index].kind || target.id !== after[index].id);
+        });
+        broadChange ||= linksChanged || edit.attributes?.independent === false || attributes.some(id =>
+            state.definitions.some(def => def.id === id && (def.type === "page-link" || def.type === "page-links")));
+        apply(edit);
+        writes.stage(edit);
+        if (structural) pruneDetached();
         schedule();
     }
     async function drain(all = true): Promise<boolean> {
@@ -194,6 +259,10 @@ function makeSession(tabId: string, pageId: string): PageSession {
         finally {
             state.saving = false;
             state.dirty = writes.unsaved || !!reviewing;
+            if (!state.dirty) {
+                broadChange = false;
+                pendingUses.clear();
+            }
         }
     }
     async function flush(): Promise<boolean> {
@@ -230,13 +299,13 @@ function makeSession(tabId: string, pageId: string): PageSession {
             if (request === load) state.loading = false;
         }
     }
-    async function objects(ids: string[]): Promise<void> {
+    async function objects(ids: string[], prune = false): Promise<void> {
         const page = state.page;
         if (!page) return;
         // Visited objects for this read request only.
         // eslint-disable-next-line svelte/prefer-svelte-reactivity
         const seen = new Set<string>();
-        let needed = [...new Set(ids)];
+        let needed = [...new Set(ids)], structural = false;
         while (needed.length) {
             const data = await api.readObjects(pageId, needed);
             needed.forEach(id => seen.add(id));
@@ -246,20 +315,23 @@ function makeSession(tabId: string, pageId: string): PageSession {
                 else delete page.sharedUses[id];
             }
             if (data.page) {
+                structural ||= prune && changedChildren(page.children, data.page.children);
                 page.attributes = data.page.attributes;
                 page.children = data.page.children;
             }
             const children = [...(data.page?.children ?? [])];
             for (const b of data.blocks) {
+                structural ||= prune && changedChildren(page.blocks[b.id]?.children ?? [], b.children);
                 page.blocks[b.id] = b;
                 children.push(...b.children);
             }
             needed = [...new Set(children.filter(id => !seen.has(id) && !page.blocks[id]))];
         }
+        if (structural) pruneDetached();
     }
     async function reread(ids: string[]): Promise<void> {
         if (!state.page || !ids.length || !await flush()) return;
-        await objects(ids);
+        await objects(ids, true);
         state.page = { ...state.page };
         notify(ids);
         await history();
@@ -279,7 +351,10 @@ function makeSession(tabId: string, pageId: string): PageSession {
                     if (result.status === "saved") savedResult = result;
                     return result;
                 }, rollback, saved => {
-                    if (saved) apply(edit);
+                    if (saved) {
+                        apply(edit);
+                        pruneDetached();
+                    }
                     accept(saved);
                     if (savedResult) {
                         updateCounts(savedResult.changed.blocks, savedResult.sharedUses ?? {});
@@ -301,14 +376,6 @@ function makeSession(tabId: string, pageId: string): PageSession {
         });
         state.dirty = true;
     }
-    async function discard(): Promise<void> {
-        if (await ask("放弃本地输入", "重新读取已保存的页面会放弃当前尚未保存的输入。")) {
-            writes.clear();
-            state.dirty = false;
-            state.error = "";
-            await refresh();
-        }
-    }
     async function action(commit: (token?: string) => Promise<CommitResult>): Promise<void> {
         if (!await flush()) return;
         let changed: Changed | undefined;
@@ -316,11 +383,76 @@ function makeSession(tabId: string, pageId: string): PageSession {
             const result = await commit(token);
             if (result.status === "saved") changed = result.changed;
             return result;
-        }) && changed) await reread([...changed.pages.filter(id => id === pageId), ...changed.blocks]);
+        }) && changed) {
+            await reread([...changed.pages.filter(id => id === pageId), ...changed.blocks]);
+            if (!readingTabs.has(tabId) && !state.page?.attributes.deleted) input.replay();
+        }
     }
-    const undo = (direction: "undo" | "redo", branch?: string): Promise<void> => action(token => api.undo(tabId, direction, branch, token));
+    const trackedAction = (commit: (token?: string) => Promise<CommitResult>): Promise<void> => trackWrite(tabId, action(commit));
+    const undo = (direction: "undo" | "redo", branch?: string): Promise<void> => trackedAction(token => api.undo(tabId, direction, branch, token));
+    let definitionsDirty = false;
+    const intersection = (change: TabChange): string[] => [
+        ...change.pages.filter(id => id === pageId),
+        ...(change.summaryPages ?? change.pages).filter(id => observers.has(id)),
+        ...change.blocks.filter(id => !state.page || readingObjects || Object.hasOwn(state.page.blocks, id) || observers.has(id)),
+        ...(change.definition ? [change.definition] : []),
+        ...(change.backlinks?.includes(pageId) ? [pageId] : []),
+        ...change.pages.filter(id => state.backlinks.some(link => link.sourceId === id))
+    ];
+    const release = visits.register(tabId, {
+        intersection: change => {
+            definitionsDirty ||= !!change.definition;
+            return intersection(change);
+        },
+        pending: () => {
+            if (composing || reviewing || broadChange || input.waiting || otherWrites(tabId).length) return "unknown";
+            if (writes.unsaved) {
+                const blocks = [...writes.changedBlocks(), ...pendingUses], page = state.page;
+                // A shared ancestor can expose a changed paragraph in a different kind of page.
+                const otherOwners = blocks.length && (Object.keys(page?.sharedUses ?? {}).length || [...pendingUses].some(id => !newBlocks.has(id)));
+                return { pages: [pageId], blocks, kinds: page && !otherOwners ? { [pageId]: page.kind } : undefined };
+            }
+            return undefined;
+        },
+        flush: async () => {
+            await Promise.all(otherWrites(tabId));
+            if (await flush()) return true;
+            knowledgeState.error = state.error || "页面输入尚未保存，请结束输入法组字后重试。";
+            return false;
+        },
+        read: async (ids, initial) => {
+            readingObjects = true;
+            try {
+                if (initial) await refresh();
+                else if (state.page) {
+                    if (!await flush()) throw new Error(state.error || "页面输入尚未保存。");
+                    await reread(ids.filter(id => id === pageId || Object.hasOwn(state.page!.blocks, id)));
+                }
+                if (state.error) throw new Error(state.error);
+                if (initial || definitionsDirty) {
+                    definitionsDirty = false;
+                    try {
+                        state.definitions = await api.definitions();
+                    }
+                    catch (error) {
+                        definitionsDirty = true;
+                        throw error;
+                    }
+                }
+                if (initial || ids.includes(pageId) || ids.some(id => state.backlinks.some(link => link.sourceId === id)))
+                    state.backlinks = await api.backlinks(pageId);
+                for (const id of ids) if (observers.has(id)) await Promise.all([...observers.get(id)!.keys()].map(read => read()));
+            }
+            finally {
+                readingObjects = false;
+            }
+        },
+        ready: () => {
+            if (!state.page?.attributes.deleted) input.replay();
+        }
+    });
     return {
-        state, refresh, reread, objects, flush, save: flush, stage, review, action, discard, undo, composition,
+        tabId, input, release, state, refresh, reread, objects, flush, stage, review, action: trackedAction, undo, composition, watchObject, ownChange,
         attr: (id: string, value: AttributeValue) => stage({ blocks: [], attributes: { [id]: copyData(value) } }),
         detach: (id: string) => stage({ blocks: [], detach: [id] }),
         listen(fn: Listener) {
@@ -337,11 +469,21 @@ export function session(tabId: string, pageId: string): PageSession {
     }
     return value;
 }
+export function receiveChange(change: KnowledgeChange): void {
+    visits.changed(change);
+    sessions.get(change.sourceTab)?.ownChange(change);
+    knowledgeState.change = { ...change, seq: knowledgeState.change.seq + 1 };
+}
 export async function saveAll(): Promise<boolean> {
     window.dispatchEvent(new Event("workspace-flush"));
-    for (const value of sessions.values()) if (!await value.flush()) return false;
     try {
-        await Promise.all(auxiliary);
+        const prior = [...auxiliary.keys()];
+        const pages = [...sessions.values()].map(async value => {
+            if (readingTabs.has(value.tabId) && !await visits.settled(value.tabId)) throw new Error(knowledgeState.error || "读取页面失败。");
+            if (value.input.waiting) throw new Error("仍有等待同步的输入。请先回到原标签页；页面已回收时请先恢复。");
+            if (!await value.flush()) throw new Error(value.state.error || "请先结束输入法组字，页面输入尚未保存。");
+        });
+        await Promise.all([...prior, ...pages]);
     }
     catch (error) {
         knowledgeState.error = message(error);
@@ -349,14 +491,22 @@ export async function saveAll(): Promise<boolean> {
     }
     return true;
 }
+export function writeFromTab<T>(id: string, action: () => Promise<T>): Promise<T | undefined> {
+    // Take the barriers before registering this operation. A quick departure must see the
+    // entire operation, but the operation must never wait for itself.
+    const before = Promise.all([visits.settled(id), saveAll()]);
+    return trackWrite(id, before.then(([ready, saved]) => ready && saved ? action() : undefined));
+}
 export async function closeSession(tabId: string): Promise<boolean> {
     window.dispatchEvent(new Event("workspace-flush"));
     const value = sessions.get(tabId);
-    if (value && !await value.flush()) {
+    if (!await visits.settled(tabId) || value?.input.waiting || (value && !await value.flush())) {
         knowledgeState.error = "此页面未保存，已保留标签页。请处理页面上显示的错误。";
         return false;
     }
+    await Promise.all(otherWrites(tabId));
     await window.api.knowledge.closeTab(tabId);
+    value?.release();
     sessions.delete(tabId);
     return true;
 }

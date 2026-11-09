@@ -1,7 +1,7 @@
 import { decodeValue, encodeValue, validUUID } from "../../shared/attrs/values";
 import { nowSeconds } from "../../shared/content/time";
 import { builtinAttrsByPageKind, isBuiltin } from "../../shared/attrs/builtins";
-import { references, validateBlock } from "../../shared/content/blocks";
+import { changedUses, references, validateBlock } from "../../shared/content/blocks";
 import { type AttributeDefinition, type AttributeValue } from "../../shared/types/attributes";
 import { type Changed, type ContentBlock, type PageKind, type Target } from "../../shared/types/content";
 import { decodeBlock, KnowledgeRecords, type BlockRow, type LinkRow, type PageRow } from "./records";
@@ -21,6 +21,7 @@ export class EditChanges {
     readonly rows: RowChanges = { before: {}, after: {} };
     readonly pages = new Set<string>();
     readonly blocks = new Set<string>();
+    private readonly backlinkPages = new Set<string>();
     readonly causes = new Set<string>();
     readonly direct = new Set<string>();
     readonly seeds: Target[] = [];
@@ -35,7 +36,7 @@ export class EditChanges {
     constructor(readonly data: KnowledgeRecords) {}
 
     changed(): Changed {
-        return { pages: [...this.pages], blocks: [...this.blocks] };
+        return { pages: [...this.pages], blocks: [...this.blocks], ...(this.backlinkPages.size ? { backlinks: [...this.backlinkPages] } : {}) };
     }
 
     block(id: string): ContentBlock | null {
@@ -56,35 +57,33 @@ export class EditChanges {
     private setChildren(source: Target, before: string[], after: string[]): void {
         this.containers.set(key(source), { source, before, after });
         this.ownersCache.clear();
-        const remaining = new Map<string, number>();
-        for (const id of after) remaining.set(id, (remaining.get(id) ?? 0) + 1);
-        for (const id of before) {
-            const count = remaining.get(id) ?? 0;
-            if (count) remaining.set(id, count - 1);
-            else {
-                this.blocks.add(id);
-                this.seeds.push({ kind: "block", id });
-                this.causes.add(id);
-                if (source.kind === "block") this.causes.add(source.id);
-                // The removed occurrence may itself be a reference or contain one.
-                for (const edge of this.data.outgoing({ kind: "block", id })) this.markTargets(targetOf(edge));
-            }
+        for (const [id, delta] of changedUses(before, after)) {
+            this.blocks.add(id);
+            if (delta > 0) continue;
+            this.seeds.push({ kind: "block", id });
+            this.causes.add(id);
+            if (source.kind === "block") this.causes.add(source.id);
+            // The removed occurrence may itself be a reference or contain one.
+            for (const edge of this.data.outgoing({ kind: "block", id })) this.markTargets(targetOf(edge));
         }
-        for (const [id, count] of remaining) if (count) this.blocks.add(id);
     }
 
     setLinks(source: Target, field: string, targets: Target[]): void {
         const unique = new Map(targets.map(t => [key(t), t]));
         this.links.set(key(source) + ":" + field, { source, field, targets: [...unique.values()] });
+        const existing = new Set<string>();
         for (const row of this.data.outgoing(source)) {
             if (row.sourceField !== field) continue;
             const previous = targetOf(row);
+            existing.add(key(previous));
             if (!unique.has(key(previous))) {
+                if (previous.kind === "page") this.backlinkPages.add(previous.id);
                 this.seeds.push(previous);
                 this.markTargets(previous);
                 this.causes.add(source.kind === "block" ? source.id : "attribute:" + field);
             }
         }
+        for (const [id, target] of unique) if (target.kind === "page" && !existing.has(id)) this.backlinkPages.add(target.id);
     }
 
     putBlock(value: ContentBlock, stored?: BlockRow): void {

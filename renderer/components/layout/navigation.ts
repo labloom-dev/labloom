@@ -3,9 +3,9 @@ import type { Tab } from "../Tab/defs";
 import { activateTab, addTab, getTabID } from "../Tab/api";
 import { tabState } from "../Tab/state.svelte";
 import { type uuid } from "../../../shared/types/uuid";
-import { type PageKind } from "../../../shared/types/content";
+import { type PageKind, type PageRecord } from "../../../shared/types/content";
 import { type AttributeValue } from "../../../shared/types/attributes";
-import { perform, saveAll } from "../Knowledge/state.svelte";
+import { perform, saveAll, writeFromTab } from "../Knowledge/state.svelte";
 
 export const destinations = [
     { type: "overview", title: "我的花园", icon: "home" },
@@ -38,9 +38,10 @@ export function openPage(id: string, options: { duplicate?: boolean; anchorId?: 
 }
 
 export function createPage(kind: PageKind = "editable", initial: Record<string, AttributeValue> = {}): void {
+    const source = tabState.groups.find(group => group.id === tabState.focusedGroupId)?.activeTabId;
     void perform(async () => {
-        if (!await saveAll()) return;
-        const page = await window.api.knowledge.create(kind, "", initial);
-        openPage(page.id);
+        const create = (): Promise<PageRecord> => window.api.knowledge.create(kind, "", initial, undefined, source ?? undefined);
+        const page = source ? await writeFromTab(source, create) : await saveAll() && await create();
+        if (page) openPage(page.id);
     });
 }

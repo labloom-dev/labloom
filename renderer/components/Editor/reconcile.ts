@@ -53,7 +53,13 @@ export function patchDocument(state: EditorState, page: PageRecord, ids: string[
     if (at && selection.empty) {
         const positions = indexDoc(tr.doc).get(at.node.attrs.blockId);
         const place = positions?.[occurrence] ?? positions?.[0];
-        if (place) tr.setSelection(TextSelection.near(tr.doc.resolve(place.pos + Math.min(offset, place.node.nodeSize - 1))));
+        if (place) {
+            const line = place.node.type.name === "pageTitle" ? place.node : place.node.firstChild;
+            const oldLine = at.node.type.name === "pageTitle" ? at.node : at.node.firstChild;
+            const atEnd = selection.$head.parent === oldLine && selection.$head.parentOffset === oldLine.content.size;
+            const newOffset = atEnd && line?.inlineContent ? line.content.size + (line === place.node ? 1 : 2) : offset;
+            tr.setSelection(TextSelection.near(tr.doc.resolve(place.pos + Math.min(newOffset, place.node.nodeSize - 1))));
+        }
     }
     return tr;
 }

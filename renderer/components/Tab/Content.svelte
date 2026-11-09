@@ -2,11 +2,11 @@
     {#if tab.type === "page"}
         <PageView {tab} />
     {:else if tab.type === "library" || tab.type === "papers"}
-        <Library initialView={tab.type === "papers" ? "papers" : "all"} />
+        <Library tabId={tab.id} initialView={tab.type === "papers" ? "papers" : "all"} />
     {:else if tab.type === "calendar"}
-        <Calendar />
+        <Calendar tabId={tab.id} />
     {:else if tab.type === "overview"}
-        <Overview />
+        <Overview tabId={tab.id} />
     {:else if tab.type === "about"}
         <About />
     {:else if tab.type === "settings"}

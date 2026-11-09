@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
-import { getSchema } from "@tiptap/core";
+import { getSchema, type Editor } from "@tiptap/core";
 import { Slice, Fragment } from "@tiptap/pm/model";
 import { EditorState, TextSelection } from "@tiptap/pm/state";
 import { Mapping } from "@tiptap/pm/transform";
@@ -9,7 +9,8 @@ import { blockData, blankTable, documentEdit, documentExtensions, indexDoc, page
 import { clipboardRows, identityPlugin, indent, shallowPaste, split, syncInsert } from "../renderer/components/Editor/transactions";
 import { inverse, patchDocument, replay } from "../renderer/components/Editor/reconcile";
 import { PageWrites, restoreOccurrences, reviewEdit } from "../renderer/components/Knowledge/page-writes";
-import { payload, validateBlock } from "../shared/content/blocks";
+import { PendingInput } from "../renderer/components/Editor/pending-input";
+import { changedUses, payload, validateBlock } from "../shared/content/blocks";
 import { type ChangePreview, type ContentBlock, type ContentBlockKind, type EditCommit, type PageRecord } from "../shared/types/content";
 
 const schema = getSchema(documentExtensions);
@@ -27,7 +28,34 @@ function select(s: EditorState, id: string, offset = 0): EditorState {
     return s.apply(s.tr.setSelection(TextSelection.create(s.doc, indexDoc(s.doc).get(id)![0].pos + 2 + offset)));
 }
 
+test("a tab replays text and editing keys in order against its reread document, excluding shortcuts and composition", () => {
+    const row = block("A"), p = page([row]);
+    let doc = select(state(p), row.id, 1);
+    const input = new PendingInput();
+    const editor = {
+        get state() {
+            return doc;
+        },
+        view: { dispatch: (tr: typeof doc.tr) => {
+            doc = doc.apply(tr);
+        } }
+    } as unknown as Editor;
+    input.attach(editor);
+    const key = (key: string, options = {}): void => input.key({ key, keyCode: 0, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false,
+        isComposing: false, getModifierState: () => false, ...options });
+    key("a"); key("b"); key("c"); key("Backspace"); key("z", { ctrlKey: true }); key("Process", { isComposing: true, keyCode: 229 });
+    key("Enter"); input.text("好"); input.text("👩‍🔬"); key("Backspace");
+    assert.equal(doc.doc.lastChild!.textContent, "A");
+    p.blocks[row.id] = { ...row, payload: payload("paragraph", "AB") };
+    doc = doc.apply(patchDocument(doc, p, [row.id], false)!);
+    input.replay();
+    assert.deepEqual(doc.doc.content.content.slice(1).map(n => n.textContent), ["ABab", "好"]);
+    assert.equal(input.waiting, false);
+});
+
 test("page conversion preserves nesting, title, atoms, marks and table cells; deltas include only changed records", () => {
+    assert.deepEqual([...changedUses(["A", "B", "A"], ["B", "A", "C"])], [["A", -1], ["C", 1]]);
+    assert.deepEqual([...changedUses(["A", "B"], ["B", "A"])], []);
     const parent = block("first"), kid = block("child", "unordered_list"), line = block("", "hr"), table = block("", "table"), ref = block("", "blocked_reference"), source = block("", "source");
     parent.children = [kid.id];
     parent.payload.collapsed = true;

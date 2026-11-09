@@ -17,10 +17,11 @@
     .missing { border-style: dashed; color: var(--c-muted); }
 </style>
 <script lang="ts">
+    import { untrack } from "svelte";
     import { type Target, type ResolvedTarget } from "../../../shared/types/content";
     import { openPage } from "../layout/navigation";
-    import { knowledgeState } from "./state.svelte";
-    let { target }: { target: Target } = $props();
+    import { knowledgeState, type PageSession } from "./state.svelte";
+    let { target, session }: { target: Target; session: PageSession } = $props();
     let targetValue = $state<ResolvedTarget | null>(null), pending = $state(true), expanded = $state(false);
     function openTarget(): void {
         if (targetValue?.status === "deleted") knowledgeState.error = "目标已删除";
@@ -29,22 +30,22 @@
     }
     $effect(() => {
         const current: Target = { kind: target.kind, id: target.id };
-        void knowledgeState.change.seq;
         let active = true;
+        async function load(): Promise<void> {
+            try {
+                const value = await window.api.knowledge.resolve(current);
+                if (active) targetValue = value;
+            }
+            finally {
+                if (active) pending = false;
+            }
+        }
         pending = true;
-        void window.api.knowledge.resolve(current).then(value => {
-            if (active) {
-                targetValue = value;
-                pending = false;
-            }
-        }, () => {
-            if (active) {
-                targetValue = null;
-                pending = false;
-            }
-        });
+        const owner = session;
+        const off = untrack(() => owner.watchObject(current.id, load, true));
         return () => {
             active = false;
+            off();
         };
     });
 </script>
