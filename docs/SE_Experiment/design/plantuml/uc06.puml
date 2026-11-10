@@ -1,17 +1,8 @@
 @startuml
-skinparam defaultFontName Noto Sans CJK SC
-skinparam defaultFontSize 16
-skinparam monochrome true
-skinparam shadowing false
-skinparam roundcorner 0
-skinparam ArrowColor #333333
-skinparam backgroundColor white
-skinparam classAttributeIconSize 0
-skinparam packageStyle rectangle
+!include _style.iuml
 skinparam maxMessageSize 240
 hide footbox
 skinparam sequenceMessageAlign center
-autonumber
 actor 用户 as U
 boundary SearchUI as UI
 control "Search\nController" as C

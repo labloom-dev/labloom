@@ -1,0 +1,118 @@
+skinparam defaultFontName Noto Sans CJK SC
+skinparam defaultFontSize 14
+skinparam monochrome true
+skinparam shadowing false
+skinparam backgroundColor white
+skinparam ArrowColor black
+skinparam ArrowThickness 1
+skinparam LineThickness 1
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+skinparam class {
+  BackgroundColor white
+  HeaderBackgroundColor white
+  BorderColor black
+  FontColor black
+  FontStyle plain
+  AttributeFontColor black
+  BorderThickness 1
+}
+skinparam rectangle {
+  BackgroundColor white
+  BorderColor black
+  FontColor black
+  BorderThickness 1
+}
+skinparam node {
+  BackgroundColor white
+  BorderColor black
+  FontColor black
+  BorderThickness 1
+}
+skinparam artifact {
+  BackgroundColor white
+  BorderColor black
+  FontColor black
+  BorderThickness 1
+}
+skinparam database {
+  BackgroundColor white
+  BorderColor black
+  FontColor black
+  BorderThickness 1
+}
+skinparam folder {
+  BackgroundColor white
+  BorderColor black
+  FontColor black
+  BorderThickness 1
+}
+skinparam cloud {
+  BackgroundColor white
+  BorderColor black
+  FontColor black
+  BorderThickness 1
+}
+skinparam state {
+  BackgroundColor white
+  BorderColor black
+  FontColor black
+  FontStyle plain
+  RoundCorner 20
+  BorderThickness 1
+  StartColor black
+  EndColor black
+}
+skinparam sequence {
+  ArrowColor black
+  ArrowThickness 1
+  LifeLineBorderColor black
+  LifeLineBorderThickness 1
+  LifeLineBackgroundColor white
+  ParticipantBackgroundColor white
+  ParticipantBorderColor black
+  ParticipantBorderThickness 1
+  ParticipantFontColor black
+  ActorBackgroundColor white
+  ActorBorderColor black
+  ActorFontColor black
+  GroupBackgroundColor white
+  GroupBodyBackgroundColor transparent
+  GroupBorderColor black
+  GroupBorderThickness 1
+  GroupFontColor black
+  DividerBackgroundColor white
+  DividerBorderColor black
+  ReferenceBackgroundColor white
+  ReferenceBorderColor black
+}
+skinparam style strictuml
+<style>
+sequenceDiagram {
+  actor {
+    BackgroundColor white
+    LineColor black
+    LineThickness 1
+  }
+  boundary {
+    BackgroundColor white
+    LineColor black
+    LineThickness 1
+  }
+  control {
+    BackgroundColor white
+    LineColor black
+    LineThickness 1
+  }
+  entity {
+    BackgroundColor white
+    LineColor black
+    LineThickness 1
+  }
+}
+classDiagram {
+  class {
+    RoundCorner 0
+  }
+}
+</style>

@@ -1,5 +1,5 @@
 @startsalt
-skinparam backgroundColor white
+!include _style.iuml
 !function $cn($text)
 !return "<font:Noto Sans CJK SC>" + $text + "</font>"
 !endfunction

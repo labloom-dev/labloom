@@ -1,13 +1,5 @@
 @startuml
-skinparam defaultFontName Noto Sans CJK SC
-skinparam defaultFontSize 16
-skinparam monochrome true
-skinparam shadowing false
-skinparam roundcorner 0
-skinparam ArrowColor #333333
-skinparam backgroundColor white
-skinparam classAttributeIconSize 0
-skinparam packageStyle rectangle
+!include _style.iuml
 node "用户桌面计算机" as Desktop {
   node "Electron 渲染进程" as Renderer {
     artifact "Svelte：六个用例界面\nTiptap：笔记编辑\npdf.js：PDF 阅读" as UI

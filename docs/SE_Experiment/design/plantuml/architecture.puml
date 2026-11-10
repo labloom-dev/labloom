@@ -1,13 +1,5 @@
 @startuml
-skinparam defaultFontName Noto Sans CJK SC
-skinparam defaultFontSize 16
-skinparam monochrome true
-skinparam shadowing false
-skinparam roundcorner 0
-skinparam ArrowColor #333333
-skinparam backgroundColor white
-skinparam classAttributeIconSize 0
-skinparam packageStyle rectangle
+!include _style.iuml
 top to bottom direction
 rectangle "表示层／界面表示包\nWorkspaceUI · SourceUI · FeedUI\nPaperUI · NoteUI · SearchUI" as UI
 rectangle "接口控制包\nAppAPI → preload → IPCHandler" as Bridge

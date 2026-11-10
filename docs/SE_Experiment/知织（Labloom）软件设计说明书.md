@@ -1,6 +1,6 @@
 # 知织（Labloom）软件设计说明书
 
-文档编号：LB-SE-SDD-0001　版本：0.2　日期：2026 年 11 月 10 日
+文档编号：LB-SE-SDD-0001　版本：0.3　日期：2026 年 11 月 10 日
 
 ## 1. 引言
 
@@ -695,7 +695,7 @@ IPCHandler 校验发送窗口、参数类型和 sessionId；FileStore 将附件�
 
 ## 附录：设计图与 PlantUML 源码
 
-设计图采用 PlantUML 建模并渲染。源文件位于 design/plantuml/，对应 SVG 位于 design/figures/，两者使用相同文件主名。主窗口界面结构采用 PlantUML Salt 语法。
+设计图采用 PlantUML 建模并渲染。源文件位于 design/plantuml/，对应 SVG 位于 design/figures/，两者使用相同文件主名。公共样式由 design/plantuml/_style.iuml 定义。主窗口界面结构采用 PlantUML Salt 语法。
 
 | 图号 | 名称 | 图源文件 |
 | --- | --- | --- |
