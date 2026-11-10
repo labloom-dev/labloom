@@ -13,4 +13,3 @@
 - [软件设计说明书（PDF）](知织（Labloom）软件设计说明书.pdf)
 - [软件设计说明书（Markdown）](知织（Labloom）软件设计说明书.md)
 - [设计图源文件](design/figures/)
-- [提示与注意事项](limitation.md)

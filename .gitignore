@@ -10,3 +10,4 @@ dist
 # SE Experiment 重制版忽略文件
 docs/SE_Experiment/**/*.ppt
 docs/SE_Experiment/notes/*
+docs/SE_Experiment/limitation.md
