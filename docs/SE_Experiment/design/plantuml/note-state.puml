@@ -1,0 +1,25 @@
+@startuml
+skinparam defaultFontName Noto Sans CJK SC
+skinparam defaultFontSize 16
+skinparam monochrome true
+skinparam shadowing false
+skinparam roundcorner 0
+skinparam ArrowColor #333333
+skinparam backgroundColor white
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+state "已保存" as Saved
+state "编辑中" as Editing
+state "保存中" as Saving
+state "保存失败" as Failed
+[*] --> Saved : 创建／读取成功
+Saved --> Editing : 用户输入／更新草稿批次
+Editing --> Editing : 持续输入／重置静默计时
+Editing --> Saving : 静默满 1 秒或退出\n／提交当前快照
+Saving --> Saving : 新输入／更新待提交草稿
+Saving --> Saved : 成功 [当前批次已全部确认]\n／更新 savedRevision
+Saving --> Editing : 成功 [有后续编辑]\n／更新版本，安排下一批提交
+Saving --> Failed : 失败／保留草稿
+Failed --> Saving : 用户重试／提交当前快照
+Failed --> Editing : 用户继续编辑／更新草稿
+@enduml

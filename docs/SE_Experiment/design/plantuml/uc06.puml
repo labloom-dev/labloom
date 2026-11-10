@@ -1,0 +1,47 @@
+@startuml
+skinparam defaultFontName Noto Sans CJK SC
+skinparam defaultFontSize 16
+skinparam monochrome true
+skinparam shadowing false
+skinparam roundcorner 0
+skinparam ArrowColor #333333
+skinparam backgroundColor white
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+skinparam maxMessageSize 240
+hide footbox
+skinparam sequenceMessageAlign center
+autonumber
+actor 用户 as U
+boundary SearchUI as UI
+control "Search\nController" as C
+participant IndexService as I
+database "SearchDAO\nSQLite" as DB
+U -> UI : 输入关键词与范围
+UI -> C : search(input)
+C -> I : getStatus()
+I --> C : 索引状态
+alt READY
+  alt 首次查询
+    C -> DB : 规范化、分词、取得词项候选
+    DB --> C : 候选对象及检索文本
+    C -> C : 核对文本、生成片段、排序\n创建 queryId 与结果快照
+  else 使用 queryId 翻页
+    C -> C : 校验 queryId、关键词和范围
+  end
+  alt 结果快照有效
+    C --> UI : 指定页最多 50 条结果与 hasMore
+    UI --> U : 分类结果
+    U -> UI : 选择结果
+    UI -> UI : 交给 NoteUI／PaperUI／FeedUI 打开
+  else 快照失效
+    C --> UI : QUERY_EXPIRED
+  end
+else BUILDING
+  C --> UI : INDEX_NOT_READY
+  UI --> U : 构建进度
+else FAILED
+  C --> UI : INDEX_FAILED
+  UI --> U : 重建入口
+end
+@enduml

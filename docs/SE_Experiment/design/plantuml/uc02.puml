@@ -1,0 +1,48 @@
+@startuml
+skinparam defaultFontName Noto Sans CJK SC
+skinparam defaultFontSize 16
+skinparam monochrome true
+skinparam shadowing false
+skinparam roundcorner 0
+skinparam ArrowColor #333333
+skinparam backgroundColor white
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+skinparam maxMessageSize 240
+hide footbox
+skinparam sequenceMessageAlign center
+autonumber
+actor 用户 as U
+boundary SourceUI as UI
+control "Source\nController" as C
+participant FeedGateway as G
+database "FeedSourceDAO\nSQLite" as DB
+U -> UI : 添加／修改／移除来源
+UI -> C : 对应来源操作
+alt 添加或修改地址
+  C -> C : 校验 http／https 协议
+  C -> DB : findByUrl(url)
+  DB --> C : 查重结果
+  alt 协议有效且地址可用
+    C -> G : fetchAndParse(url, 30000)
+    G --> C : RSS／Atom 内容或错误
+    alt 抓取解析成功
+      C -> DB : begin → insert／update → commit
+      DB --> C : 写入结果
+      C --> UI : Result<FeedSource>
+    else 抓取解析失败
+      C --> UI : 抓取或解析错误
+    end
+  else 地址无效或重复
+    C --> UI : 地址错误
+  end
+else 仅修改名称
+  C -> DB : begin → update(source, tx) → commit
+  C --> UI : Result<FeedSource>
+else 移除来源
+  C -> DB : begin → delete → commit
+  DB -> DB : 条目 source_id SET NULL\n保留来源快照和阅读状态
+  C --> UI : Result<Void>
+end
+UI --> U : 更新来源列表或显示错误
+@enduml

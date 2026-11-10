@@ -1,0 +1,79 @@
+@startuml
+skinparam defaultFontName Noto Sans CJK SC
+skinparam defaultFontSize 16
+skinparam monochrome true
+skinparam shadowing false
+skinparam roundcorner 0
+skinparam ArrowColor #333333
+skinparam backgroundColor white
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+hide empty members
+class Workspace {
+  id : UUID
+  name : String
+  schemaVersion : Integer
+  rename(name)
+}
+class FeedSource {
+  id : UUID
+  name, url : String
+  lastRefreshedAt : Timestamp?
+  status : SourceStatus
+  rename(name)
+  changeUrl(url)
+}
+class FeedItem {
+  id : UUID
+  sourceId : UUID?
+  sourceName : String
+  title, url, summary : String
+  publishedAt : Timestamp?
+  fetchedAt : Timestamp
+  isRead : Boolean
+  markRead()
+}
+abstract class Page {
+  id : UUID
+  kind : PageKind
+  title : String
+  createdAt, updatedAt : Timestamp
+  version : Integer
+  rename(title)
+}
+class NotePage {
+  blocks : List<Block>
+  paperIds : List<UUID>
+  applyContent()
+}
+class PaperPage {
+  authors, doi : String
+  attachmentId : UUID
+  bindAttachment()
+}
+class Block {
+  id, pageId : UUID
+  order : Integer
+  type : BlockType
+  content : JSON
+  changeContent()
+  moveTo(order)
+}
+class Attachment {
+  id, paperId : UUID
+  relativePath, originalName : String
+  size : Integer
+  mediaType : String
+  describe()
+}
+Workspace "1" *-- "0..*" FeedSource
+Workspace "1" *-- "0..*" FeedItem
+Workspace "1" *-- "0..*" Page
+FeedSource "0..1" -- "0..*" FeedItem : 来源
+Page <|-- NotePage
+Page <|-- PaperPage
+NotePage -[hidden]right-> PaperPage
+NotePage "1" *-- "0..*" Block : 页内有序
+PaperPage "1" *-- "1" Attachment
+NotePage "0..*" -- "0..*" PaperPage : 引用
+@enduml

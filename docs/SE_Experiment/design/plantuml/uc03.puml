@@ -1,0 +1,52 @@
+@startuml
+skinparam defaultFontName Noto Sans CJK SC
+skinparam defaultFontSize 16
+skinparam monochrome true
+skinparam shadowing false
+skinparam roundcorner 0
+skinparam ArrowColor #333333
+skinparam backgroundColor white
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+skinparam maxMessageSize 240
+hide footbox
+skinparam sequenceMessageAlign center
+autonumber
+actor 用户 as U
+boundary FeedUI as UI
+control "Refresh\nController" as C
+participant FeedGateway as G
+database "DAO／UnitOfWork\nSQLite" as DB
+U -> UI : 刷新指定／全部来源
+UI -> C : refresh(sourceId?)
+C -> DB : 读取来源快照
+loop 逐源处理
+  C -> C : 状态设为刷新中
+  C -> G : fetchAndParse(url, 30000)
+  G --> C : ParsedFeed 或错误
+  alt 抓取解析成功
+    C -> C : 规范化链接；统计无效链接 skipped
+    C -> DB : begin；核对来源；按 url 去重插入
+    C -> DB : 索引任务与刷新时间；commit
+    alt 事务提交成功
+      C -> C : 统计新增／重复；状态恢复正常
+    else 写入失败
+      C -> DB : rollback
+      C -> C : 记录错误；状态设为抓取失败
+    end
+  else 抓取解析失败
+    C -> C : 记录错误；状态设为抓取失败
+  end
+end
+C --> UI : RefreshSummary
+== 阅读已有条目 ==
+U -> UI : 选择条目
+UI -> C : readItem(id)
+C -> DB : markRead → commit
+DB --> C : 写入结果
+C --> UI : 摘要与已读状态／写入错误
+opt 用户打开原文
+  UI -> C : openOriginal(id)
+  C -> C : 校验 URL；调用 ExternalBrowser
+end
+@enduml

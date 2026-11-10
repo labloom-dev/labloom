@@ -1,0 +1,53 @@
+@startuml
+skinparam defaultFontName Noto Sans CJK SC
+skinparam defaultFontSize 16
+skinparam monochrome true
+skinparam shadowing false
+skinparam roundcorner 0
+skinparam ArrowColor #333333
+skinparam backgroundColor white
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+skinparam maxMessageSize 240
+hide footbox
+skinparam sequenceMessageAlign center
+autonumber
+actor 用户 as U
+boundary PaperUI as UI
+control "Paper\nController" as C
+participant "FileDialog\nFileStore" as F
+database "DAO／UnitOfWork\nSQLite" as DB
+U -> UI : 导入 PDF
+UI -> C : importPDF()
+C -> F : choosePDF()
+F --> C : 选定文件／取消
+alt 已选择文件
+  C -> F : 校验可读性、格式与空间
+  C -> F : 写恢复记录、复制临时文件\n校验后发布受管文件
+  alt 文件准备成功
+    C -> DB : begin；文献、附件、索引任务
+    C -> DB : commit
+    alt 事务提交成功
+      C -> F : 移除恢复记录
+      C --> UI : Result<PaperPage>
+    else 数据库写入失败
+      C -> DB : rollback
+      C -> F : rollbackImport()\n清理失败时保留恢复记录
+      C --> UI : STORAGE_FAILED
+    end
+  else 文件操作失败
+    C -> F : 清理本次临时或受管副本\n清理失败时保留恢复记录
+    C --> UI : 文件操作错误
+  end
+else 取消选择
+  C --> UI : CANCELLED
+end
+== 阅读已导入 PDF ==
+U -> UI : 打开文献
+UI -> C : readPDF(paperId)
+C -> DB : 查询附件记录
+C -> F : readAttachment(attachmentId)
+F --> C : PDF 字节／读取错误
+C --> UI : Result<PDFResource>
+UI --> U : 密码输入、翻页、缩放与文内查找
+@enduml

@@ -1,0 +1,34 @@
+@startuml
+skinparam defaultFontName Noto Sans CJK SC
+skinparam defaultFontSize 16
+skinparam monochrome true
+skinparam shadowing false
+skinparam roundcorner 0
+skinparam ArrowColor #333333
+skinparam backgroundColor white
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+node "用户桌面计算机" as Desktop {
+  node "Electron 渲染进程" as Renderer {
+    artifact "Svelte：六个用例界面\nTiptap：笔记编辑\npdf.js：PDF 阅读" as UI
+    artifact "preload\n受限 AppAPI" as Preload
+  }
+  node "Electron 主进程" as Main {
+    artifact "IPCHandler\n六个 Controller · IndexService\nDAO · UnitOfWork · MigrationRunner\n文件／网络／锁／浏览器适配器" as Services
+  }
+  folder "工作区目录" as Workspace {
+    database "SQLite" as DB
+    artifact "attachments／.imports" as Files
+  }
+  folder "应用数据目录\n配置／日志／迁移保护副本" as AppData
+}
+cloud "订阅来源\nRSS 2.0／Atom 1.0" as Feed
+node "系统默认浏览器" as Browser
+UI -right-> Preload : AppAPI
+Preload -down-> Services : IPC 请求／响应
+Services -down-> DB : 查询／事务
+Services -down-> Files : 受管文件访问
+Services --> AppData : 配置／日志／保护副本
+Services -left-> Feed : HTTP／HTTPS
+Services -right-> Browser : 打开原文 URL
+@enduml

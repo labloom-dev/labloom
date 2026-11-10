@@ -1,0 +1,49 @@
+@startuml
+skinparam defaultFontName Noto Sans CJK SC
+skinparam defaultFontSize 16
+skinparam monochrome true
+skinparam shadowing false
+skinparam roundcorner 0
+skinparam ArrowColor #333333
+skinparam backgroundColor white
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+skinparam maxMessageSize 240
+hide footbox
+skinparam sequenceMessageAlign center
+autonumber
+actor 用户 as U
+boundary NoteUI as UI
+control "Note\nController" as C
+participant "Page／Block\nReference DAO" as DAO
+participant "UnitOfWork\nSearchDAO" as TX
+U -> UI : 编辑标题、正文、文献引用
+UI -> UI : 更新 clientRevision 和草稿\n静默满 1 秒或退出时提交
+UI -> C : saveNote(input)
+C -> C : 校验类型、归属与顺序
+C -> TX : begin()
+C -> DAO : 读取笔记；核对 baseVersion 与引用目标
+alt 校验通过
+  C -> DAO : 更新标题、块集合、引用集合与 version
+  C -> TX : enqueue(kind, id, tx)
+  C -> TX : commit()
+  alt 提交成功
+    C --> UI : SaveReceipt(version, clientRevision)
+    UI -> UI : 更新 baseVersion、savedRevision
+    alt 当前批次已全部确认
+      UI --> U : 已保存
+    else 保存期间有新输入
+      UI -> UI : 保留新草稿；按静默时间串行提交下一批
+      UI --> U : 编辑中
+    end
+  else 写入失败
+    C -> TX : rollback()
+    C --> UI : STORAGE_FAILED
+    UI --> U : 保存失败；保留草稿并提供重试
+  end
+else 版本或引用校验失败
+  C -> TX : rollback()
+  C --> UI : 校验错误／VERSION_CONFLICT
+  UI --> U : 保留草稿并显示错误
+end
+@enduml

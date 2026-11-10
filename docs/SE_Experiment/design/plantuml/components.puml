@@ -1,0 +1,54 @@
+@startuml
+skinparam defaultFontName Noto Sans CJK SC
+skinparam defaultFontSize 16
+skinparam monochrome true
+skinparam shadowing false
+skinparam roundcorner 0
+skinparam ArrowColor #333333
+skinparam backgroundColor white
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+hide empty members
+interface INoteController {
+  createNote(title)
+  loadNote(id)
+  saveNote(input)
+}
+class NoteController {
+  校验输入与版本()
+  组织保存事务()
+  返回 SaveReceipt()
+}
+interface IPageDAO {
+  find(id)
+  insert(page, tx)
+  updateNote(page, expectedVersion, tx)
+}
+interface IBlockDAO {
+  listByPage(id)
+  replaceByPage(id, blocks, tx)
+}
+interface IReferenceDAO {
+  listByNote(id)
+  replaceByNote(id, paperIds, tx)
+}
+class UnitOfWork {
+  begin() : Tx
+  commit(tx)
+  rollback(tx)
+}
+class SearchDAO {
+  enqueue(kind, id, tx)
+}
+INoteController <|.. NoteController
+NoteController ..> IPageDAO
+NoteController ..> IBlockDAO
+NoteController ..> IReferenceDAO
+NoteController ..> UnitOfWork
+NoteController ..> SearchDAO
+IPageDAO -[hidden]right-> IBlockDAO
+IBlockDAO -[hidden]right-> IReferenceDAO
+IBlockDAO -[hidden]down-> UnitOfWork
+IReferenceDAO -[hidden]down-> SearchDAO
+UnitOfWork -[hidden]right-> SearchDAO
+@enduml

@@ -1,6 +1,6 @@
 # 知织（Labloom）软件设计说明书
 
-文档编号：LB-SE-SDD-0001　版本：0.1　日期：2026 年 11 月 10 日
+文档编号：LB-SE-SDD-0001　版本：0.2　日期：2026 年 11 月 10 日
 
 ## 1. 引言
 
@@ -693,14 +693,22 @@ IPCHandler 校验发送窗口、参数类型和 sessionId；FileStore 将附件�
 
 应用安装和升级在对应桌面平台完成，工作区随用户选择的目录保存。发布资源包含 PDF worker、字体及原生 SQLite 依赖。平台验证覆盖启动、文件选择、中文路径、原文浏览器入口和工作区读写。
 
-## 附录：设计图
+## 附录：设计图与 PlantUML 源码
+
+设计图采用 PlantUML 建模并渲染。源文件位于 design/plantuml/，对应 SVG 位于 design/figures/，两者使用相同文件主名。主窗口界面结构采用 PlantUML Salt 语法。
 
 | 图号 | 名称 | 图源文件 |
 | --- | --- | --- |
-| 图 2.1 | 系统体系结构图 | design/figures/architecture.svg |
-| 图 2.2 | 运行部署图 | design/figures/deployment.svg |
-| 图 3.1 | 数据设计类图 | design/figures/entities.svg |
-| 图 4.1～4.6 | 六个用例的接口交互顺序图 | design/figures/uc01.svg～uc06.svg |
-| 图 5.1 | 笔记保存构件级类图 | design/figures/components.svg |
-| 图 5.2、5.3 | 笔记保存、订阅源刷新状态图 | design/figures/note-state.svg、feed-state.svg |
-| 图 6.1 | 主窗口界面结构 | design/figures/interface.svg |
+| 图 2.1 | 系统体系结构图 | architecture.puml |
+| 图 2.2 | 运行部署图 | deployment.puml |
+| 图 3.1 | 数据设计类图 | entities.puml |
+| 图 4.1 | UC01 工作区顺序图 | uc01.puml |
+| 图 4.2 | UC02 来源管理顺序图 | uc02.puml |
+| 图 4.3 | UC03 订阅刷新顺序图 | uc03.puml |
+| 图 4.4 | UC04 PDF 导入顺序图 | uc04.puml |
+| 图 4.5 | UC05 笔记保存顺序图 | uc05.puml |
+| 图 4.6 | UC06 检索顺序图 | uc06.puml |
+| 图 5.1 | 笔记保存构件级类图 | components.puml |
+| 图 5.2 | 笔记保存状态图 | note-state.puml |
+| 图 5.3 | 订阅源刷新状态图 | feed-state.puml |
+| 图 6.1 | 主窗口界面结构 | interface.puml |

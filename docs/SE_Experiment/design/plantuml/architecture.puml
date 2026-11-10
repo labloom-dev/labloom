@@ -1,0 +1,28 @@
+@startuml
+skinparam defaultFontName Noto Sans CJK SC
+skinparam defaultFontSize 16
+skinparam monochrome true
+skinparam shadowing false
+skinparam roundcorner 0
+skinparam ArrowColor #333333
+skinparam backgroundColor white
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+top to bottom direction
+rectangle "表示层／界面表示包\nWorkspaceUI · SourceUI · FeedUI\nPaperUI · NoteUI · SearchUI" as UI
+rectangle "接口控制包\nAppAPI → preload → IPCHandler" as Bridge
+rectangle "业务逻辑层／应用服务包\nWorkspaceController · SourceController\nRefreshController · PaperController\nNoteController · SearchController · IndexService" as Business
+rectangle "数据访问层／数据持久化包\nWorkspaceDAO · FeedSourceDAO · FeedItemDAO\nPageDAO · BlockDAO · AttachmentDAO\nReferenceDAO · SearchDAO\nUnitOfWork · MigrationRunner" as DAO
+database "数据库\nSQLite" as DB
+rectangle "领域模型包\nWorkspace · FeedSource · FeedItem\nPage · NotePage · PaperPage\nBlock · Attachment · DTO" as Domain
+rectangle "平台支撑包\nFileDialog · FileStore\nWorkspaceLock · FeedGateway\nExternalBrowser" as Platform
+UI -down-> Bridge : 业务请求
+Bridge -down-> Business : 参数与会话校验
+Business -down-> DAO : 业务数据／Tx
+DAO -down-> DB : 参数化查询／事务
+UI ..> Domain : 显示数据
+Business ..> Domain : 业务对象
+DAO ..> Domain : 实体映射
+Business -right-> Platform : 文件／网络／系统操作
+DAO ..> Platform : 迁移保护副本
+@enduml

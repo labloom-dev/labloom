@@ -1,0 +1,55 @@
+@startuml
+skinparam defaultFontName Noto Sans CJK SC
+skinparam defaultFontSize 16
+skinparam monochrome true
+skinparam shadowing false
+skinparam roundcorner 0
+skinparam ArrowColor #333333
+skinparam backgroundColor white
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+skinparam maxMessageSize 240
+hide footbox
+skinparam sequenceMessageAlign center
+autonumber
+actor 用户 as U
+boundary WorkspaceUI as UI
+control "Workspace\nController" as C
+participant "平台服务\n与迁移器" as P
+database "WorkspaceDAO\nSQLite" as DB
+U -> UI : 新建／打开工作区
+UI -> C : createWorkspace(name)／openWorkspace()
+C -> P : chooseDirectory()
+P --> C : 选定目录
+alt 取消选择
+  C --> UI : CANCELLED
+else 已选定目录
+  C -> P : 规范化路径、权限校验、acquire()
+  alt 目录锁取得成功
+    group 初始化或打开
+      C -> DB : 打开数据库、读取元数据与版本
+      alt 新建
+        C -> P : 建立附件目录
+        C -> DB : 初始化表、写入工作区元数据
+      else 打开已有工作区
+        opt 需要升级结构
+          C -> P : 生成保护副本、执行迁移事务
+        end
+        C -> P : recoverImports()
+      end
+    end
+    alt 初始化／打开成功
+      C -> C : 装配 sessionId、DAO 与控制器
+      C -> P : 启动索引服务
+      C --> UI : Result<WorkspaceSession>
+      UI --> U : 主页与索引状态
+    else 初始化／打开失败
+      C -> DB : 关闭本次连接
+      C -> P : 释放本次锁；清理本次新建文件
+      C --> UI : 对应错误
+    end
+  else 锁或权限校验失败
+    C --> UI : 对应错误
+  end
+end
+@enduml

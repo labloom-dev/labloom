@@ -10,6 +10,6 @@
 ## 设计文档
 
 - [软件设计说明书（Word）](知织（Labloom）软件设计说明书.docx)
-- [软件设计说明书（PDF）](知织（Labloom）软件设计说明书.pdf)
 - [软件设计说明书（Markdown）](知织（Labloom）软件设计说明书.md)
-- [设计图源文件](design/figures/)
+- [设计图 PlantUML 源码](design/plantuml/)
+- [设计图渲染结果（SVG）](design/figures/)
