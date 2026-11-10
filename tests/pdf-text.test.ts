@@ -6,6 +6,7 @@ import { charactersFromTextContent, extractText, hitTest, lineRange, PDF_EXTRACT
 import { knownCoordinatePdf } from "./fixtures/pdf-text";
 
 const character = (text: string, x: number, y: number, width = 8, height = 12, baseline = y + 2): PdfCharacter => ({ text, rectangle: { x, y, width, height }, baseline });
+const standardFontDataUrl = join(process.cwd(), "node_modules/pdfjs-dist/standard_fonts") + "/";
 
 test("PDF quotes use inclusive cell centers, preserve extraction order and never repeat overlaps", () => {
     const chars = [character("A", 0, 0), character("B", 8, 0), character("C", 16, 0)];
@@ -42,7 +43,7 @@ test("PDF double-click word selection uses Intl.Segmenter and UTF-16 boundaries"
 
 test("patched pdf.js extracts actual glyph advances and pdf.js whitespace/EOL metadata", async () => {
     const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
-    const task = getDocument({ data: knownCoordinatePdf(), standardFontDataUrl: join(process.cwd(), "node_modules/pdfjs-dist/standard_fonts/"), useSystemFonts: false });
+    const task = getDocument({ data: knownCoordinatePdf(), standardFontDataUrl, useSystemFonts: false });
     const document = await task.promise;
     try {
         const page = await document.getPage(1);
@@ -102,7 +103,7 @@ test("PDF 3000-character extraction and selection updates stay below 100ms P95",
 test("readable Helvetica highlight edges match actual canvas ink within two CSS pixels", async () => {
     const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
     const { createCanvas } = await import("@napi-rs/canvas");
-    const task = getDocument({ data: knownCoordinatePdf(false), useSystemFonts: false, standardFontDataUrl: join(process.cwd(), "node_modules/pdfjs-dist/standard_fonts/") });
+    const task = getDocument({ data: knownCoordinatePdf(false), useSystemFonts: false, standardFontDataUrl });
     const document = await task.promise;
     try {
         const page = await document.getPage(1);

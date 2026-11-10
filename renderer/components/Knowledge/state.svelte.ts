@@ -164,7 +164,7 @@ function makeSession(tabId: string, pageId: string): PageSession {
             knowledgeState.error = message(error);
         });
         for (const id of [...(change.summaryPages ?? change.pages), ...change.blocks]) {
-            for (const [read, own] of observers.get(id) ?? []) if (own) void perform(read);
+            for (const [read, own] of observers.get(id) ?? []) if (own || change.highlightPages?.includes(id)) void perform(read);
         }
         if (change.backlinks?.includes(pageId)) void perform(async () => {
             state.backlinks = await api.backlinks(pageId);

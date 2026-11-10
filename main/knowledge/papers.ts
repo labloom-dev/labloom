@@ -53,8 +53,8 @@ export class PaperService {
         const packageFile = typeof import.meta.resolve === "function" ? fileURLToPath(import.meta.resolve("pdfjs-dist/package.json")) : require.resolve("pdfjs-dist/package.json");
         const assets = dirname(packageFile);
         const task = getDocument({ data, password, disableFontFace: true, useSystemFonts: false,
-            cMapUrl: join(assets, "cmaps/"), cMapPacked: true, standardFontDataUrl: join(assets, "standard_fonts/"),
-            wasmUrl: join(assets, "wasm/") });
+            cMapUrl: `${assets}/cmaps/`, cMapPacked: true, standardFontDataUrl: `${assets}/standard_fonts/`,
+            wasmUrl: `${assets}/wasm/` });
         try {
             return await task.promise;
         }
@@ -257,14 +257,13 @@ export class PaperService {
                 plan.pages.add(owner);
                 plan.touches.add(owner);
             }
+            plan.setHighlight(id, null, mark);
             plan.verifyContainment();
             const lost = plan.lostPages(), named = lost.map(pageId => ({ id: pageId, title: knowledge.title(pageId) }));
             const preview = named.length || annotationIds.length ? { token: fingerprint({ highlight: id, rows: plan.rows.after, lost }), recycled: named,
                 direct: named.filter(page => plan.direct.has(page.id)), causes: [...plan.causes],
                 deletedBlocks: [{ id, excerpt: "这条高亮", pages: 0, positions: 0, links: 0 }] } : null;
-            const result = knowledge.finish(plan, activeOwners[0], tabId, 0, preview, confirmation);
-            if (result.status === "saved") knowledge.db.delete(highlights).where(eq(highlights.id, id)).run();
-            return result;
+            return knowledge.finish(plan, activeOwners[0], tabId, 0, preview, confirmation);
         });
     }
 

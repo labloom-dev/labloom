@@ -231,7 +231,6 @@
                 if (await confirmed(token => window.api.knowledge.removeHighlight(id, tabId, token))) {
                     dismiss();
                     await session.reread([page.id]);
-                    await load();
                 }
             });
         });

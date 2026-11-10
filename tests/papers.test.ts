@@ -111,6 +111,37 @@ test("deleting annotated highlights confirms retention loss, cancels without wri
     assert.equal((await papers.resources(id)).highlights.length, 0);
 });
 
+test("one undo restores the deleted highlight and its annotation, and one redo removes both", async t => {
+    const { knowledge, papers, info } = fixture(t), history = new EditHistory(knowledge);
+    const paperId = importPDF(papers, join(info.path, "annotated.pdf")), tabId = "delete-annotation";
+    const fileId = (await papers.resources(paperId)).files[0].id;
+    const annotationId = await papers.annotate(paperId, selection(fileId), "#C5B6DC");
+    const note = knowledge.get(annotationId), body = note.children.map(id => note.blocks[id]).find(block => block.type === "paragraph")!;
+    const edited = { ...body, payload: payload("paragraph", "Saved note") };
+    assert.equal(knowledge.commitEdit({ pageId: annotationId, tabId, batch: 1, blocks: [edited] }).status, "saved");
+    const [mark] = (await papers.resources(paperId)).highlights;
+    assert.equal(mark.annotationId, annotationId);
+    const notifications: string[][] = [];
+    knowledge.onChanged = change => notifications.push(change.highlightPages ?? []);
+    const preview = papers.removeHighlight(mark.id, tabId);
+    assert.equal(preview.status, "confirmation");
+    assert.equal(papers.removeHighlight(mark.id, tabId, preview.preview.token).status, "saved");
+    assert.deepEqual((await papers.resources(paperId)).highlights, []);
+    assert.equal(knowledge.get(annotationId).attributes.deleted, true);
+
+    assert.equal(history.apply(tabId, "undo").status, "saved");
+    assert.deepEqual((await papers.resources(paperId)).highlights, [mark]);
+    const restored = knowledge.get(annotationId);
+    assert.equal(restored.attributes.deleted, false);
+    assert.deepEqual(restored.blocks[body.id], edited);
+    assert.ok(knowledge.backlinks(annotationId).some(link => link.sourceId === paperId));
+
+    assert.equal(history.apply(tabId, "redo").status, "saved");
+    assert.deepEqual((await papers.resources(paperId)).highlights, []);
+    assert.equal(knowledge.get(annotationId).attributes.deleted, true);
+    assert.ok(!knowledge.backlinks(annotationId).some(link => link.sourceId === paperId));
+    assert.deepEqual(notifications, [[paperId], [paperId], [paperId]]);
+});
 
 test("another reference preserves the annotation after confirmed highlight deletion, and deleted papers stay read-only", async t => {
     const { knowledge, papers, info } = fixture(t);
