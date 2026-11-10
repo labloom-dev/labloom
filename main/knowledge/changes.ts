@@ -4,12 +4,14 @@ import { builtinAttrsByPageKind, isBuiltin } from "../../shared/attrs/builtins";
 import { changedUses, references, validateBlock } from "../../shared/content/blocks";
 import { type AttributeDefinition, type AttributeValue } from "../../shared/types/attributes";
 import { type Changed, type ContentBlock, type PageKind, type Target } from "../../shared/types/content";
+import { type highlights } from "../storage/tables";
 import { decodeBlock, KnowledgeRecords, type BlockRow, type LinkRow, type PageRow } from "./records";
 
 export type ValueRow = { value: string | number | null };
 export type PagePatch = { children?: string[]; values?: Record<string, ValueRow | null> };
 export type LegacyPage = { page: PageRow; attrs: { attrId: string; value: string | number | null }[] };
-export type StoredState = Record<string, BlockRow | PagePatch | LegacyPage | null>;
+type HighlightRow = typeof highlights.$inferSelect;
+export type StoredState = Record<string, BlockRow | PagePatch | LegacyPage | HighlightRow | null>;
 export type RowChanges = { before: StoredState; after: StoredState };
 export type ReminderValues = { deleted: boolean; at: number | null; zone: string | null };
 export type ReminderChange = { pageId: string; before: ReminderValues; after: ReminderValues };
@@ -22,6 +24,7 @@ export class EditChanges {
     readonly pages = new Set<string>();
     readonly blocks = new Set<string>();
     private readonly backlinkPages = new Set<string>();
+    private readonly highlightPages = new Set<string>();
     readonly causes = new Set<string>();
     readonly direct = new Set<string>();
     readonly seeds: Target[] = [];
@@ -36,7 +39,8 @@ export class EditChanges {
     constructor(readonly data: KnowledgeRecords) {}
 
     changed(): Changed {
-        return { pages: [...this.pages], blocks: [...this.blocks], ...(this.backlinkPages.size ? { backlinks: [...this.backlinkPages] } : {}) };
+        return { pages: [...this.pages], blocks: [...this.blocks], ...(this.backlinkPages.size ? { backlinks: [...this.backlinkPages] } : {}),
+            ...(this.highlightPages.size ? { highlightPages: [...this.highlightPages] } : {}) };
     }
 
     block(id: string): ContentBlock | null {
@@ -97,6 +101,18 @@ export class EditChanges {
         this.blocks.add(value.id);
         if (!same(before?.children ?? [], value.children)) this.setChildren({ kind: "block", id: value.id }, before?.children ?? [], value.children);
         this.setLinks({ kind: "block", id: value.id }, "payload", references(value));
+    }
+
+    setHighlight(id: string, after: HighlightRow | null, before = this.data.statement("SELECT id, anchor_id AS anchorId, color FROM highlights WHERE id=?").get(id) as HighlightRow | undefined): void {
+        const mark = after ?? before;
+        if (!mark) return;
+        this.rows.before["highlight:" + id] = before ?? null;
+        this.rows.after["highlight:" + id] = after;
+        const owners = this.data.statement("SELECT DISTINCT p.page_id FROM page_attachments p JOIN anchors a ON a.file_id=p.file_id WHERE a.id=?").pluck().all(mark.anchorId) as string[];
+        for (const pageId of owners) {
+            this.pages.add(pageId);
+            this.highlightPages.add(pageId);
+        }
     }
 
     private pageChanges(side: "before" | "after", id: string): PagePatch {
@@ -294,8 +310,12 @@ export class EditChanges {
 
     persist(): void {
         for (const [id, value] of Object.entries(this.rows.after)) {
+            if (id.startsWith("highlight:") && !value) this.data.statement("DELETE FROM highlights WHERE id=?").run(id.slice("highlight:".length));
             if (!value) continue;
-            if ("content" in value) {
+            if ("anchorId" in value) {
+                this.data.statement("INSERT INTO highlights(id,anchor_id,color) VALUES (?,?,?)").run(value.id, value.anchorId, value.color);
+            }
+            else if ("content" in value) {
                 this.data.statement("INSERT INTO blocks(id,type,content,children) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET type=excluded.type, content=excluded.content, children=excluded.children")
                     .run(value.id, value.type, value.content, JSON.stringify(value.children));
             }

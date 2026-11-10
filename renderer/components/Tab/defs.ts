@@ -23,11 +23,6 @@ type Tab_Feed = {
     type: "feed";
 };
 
-//todo: remove once papers can be opened as pages.
-type Tab_ReaderTest = {
-    type: "reader-test";
-};
-
 export type Tab = {
     id: TabID;
     title: string;
@@ -37,8 +32,7 @@ export type Tab = {
     Tab_About |
     Tab_Settings |
     Tab_Feed |
-    { type: "library" | "papers" | "calendar" } |
-    Tab_ReaderTest
+    { type: "library" | "papers" | "calendar" }
 );
 
 export type TabID = string & {

@@ -51,7 +51,7 @@
             {#each scheduled.filter(page => dayOf(page) === selected) as page (page.id)}
                 <div class="agenda-item">
                     <button class="page-link" onclick={() => openPage(page.id)}>
-                        <small>{kindNames[page.kind]} {String(page.attributes.schedule_zone || "")}</small>
+                        <small>{kindNames[page.kind]} {display({ id: "schedule_zone", ...builtinAttrs.schedule_zone }, page.attributes.schedule_zone ?? null)}</small>
                         <strong>{page.title || "未命名"}</strong>
                         <span>{timeLabel(page)}</span>
                     </button>
@@ -118,6 +118,8 @@
     import { type Notice, type HistoryState } from "../../../shared/types/knowledge";
     import ListHistory from "./ListHistory.svelte";
     import { secondsToWall } from "../../../shared/content/time";
+    import { display } from "../../../shared/attrs/format";
+    import { builtinAttrs } from "../../../shared/attrs/builtins";
     import { createPage, openPage } from "../layout/navigation";
     import { message, confirmed, perform, registerList, writeFromTab } from "./state.svelte";
     import { kindNames } from "./labels";
@@ -143,7 +145,7 @@
         return "";
     }
     function timeLabel(page: PageSummary): string {
-        return typeof page.attributes.schedule_start === "number" ? secondsToWall(page.attributes.schedule_start, typeof page.attributes.schedule_zone === "string" ? page.attributes.schedule_zone : undefined).slice(11) : "全天";
+        return typeof page.attributes.schedule_start === "number" ? display({ id: "schedule_start", ...builtinAttrs.schedule_start }, page.attributes.schedule_start, { zone: typeof page.attributes.schedule_zone === "string" ? page.attributes.schedule_zone : undefined }).slice(11) : "全天";
     }
     let noticesDirty = false;
     onMount(() => registerList(tabId, change => {

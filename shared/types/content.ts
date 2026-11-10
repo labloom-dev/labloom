@@ -16,7 +16,7 @@ export type BlockPayload = {
     collapsed?: boolean;
     target?: Target | null;
     table?: RichNode;
-    source?: { fileId: string; anchorId: string; quote: string };
+    source?: { anchorId: string };
 };
 export type ContentBlock = { id: string; type: ContentBlockKind; payload: BlockPayload; children: string[] };
 export type PageSummary = {
@@ -46,7 +46,7 @@ export type EditCommit = {
 export type Position = { pageId: string; containerId: string; index: number; blockId: string };
 export type Placement = { position: Position; action: "insert" | "remove" | "clone" | "duplicate" | "move-up" | "move-down"; blockId?: string; tabId: string };
 export type BlockDeletion = { pageId: string; tabId: string; blockId: string };
-export type Changed = { pages: string[]; blocks: string[]; backlinks?: string[] };
+export type Changed = { pages: string[]; blocks: string[]; backlinks?: string[]; highlightPages?: string[] };
 export type KnowledgeChange = Changed & { sourceTab: string; kinds?: Record<string, PageKind>; summaryPages?: string[]; definition?: string; notices?: boolean };
 export type NamedPage = { id: string; title: string };
 export type ChangePreview = {

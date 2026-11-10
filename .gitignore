@@ -6,3 +6,6 @@ dist
 .local
 .VSCodeCounter
 ~$*
+
+# 本地交付文档、截图和验收材料
+/交付材料/

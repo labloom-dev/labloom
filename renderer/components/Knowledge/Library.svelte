@@ -62,7 +62,7 @@
         {#each Object.entries(filters) as [id, value] (id)}
             <button class="filter-chip" onclick={() => {
                 const next = { ...filters }; delete next[id]; filters = next; offset = 0;
-            }}>{definitions.find(item => item.id === id)?.metadata.name}：{String(value)} ×</button>
+            }}>{definitions.find(item => item.id === id)?.metadata.name}：{attributeText(id, value)} ×</button>
         {/each}
     </details>
     {#if error}
@@ -92,12 +92,12 @@
                         <strong>{page.title || "未命名"}</strong>
                         <span>{page.excerpt || "还没有正文"}</span>
                         <span class="page-meta">{kindNames[page.kind]}{#each Array.isArray(page.attributes.tags) ? page.attributes.tags : [] as id (id)}
-                            <b>{definitions.find(item => item.id === "tags")?.metadata.options?.find(option => option.id === id)?.name}</b>
+                            <b>{attributeText("tags", [id])}</b>
                         {/each}{#if page.attributes.deleted}
-                            <small>{page.attributes.recycle_reason === "unreachable" ? "失去保留关系" : "手动删除"}</small>
+                            <small>{attributeText("recycle_reason", page.attributes.recycle_reason)}</small>
                         {/if}</span>
                     </span>
-                    <small class="updated">{formatDate(page.attributes.modified_at)}</small>
+                    <small class="updated">{attributeText("modified_at", page.attributes.modified_at, page.attributes.schedule_zone)}</small>
                 </button>
             </div>
         {:else}
@@ -156,6 +156,8 @@
 <script lang="ts">
     import { onMount, untrack } from "svelte";
     import { type AttributeDefinition, type AttributeValue } from "../../../shared/types/attributes";
+    import { display } from "../../../shared/attrs/format";
+    import { builtinAttrs, isBuiltin } from "../../../shared/attrs/builtins";
     import { type PageKind, type PageList, type PageQuery } from "../../../shared/types/content";
     import Icon from "../utils/Icon.svelte";
     import Bloom from "../utils/Bloom.svelte";
@@ -220,8 +222,9 @@
             pending = false;
         }
     }
-    function formatDate(value: AttributeValue): string {
-        return typeof value === "number" ? new Date(value * 1000).toLocaleDateString() : "";
+    function attributeText(id: string, value: AttributeValue, zone?: AttributeValue): string {
+        const definition = definitions.find(item => item.id === id) ?? (isBuiltin(id) ? { id, ...builtinAttrs[id] } : undefined);
+        return definition ? display(definition, value ?? null, { zone: typeof zone === "string" ? zone : undefined }) : "";
     }
     async function importPDF(): Promise<void> {
         busy = true;

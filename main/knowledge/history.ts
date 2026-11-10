@@ -60,6 +60,7 @@ export class EditHistory {
             const plan = new EditChanges(db);
             const oldDeletes = direction === "redo" && Object.entries(desired).some(([k, v]) => k.startsWith("block:") && !v);
             for (const [key, value] of Object.entries(desired)) {
+                if (key.startsWith("highlight:") && (!value || "anchorId" in value)) plan.setHighlight(key.slice("highlight:".length), value);
                 if (!key.startsWith("block:")) continue;
                 const id = key.slice(6);
                 if (value && "content" in value) plan.putBlock(decodeBlock(value), value);

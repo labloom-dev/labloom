@@ -55,15 +55,28 @@ function atom(name: "hr" | "blocked_reference" | "source"): ExtensionNode {
     return ExtensionNode.create({
         name, group: "workspaceBlock", atom: true, selectable: true,
         addAttributes: () => ({ ...blockAttrs(), ...name === "blocked_reference" ? { target: { default: null } } : name === "source" ? { source: { default: null } } : {} }),
-        renderHTML: ({ node }) => ["div", domAttrs(node), name === "hr" ? ["hr"] : name === "source" ? node.attrs.source?.quote ?? "" : "链接引用"],
+        renderHTML: ({ node }) => ["div", domAttrs(node), name === "hr" ? ["hr"] : name === "source" ? "原文片段" : "链接引用"],
         addNodeView: () => ({ node }) => {
             const dom = document.createElement("div");
             dom.dataset.blockId = node.attrs.blockId;
             dom.dataset.kind = name;
             dom.contentEditable = "false";
             if (name === "hr") dom.append(document.createElement("hr"));
-            else dom.textContent = name === "source" ? node.attrs.source?.quote : "引用目标缺失";
-            return { dom };
+            let active = true;
+            if (name === "source") {
+                dom.textContent = "正在读取原文…";
+                const anchorId = node.attrs.source?.anchorId;
+                if (anchorId) void window.api.knowledge.getAnchor(anchorId).then(anchor => {
+                    if (active) dom.textContent = anchor.quote;
+                }).catch(() => {
+                    if (active) dom.textContent = "原文暂时无法读取";
+                });
+                else dom.textContent = "原文暂时无法读取";
+            }
+            else if (name !== "hr") dom.textContent = "引用目标缺失";
+            return { dom, destroy: () => {
+                active = false;
+            } };
         }
     });
 }

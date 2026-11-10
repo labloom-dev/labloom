@@ -20,11 +20,12 @@
     import { untrack } from "svelte";
     import { type Target, type ResolvedTarget } from "../../../shared/types/content";
     import { openPage } from "../layout/navigation";
-    import { knowledgeState, type PageSession } from "./state.svelte";
+    import { type PageSession } from "./state.svelte";
+    import { notify } from "./feedback.svelte";
     let { target, session }: { target: Target; session: PageSession } = $props();
     let targetValue = $state<ResolvedTarget | null>(null), pending = $state(true), expanded = $state(false);
     function openTarget(): void {
-        if (targetValue?.status === "deleted") knowledgeState.error = "目标已删除";
+        if (targetValue?.status === "deleted") notify("目标已删除");
         else if (target.kind === "page") openPage(target.id);
         else expanded = !expanded;
     }

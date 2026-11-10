@@ -85,6 +85,7 @@
     import { Mapping, type Step } from "@tiptap/pm/transform";
     import { type Target, type ContentBlockKind } from "../../../shared/types/content";
     import { payload } from "../../../shared/content/blocks";
+    import { kinds } from "../../../shared/content/block-labels";
     import { type PageSession, perform } from "../Knowledge/state.svelte";
     import { readingTabs } from "../Tab/activity.svelte";
     import { tabState } from "../Tab/state.svelte";
@@ -101,7 +102,6 @@
     type Handle = { id: string; pos: number; top: number; left: number; kind: ContentBlockKind; shared: boolean; folded: boolean; children: boolean };
     let handle = $state.raw<Handle | null>(null), menu = $state(false), picker = $state<"inline" | "reference" | "sync" | null>(null);
     let caret: SelectionBookmark | null = null, preview = $state.raw<{ target: Target; pos: number } | null>(null);
-    const kinds = [["paragraph", "段落"], ["heading_1", "一级标题"], ["heading_2", "二级标题"], ["heading_3", "三级标题"], ["unordered_list", "无序列表"], ["ordered_list", "有序列表"], ["blockquote", "引用"], ["callout", "提示框"], ["code", "代码"], ["table", "表格"], ["hr", "分隔线"]];
     const keep = (event: MouseEvent): void => event.preventDefault();
     function close(): void {
         menu = false;

@@ -1,4 +1,4 @@
-<div class="reader" onkeydown={onkeydown} onpointerup={selectText} onkeyup={selectText}>
+<div class="reader" onkeydown={onkeydown} oncopy={copySelection}>
     <Toolbar
         bind:this={toolbar}
         disabled={status.kind !== "ready"}
@@ -19,7 +19,7 @@
         {clearFind}
     />
     <div class="body">
-        <div class="viewer" tabindex="-1" bind:this={container} {onwheel}>
+        <div class="viewer" tabindex="-1" bind:this={container} {onwheel} onpointerdown={startSelection} onpointermove={moveSelection} onpointerup={finishSelection} onpointercancel={cancelDrag}>
             <div class="pdfViewer"></div>
         </div>
         {#if status.kind === "empty"}
@@ -71,6 +71,11 @@
         overflow: auto;
         background-color: var(--c-reader-background);
     }
+    .viewer :global(.textLayer) { user-select: none; }
+    /* pdf.js sizes its canvas to the page content box; the app's global border-box
+       rule would shrink the drawing while viewport coordinates stay unchanged. */
+    .viewer :global(.page) { box-sizing: content-box; }
+    .viewer :global(.knowledge-highlights) { mix-blend-mode: multiply; }
     .overlay {
         position: absolute;
         inset: 0;
@@ -139,7 +144,7 @@
     import Toolbar from "./Toolbar.svelte";
     import type { ReaderError, ReaderFindStatus, ReaderScale, ReaderSource, ReaderViewState } from "./defs";
     import { type Anchor, type AnchorInput, type Highlight } from "../../../shared/types/papers";
-    import { normalizeRectangle, pdfRectangle } from "../../../shared/content/anchors";
+    import { charactersFromTextContent, extractText, hitTest, lineRange, wordRange, selectionRectangles, PDF_EXTRACTOR_VERSION, type PdfCharacter } from "../../../shared/content/pdf-text";
     import {
         applyViewState, createViewer, FindState, getViewState, hasText, loadDocument, PasswordResponses,
         setDocument, toReaderError, type PDFDocumentProxy, type Viewer, type ViewerLocation
@@ -152,10 +157,12 @@
         /** Throttled; also called once more when the document is closed or the reader unmounts. */
         onViewStateChange?: (state: ReaderViewState, source: ReaderSource) => void;
         onError?: (error: ReaderError) => void;
+        onPasswordAccepted?: (password: string) => Promise<void>;
         fileId?: string;
         anchors?: Anchor[];
         highlights?: Highlight[];
-        onSelection?: (selection: AnchorInput | null) => void;
+        onSelection?: (selection: AnchorInput | null, position?: { x: number; y: number }) => void;
+        onHighlight?: (id: string, position: { x: number; y: number }, annotation?: boolean) => void;
     };
 
     type Status =
@@ -165,7 +172,7 @@
         | { kind: "ready" }
         | { kind: "error"; error: ReaderError };
 
-    const { source, viewState, onViewStateChange, onError, fileId, anchors = [], highlights = [], onSelection }: Props = $props();
+    const { source, viewState, onViewStateChange, onError, onPasswordAccepted, fileId, anchors = [], highlights = [], onSelection, onHighlight }: Props = $props();
 
     const viewStateReportDelay = 250;
 
@@ -192,6 +199,7 @@
     let findQuery = "";
     let textCheck: Promise<boolean> | null = null;
     let anchorToOpen: Anchor | null = null;
+    let acceptedPassword = "";
 
     onMount(() => {
         const created = createViewer(container);
@@ -216,7 +224,8 @@
             reportTimer ??= setTimeout(reportViewState, viewStateReportDelay);
         });
         eventBus.on("updatefindcontrolstate", onFindState);
-        eventBus.on("pagerendered", () => {
+        eventBus.on("pagerendered", ({ pageNumber }: { pageNumber: number }) => {
+            void loadCharacters(pageNumber);
             paintHighlights();
             if (anchorToOpen) goToAnchor(anchorToOpen);
         });
@@ -234,27 +243,147 @@
         void anchors; void highlights; const viewer = pdf; if (viewer) untrack(paintHighlights);
     });
 
-    function selectText(): void {
-        if (!onSelection || !fileId || !pdf || status.kind !== "ready") return;
-        const selection = window.getSelection();
-        if (!selection || selection.isCollapsed || !selection.rangeCount) {
-            onSelection(null); return;
+    // Character geometry lives in PDF user space. DOM text remains for find/accessibility only.
+    // Geometry and in-flight requests are read imperatively by pointer handlers.
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity
+    const characters = new Map<number, PdfCharacter[]>();
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity
+    const pendingCharacters = new Map<number, Promise<void>>();
+    let drag: { page: number; start: number; end: number; initial: [number, number]; unit: number; pointer: number } | null = null;
+    let selected: AnchorInput | null = null;
+    let clicks = { time: 0, x: 0, y: 0, count: 0 };
+    const feedback: number[] = [];
+    function afterPaint(callback: () => void): void {
+        requestAnimationFrame(() => requestAnimationFrame(callback));
+    }
+    async function loadCharacters(number: number): Promise<void> {
+        const document = pdfDocument;
+        if (!document || characters.has(number)) return;
+        const prior = pendingCharacters.get(number);
+        if (prior) return prior;
+        const task = (async () => {
+            try {
+                const page = await document.getPage(number);
+                const content = await page.getTextContent();
+                if (pdfDocument === document) characters.set(number, charactersFromTextContent(content));
+            }
+            catch (error) {
+                if (pdfDocument === document) fail(toReaderError(error));
+            }
+        })();
+        pendingCharacters.set(number, task);
+        await task;
+        if (pdfDocument === document) pendingCharacters.delete(number);
+    }
+    function point(event: PointerEvent, number?: number): { page: number; x: number; y: number } | null {
+        const page = number ?? Number((event.target as Element)?.closest?.(".page")?.getAttribute("data-page-number"));
+        const view = pdf?.viewer.getPageView(page - 1);
+        if (!view?.pdfPage) return null;
+        const bounds = view.div.getBoundingClientRect();
+        // viewport is the content box; page borders are outside its coordinates.
+        const [x, y] = view.viewport.convertToPdfPoint(event.clientX - bounds.left - view.div.clientLeft, event.clientY - bounds.top - view.div.clientTop);
+        return { page, x, y };
+    }
+    function startSelection(event: PointerEvent): void {
+        if (event.button !== 0 || !fileId || status.kind !== "ready" || (event.target as Element)?.closest?.(".knowledge-highlights")) return;
+        const at = point(event);
+        if (!at) return;
+        const chars = characters.get(at.page);
+        if (!chars) {
+            void loadCharacters(at.page); return;
         }
-        const range = selection.getRangeAt(0);
-        const start = (range.startContainer.nodeType === Node.ELEMENT_NODE ? range.startContainer as Element : range.startContainer.parentElement)?.closest<HTMLElement>(".page");
-        const end = (range.endContainer.nodeType === Node.ELEMENT_NODE ? range.endContainer as Element : range.endContainer.parentElement)?.closest<HTMLElement>(".page");
-        if (!start || start !== end || !container.contains(start)) {
-            onSelection(null); return;
+        const index = hitTest(chars, at.x, at.y);
+        if (index < 0) {
+            clearSelection(); return;
         }
-        const number = Number(start.dataset.pageNumber), view = pdf.viewer.getPageView(number - 1);
+        event.preventDefault();
+        window.getSelection()?.removeAllRanges();
+        container.focus({ preventScroll: true });
+        const repeated = event.timeStamp - clicks.time < 500 && Math.hypot(event.clientX - clicks.x, event.clientY - clicks.y) < 5;
+        clicks = { time: event.timeStamp, x: event.clientX, y: event.clientY, count: repeated ? clicks.count % 3 + 1 : 1 };
+        const [start, end] = clicks.count === 3 ? lineRange(chars, index) : clicks.count === 2 ? wordRange(chars, index) : [index, index];
+        drag = { page: at.page, start, end, initial: [start, end], unit: clicks.count, pointer: event.pointerId };
+        container.setPointerCapture(event.pointerId);
+        updateSelection(false);
+    }
+    function moveSelection(event: PointerEvent): void {
+        if (!drag || drag.pointer !== event.pointerId) return;
+        const started = event.timeStamp;
+        const at = point(event, drag.page);
+        if (!at) return;
+        const chars = characters.get(drag.page) ?? [];
+        const index = hitTest(chars, at.x, at.y, true);
+        if (index < 0) return;
+        const range = drag.unit === 3 ? lineRange(chars, index) : drag.unit === 2 ? wordRange(chars, index) : [index, index];
+        const backwards = range[0] < drag.initial[0];
+        drag.start = backwards ? drag.initial[1] : drag.initial[0];
+        drag.end = backwards ? range[0] : Math.max(drag.initial[1], range[1]);
+        updateSelection(false);
+        if (import.meta.env.DEV) afterPaint(() => {
+            feedback.push(performance.now() - started);
+            if (feedback.length > 512) feedback.shift();
+        });
+    }
+    function finishSelection(event: PointerEvent): void {
+        if (!drag || drag.pointer !== event.pointerId) return;
+        updateSelection(true);
+        if (container.hasPointerCapture(event.pointerId)) container.releasePointerCapture(event.pointerId);
+        drag = null;
+        if (import.meta.env.DEV) afterPaint(() => {
+            const sorted = [...feedback].sort((a, b) => a - b);
+            if (sorted.length) console.debug("PDF drag feedback", JSON.stringify({ samples: sorted.length, p95Ms: sorted[Math.ceil(sorted.length * 0.95) - 1], characters: characters.get(selected?.pageNumber ?? 0)?.length ?? 0 }));
+        });
+    }
+    function cancelDrag(): void {
+        drag = null; clearSelection();
+    }
+    function updateSelection(report: boolean): void {
+        if (!drag || !fileId) return;
+        const chars = characters.get(drag.page) ?? [];
+        const rectangles = selectionRectangles(chars, drag.start, drag.end);
+        const quote = extractText(chars, rectangles);
+        selected = quote.trim() && rectangles.length ? { fileId, pageNumber: drag.page, rectangles, quote, context: quote, extractorVersion: PDF_EXTRACTOR_VERSION } : null;
+        paintSelection();
+        if (report) onSelection?.(selected, selected ? selectionPosition(selected) : undefined);
+        else onSelection?.(null);
+    }
+    function selectionPosition(anchor: AnchorInput): { x: number; y: number } {
+        const view = pdf!.viewer.getPageView(anchor.pageNumber - 1), rect = anchor.rectangles.at(-1)!;
+        const [x, y] = view.viewport.convertToViewportPoint(rect.x + rect.width, rect.y);
+        const bounds = view.div.getBoundingClientRect();
+        return { x: bounds.left + view.div.clientLeft + x, y: bounds.top + view.div.clientTop + y };
+    }
+    export function clearSelection(): void {
+        selected = null;
+        drag = null;
+        onSelection?.(null);
+        paintSelection();
+    }
+    function copySelection(event: ClipboardEvent): void {
+        if (!selected || (event.target instanceof Element && event.target.closest("input, textarea, [contenteditable=true]"))) return;
+        event.preventDefault();
+        // Use exactly the same rectangle rule as the persisted cache.
+        event.clipboardData?.setData("text/plain", extractText(characters.get(selected.pageNumber) ?? [], selected.rectangles));
+    }
+    function drawRectangle(layer: HTMLElement, rect: Anchor["rectangles"][number], number: number, color: string): HTMLElement {
+        const view = pdf!.viewer.getPageView(number - 1);
+        const [x1, y1] = view.viewport.convertToViewportPoint(rect.x, rect.y);
+        const [x2, y2] = view.viewport.convertToViewportPoint(rect.x + rect.width, rect.y + rect.height);
+        const mark = document.createElement("span");
+        Object.assign(mark.style, { position: "absolute", left: `${Math.min(x1, x2)}px`, top: `${Math.min(y1, y2)}px`, width: `${Math.abs(x2 - x1)}px`, height: `${Math.abs(y2 - y1)}px`, backgroundColor: color, opacity: ".45" });
+        layer.appendChild(mark);
+        return mark;
+    }
+    function paintSelection(): void {
+        container?.querySelectorAll(".knowledge-selection").forEach(layer => layer.remove());
+        if (!pdf || !selected) return;
+        const view = pdf.viewer.getPageView(selected.pageNumber - 1);
         if (!view?.pdfPage) return;
-        const bounds = start.getBoundingClientRect();
-        const rectangles = [...range.getClientRects()].filter(rect => rect.width > 0 && rect.height > 0).map(rect => {
-            const a = view.viewport.convertToPdfPoint(rect.left - bounds.left, rect.top - bounds.top), b = view.viewport.convertToPdfPoint(rect.right - bounds.left, rect.bottom - bounds.top);
-            return normalizeRectangle([a[0], a[1], b[0], b[1]], view.pdfPage!.view);
-        }).filter(rect => rect.width > 0 && rect.height > 0);
-        const quote = selection.toString().trim();
-        onSelection(quote && rectangles.length ? { fileId, pageNumber: number, rectangles, quote, context: quote } : null);
+        const layer = document.createElement("div");
+        layer.className = "knowledge-selection";
+        Object.assign(layer.style, { position: "absolute", inset: "0", pointerEvents: "none", zIndex: "4" });
+        selected.rectangles.forEach(rect => drawRectangle(layer, rect, selected!.pageNumber, "#8ab4f8"));
+        view.div.appendChild(layer);
     }
 
     function paintHighlights(): void {
@@ -269,15 +398,28 @@
             layer.className = "knowledge-highlights";
             Object.assign(layer.style, { position: "absolute", inset: "0", pointerEvents: "none", zIndex: "2", mixBlendMode: "multiply" });
             for (const rect of anchor.rectangles) {
-                const [left, top, right, bottom] = pdfRectangle(rect, view.pdfPage.view);
-                const [x1, y1] = view.viewport.convertToViewportPoint(left, top);
-                const [x2, y2] = view.viewport.convertToViewportPoint(right, bottom);
-                const mark = document.createElement("span");
-                Object.assign(mark.style, { position: "absolute", left: `${Math.min(x1, x2)}px`, top: `${Math.min(y1, y2)}px`, width: `${Math.abs(x2 - x1)}px`, height: `${Math.abs(y2 - y1)}px`, backgroundColor: highlight.color, opacity: ".5" });
-                layer.appendChild(mark);
+                const mark = drawRectangle(layer, rect, anchor.pageNumber, highlight.color);
+                Object.assign(mark.style, { pointerEvents: "auto", cursor: "pointer" });
+                mark.onclick = event => {
+                    event.stopPropagation(); onHighlight?.(highlight.id, { x: event.clientX, y: event.clientY });
+                };
+            }
+            if (highlight.annotationId && anchor.rectangles.length) {
+                const rect = anchor.rectangles[0];
+                const [x, y] = view.viewport.convertToViewportPoint(rect.x + rect.width, rect.y + rect.height);
+                const note = document.createElement("button");
+                note.textContent = "▤";
+                note.title = "编辑批注";
+                note.setAttribute("aria-label", "编辑批注");
+                Object.assign(note.style, { position: "absolute", left: `${x}px`, top: `${y - 18}px`, width: "22px", height: "22px", background: "var(--c-paper)", color: "var(--c-ink)", border: "1px solid var(--c-line)", borderRadius: "4px", pointerEvents: "auto", cursor: "pointer", fontSize: "16px", lineHeight: "20px" });
+                note.onclick = event => {
+                    event.stopPropagation(); onHighlight?.(highlight.id, { x: event.clientX, y: event.clientY }, true);
+                };
+                layer.appendChild(note);
             }
             view.div.appendChild(layer);
         }
+        paintSelection();
     }
 
     export function goToAnchor(anchor: Anchor): void {
@@ -286,7 +428,7 @@
         pdf.viewer.currentPageNumber = anchor.pageNumber;
         const view = pdf.viewer.getPageView(anchor.pageNumber - 1);
         if (!view?.pdfPage || !anchor.rectangles.length) return;
-        const [left, top] = pdfRectangle(anchor.rectangles[0], view.pdfPage.view);
+        const rectangle = anchor.rectangles[0], left = rectangle.x, top = rectangle.y + rectangle.height;
         pdf.viewer.scrollPageIntoView({ pageNumber: anchor.pageNumber, destArray: [null, { name: "XYZ" }, left, top, null], allowNegativeOffset: true });
         anchorToOpen = null;
     }
@@ -299,6 +441,11 @@
     });
 
     function open(viewer: Viewer, current: ReaderSource | null): (() => void) | undefined {
+        acceptedPassword = "";
+        feedback.length = 0;
+        characters.clear();
+        pendingCharacters.clear();
+        clearSelection();
         pageNumber = 1;
         pagesCount = 0;
         findStatus = { kind: "idle" };
@@ -320,8 +467,20 @@
             status = { kind: "password", incorrect: reason === PasswordResponses.INCORRECT_PASSWORD };
         };
         task.promise.then(
-            loaded => {
+            async loaded => {
                 if (closed) return;
+                if (acceptedPassword && onPasswordAccepted) {
+                    try {
+                        await onPasswordAccepted(acceptedPassword);
+                    }
+                    catch (error) {
+                        fail(toReaderError(error)); return;
+                    }
+                    finally {
+                        acceptedPassword = "";
+                    }
+                    if (closed) return;
+                }
                 pdfDocument = loaded;
                 pagesCount = loaded.numPages;
                 restoring = true;
@@ -356,6 +515,7 @@
         if (!callback || !password) return;
         passwordCallback = null;
         status = { kind: "loading" };
+        acceptedPassword = password;
         callback(password);
         // Not kept here; pdf.js holds it only while this document is open.
         password = "";
@@ -389,6 +549,7 @@
     }
 
     function onkeydown(event: KeyboardEvent): void {
+        if (event.key === "Escape") clearSelection();
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
             event.preventDefault();
             toolbar?.focusSearch();

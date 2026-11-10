@@ -1,13 +1,15 @@
 import { type Rectangle } from "../types/papers";
 
-// PDF coordinates use a bottom-left origin; anchors use the unrotated crop's top-left.
-export function normalizeRectangle(points: [number, number, number, number], crop: readonly number[]): Rectangle {
-    const width = crop[2] - crop[0], height = crop[3] - crop[1];
-    const left = Math.max(crop[0], Math.min(points[0], points[2])), right = Math.min(crop[2], Math.max(points[0], points[2]));
-    const bottom = Math.max(crop[1], Math.min(points[1], points[3])), top = Math.min(crop[3], Math.max(points[1], points[3]));
-    return { x: (left - crop[0]) / width, y: (crop[3] - top) / height, width: (right - left) / width, height: (top - bottom) / height };
+/** A rectangle is stored directly in the PDF page's own, unrotated coordinate system. */
+export function rectanglePoints(rect: Rectangle): [number, number, number, number] {
+    return [rect.x, rect.y, rect.x + rect.width, rect.y + rect.height];
 }
-export function pdfRectangle(rect: Rectangle, crop: readonly number[]): [number, number, number, number] {
-    const width = crop[2] - crop[0], height = crop[3] - crop[1];
-    return [crop[0] + rect.x * width, crop[3] - rect.y * height, crop[0] + (rect.x + rect.width) * width, crop[3] - (rect.y + rect.height) * height];
+
+export function rectangleWithinPage(rect: Rectangle, bounds: readonly number[]): boolean {
+    const tolerance = 0.000001;
+    return bounds.length === 4 && bounds.every(Number.isFinite)
+        && [rect.x, rect.y, rect.width, rect.height].every(Number.isFinite)
+        && rect.width > 0 && rect.height > 0
+        && rect.x >= bounds[0] - tolerance && rect.y >= bounds[1] - tolerance
+        && rect.x + rect.width <= bounds[2] + tolerance && rect.y + rect.height <= bounds[3] + tolerance;
 }

@@ -1,0 +1,437 @@
+DROP TRIGGER IF EXISTS "page_registered_attrs_move";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "page_registered_attrs_delete";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "pages_registered_attrs_update";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "pages_registered_attrs_insert";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "registered_attrs_insert";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "registered_attrs_update";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "registered_attrs_delete";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "page_deleted_value_update";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "page_deleted_value_insert";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "pages_attrs_delete";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "workspace_meta_modified";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "page_attrs_modified_delete";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "page_attrs_modified_update";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "page_attrs_modified_insert";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "attrs_modified_delete";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "attrs_modified_update";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "attrs_modified_insert";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "blocks_modified_delete";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "blocks_modified_update";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "blocks_modified_insert";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "pages_modified_delete";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "pages_modified_update";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "pages_modified_insert";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "blocks_uses_delete";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "blocks_uses_update";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "blocks_uses_insert";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "pages_uses_delete";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "pages_uses_update";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "pages_uses_insert";
+--> statement-breakpoint
+-- Development-only reset: normalized rectangles have no PDF page dimensions in SQL.
+-- Keep annotation bodies in the recycle bin, while discarding their old PDF locations.
+CREATE TEMP TABLE old_pdf_annotations AS
+SELECT page_id AS id FROM page_attrs WHERE attr_id='annotation_anchor' AND value IN (SELECT id FROM anchors);
+--> statement-breakpoint
+CREATE TEMP TABLE old_pdf_blocks AS
+SELECT id FROM blocks WHERE type='source'
+OR (type='blocked_reference' AND json_extract(content,'$.target.kind')='page' AND json_extract(content,'$.target.id') IN (SELECT id FROM old_pdf_annotations));
+--> statement-breakpoint
+CREATE TEMP TABLE old_pdf_touched AS
+SELECT 'page:' || id AS object_key FROM pages
+WHERE id IN (SELECT id FROM old_pdf_annotations) OR EXISTS (SELECT 1 FROM json_each(pages.children) WHERE value IN (SELECT id FROM old_pdf_blocks))
+UNION SELECT 'block:' || id FROM blocks WHERE id IN (SELECT id FROM old_pdf_blocks)
+OR EXISTS (SELECT 1 FROM json_each(blocks.children) WHERE value IN (SELECT id FROM old_pdf_blocks));
+--> statement-breakpoint
+CREATE TEMP TABLE old_pdf_tabs AS
+SELECT DISTINCT n.tab_id FROM undo_nodes n JOIN undo_objects o ON o.node_id=n.id
+WHERE o.object_key IN (SELECT object_key FROM old_pdf_touched);
+--> statement-breakpoint
+DELETE FROM undo_objects WHERE node_id IN (SELECT id FROM undo_nodes WHERE tab_id IN (SELECT tab_id FROM old_pdf_tabs));
+--> statement-breakpoint
+DELETE FROM undo_nodes WHERE tab_id IN (SELECT tab_id FROM old_pdf_tabs);
+--> statement-breakpoint
+UPDATE edit_tabs SET cursor=NULL WHERE id IN (SELECT tab_id FROM old_pdf_tabs);
+--> statement-breakpoint
+UPDATE page_attrs SET value=CASE attr_id WHEN 'deleted' THEN 1 WHEN 'recycle_reason' THEN 'manual_delete' WHEN 'recycled_at' THEN CAST(strftime('%s','now') AS INTEGER) ELSE NULL END
+WHERE page_id IN (SELECT id FROM old_pdf_annotations) AND attr_id IN ('deleted','recycle_reason','recycled_at','annotation_anchor');
+--> statement-breakpoint
+UPDATE pages SET children=(SELECT json_group_array(value) FROM json_each(pages.children) WHERE value NOT IN (SELECT id FROM old_pdf_blocks))
+WHERE EXISTS (SELECT 1 FROM json_each(pages.children) WHERE value IN (SELECT id FROM old_pdf_blocks));
+--> statement-breakpoint
+UPDATE blocks SET children=(SELECT json_group_array(value) FROM json_each(blocks.children) WHERE value NOT IN (SELECT id FROM old_pdf_blocks))
+WHERE EXISTS (SELECT 1 FROM json_each(blocks.children) WHERE value IN (SELECT id FROM old_pdf_blocks));
+--> statement-breakpoint
+DELETE FROM link_index WHERE source_kind='block' AND source_id IN (SELECT id FROM old_pdf_blocks);
+--> statement-breakpoint
+DELETE FROM blocks WHERE id IN (SELECT id FROM old_pdf_blocks);
+--> statement-breakpoint
+DELETE FROM highlights;
+--> statement-breakpoint
+DELETE FROM anchors;
+--> statement-breakpoint
+DELETE FROM block_uses;
+--> statement-breakpoint
+INSERT INTO block_uses(container_kind,container_id,slot,position,block_id)
+SELECT 'page',id,'title',0,title_block_id FROM pages
+UNION ALL SELECT 'page',pages.id,'children',children.key,children.value FROM pages,json_each(pages.children) children
+UNION ALL SELECT 'block',blocks.id,'children',children.key,children.value FROM blocks,json_each(blocks.children) children;
+--> statement-breakpoint
+DROP TABLE old_pdf_tabs;
+--> statement-breakpoint
+DROP TABLE old_pdf_touched;
+--> statement-breakpoint
+DROP TABLE old_pdf_blocks;
+--> statement-breakpoint
+DROP TABLE old_pdf_annotations;
+--> statement-breakpoint
+ALTER TABLE `anchors` ADD `extractor_version` text NOT NULL;
+--> statement-breakpoint
+CREATE TRIGGER pages_uses_insert AFTER INSERT ON pages
+            BEGIN
+
+            SELECT RAISE(ABORT, 'children must contain block ID strings')
+            WHERE EXISTS (SELECT 1 FROM json_each(NEW.children) WHERE type != 'text');
+
+
+                INSERT INTO block_uses (container_kind, container_id, slot, position, block_id)
+                VALUES ('page', NEW.id, 'title', 0, NEW.title_block_id);
+
+
+            INSERT INTO block_uses (container_kind, container_id, slot, position, block_id)
+            SELECT 'page', NEW.id, 'children', key, value FROM json_each(NEW.children);
+
+            END;
+--> statement-breakpoint
+CREATE TRIGGER pages_uses_update AFTER UPDATE OF id, title_block_id, children ON pages
+            WHEN NEW.id IS NOT OLD.id OR NEW.title_block_id IS NOT OLD.title_block_id OR NEW.children IS NOT OLD.children
+            BEGIN
+                DELETE FROM block_uses WHERE container_kind = 'page' AND container_id = OLD.id;
+
+            SELECT RAISE(ABORT, 'children must contain block ID strings')
+            WHERE EXISTS (SELECT 1 FROM json_each(NEW.children) WHERE type != 'text');
+
+
+                INSERT INTO block_uses (container_kind, container_id, slot, position, block_id)
+                VALUES ('page', NEW.id, 'title', 0, NEW.title_block_id);
+
+
+            INSERT INTO block_uses (container_kind, container_id, slot, position, block_id)
+            SELECT 'page', NEW.id, 'children', key, value FROM json_each(NEW.children);
+
+            END;
+--> statement-breakpoint
+CREATE TRIGGER pages_uses_delete AFTER DELETE ON pages
+            BEGIN
+                DELETE FROM block_uses WHERE container_kind = 'page' AND container_id = OLD.id;
+            END;
+--> statement-breakpoint
+CREATE TRIGGER blocks_uses_insert AFTER INSERT ON blocks
+            BEGIN
+
+            SELECT RAISE(ABORT, 'children must contain block ID strings')
+            WHERE EXISTS (SELECT 1 FROM json_each(NEW.children) WHERE type != 'text');
+
+
+
+            INSERT INTO block_uses (container_kind, container_id, slot, position, block_id)
+            SELECT 'block', NEW.id, 'children', key, value FROM json_each(NEW.children);
+
+            END;
+--> statement-breakpoint
+CREATE TRIGGER blocks_uses_update AFTER UPDATE OF id, children ON blocks
+            WHEN NEW.id IS NOT OLD.id OR NEW.children IS NOT OLD.children
+            BEGIN
+                DELETE FROM block_uses WHERE container_kind = 'block' AND container_id = OLD.id;
+
+            SELECT RAISE(ABORT, 'children must contain block ID strings')
+            WHERE EXISTS (SELECT 1 FROM json_each(NEW.children) WHERE type != 'text');
+
+
+
+            INSERT INTO block_uses (container_kind, container_id, slot, position, block_id)
+            SELECT 'block', NEW.id, 'children', key, value FROM json_each(NEW.children);
+
+            END;
+--> statement-breakpoint
+CREATE TRIGGER blocks_uses_delete AFTER DELETE ON blocks
+            BEGIN
+                DELETE FROM block_uses WHERE container_kind = 'block' AND container_id = OLD.id;
+            END;
+--> statement-breakpoint
+CREATE TRIGGER pages_modified_insert AFTER INSERT ON pages
+
+                BEGIN
+                    UPDATE workspace_meta SET last_modified_at = CAST(round(unixepoch('subsec') * 1000) AS INTEGER);
+                END;
+--> statement-breakpoint
+CREATE TRIGGER pages_modified_update AFTER UPDATE ON pages
+                WHEN NEW.id IS NOT OLD.id OR NEW.kind IS NOT OLD.kind OR NEW.title_block_id IS NOT OLD.title_block_id OR NEW.children IS NOT OLD.children
+                BEGIN
+                    UPDATE workspace_meta SET last_modified_at = CAST(round(unixepoch('subsec') * 1000) AS INTEGER);
+                END;
+--> statement-breakpoint
+CREATE TRIGGER pages_modified_delete AFTER DELETE ON pages
+
+                BEGIN
+                    UPDATE workspace_meta SET last_modified_at = CAST(round(unixepoch('subsec') * 1000) AS INTEGER);
+                END;
+--> statement-breakpoint
+CREATE TRIGGER blocks_modified_insert AFTER INSERT ON blocks
+
+                BEGIN
+                    UPDATE workspace_meta SET last_modified_at = CAST(round(unixepoch('subsec') * 1000) AS INTEGER);
+                END;
+--> statement-breakpoint
+CREATE TRIGGER blocks_modified_update AFTER UPDATE ON blocks
+                WHEN NEW.id IS NOT OLD.id OR NEW.type IS NOT OLD.type OR NEW.content IS NOT OLD.content OR NEW.children IS NOT OLD.children
+                BEGIN
+                    UPDATE workspace_meta SET last_modified_at = CAST(round(unixepoch('subsec') * 1000) AS INTEGER);
+                END;
+--> statement-breakpoint
+CREATE TRIGGER blocks_modified_delete AFTER DELETE ON blocks
+
+                BEGIN
+                    UPDATE workspace_meta SET last_modified_at = CAST(round(unixepoch('subsec') * 1000) AS INTEGER);
+                END;
+--> statement-breakpoint
+CREATE TRIGGER attrs_modified_insert AFTER INSERT ON attrs
+
+                BEGIN
+                    UPDATE workspace_meta SET last_modified_at = CAST(round(unixepoch('subsec') * 1000) AS INTEGER);
+                END;
+--> statement-breakpoint
+CREATE TRIGGER attrs_modified_update AFTER UPDATE ON attrs
+                WHEN NEW.id IS NOT OLD.id OR NEW.type IS NOT OLD.type OR NEW.metadata IS NOT OLD.metadata
+                BEGIN
+                    UPDATE workspace_meta SET last_modified_at = CAST(round(unixepoch('subsec') * 1000) AS INTEGER);
+                END;
+--> statement-breakpoint
+CREATE TRIGGER attrs_modified_delete AFTER DELETE ON attrs
+
+                BEGIN
+                    UPDATE workspace_meta SET last_modified_at = CAST(round(unixepoch('subsec') * 1000) AS INTEGER);
+                END;
+--> statement-breakpoint
+CREATE TRIGGER page_attrs_modified_insert AFTER INSERT ON page_attrs
+
+                BEGIN
+                    UPDATE workspace_meta SET last_modified_at = CAST(round(unixepoch('subsec') * 1000) AS INTEGER);
+                END;
+--> statement-breakpoint
+CREATE TRIGGER page_attrs_modified_update AFTER UPDATE ON page_attrs
+                WHEN NEW.page_id IS NOT OLD.page_id OR NEW.attr_id IS NOT OLD.attr_id OR NEW.value IS NOT OLD.value
+                BEGIN
+                    UPDATE workspace_meta SET last_modified_at = CAST(round(unixepoch('subsec') * 1000) AS INTEGER);
+                END;
+--> statement-breakpoint
+CREATE TRIGGER page_attrs_modified_delete AFTER DELETE ON page_attrs
+
+                BEGIN
+                    UPDATE workspace_meta SET last_modified_at = CAST(round(unixepoch('subsec') * 1000) AS INTEGER);
+                END;
+--> statement-breakpoint
+CREATE TRIGGER workspace_meta_modified AFTER UPDATE OF name, settings ON workspace_meta
+        WHEN NEW.name IS NOT OLD.name OR NEW.settings IS NOT OLD.settings
+        BEGIN
+            UPDATE workspace_meta SET last_modified_at = CAST(round(unixepoch('subsec') * 1000) AS INTEGER);
+        END;
+--> statement-breakpoint
+CREATE TRIGGER pages_attrs_delete AFTER DELETE ON pages
+            BEGIN
+                DELETE FROM page_attrs WHERE page_id = OLD.id;
+            END;
+--> statement-breakpoint
+CREATE TRIGGER page_deleted_value_insert BEFORE INSERT ON page_attrs
+                WHEN NEW.attr_id = 'deleted' AND NEW.value IS NOT NULL
+                    AND NOT (typeof(NEW.value) IN ('integer', 'real') AND NEW.value IN (0, 1))
+                BEGIN
+                    SELECT RAISE(ABORT, 'The Labloom deleted attribute value must be NULL, 0, or 1.');
+                END;
+--> statement-breakpoint
+CREATE TRIGGER page_deleted_value_update BEFORE UPDATE ON page_attrs
+                WHEN NEW.attr_id = 'deleted' AND NEW.value IS NOT NULL
+                    AND NOT (typeof(NEW.value) IN ('integer', 'real') AND NEW.value IN (0, 1))
+                BEGIN
+                    SELECT RAISE(ABORT, 'The Labloom deleted attribute value must be NULL, 0, or 1.');
+                END;
+--> statement-breakpoint
+CREATE TRIGGER registered_attrs_delete BEFORE DELETE ON attrs WHEN OLD.id IN ('deleted', 'independent', 'created_at', 'modified_at', 'recycle_reason', 'recycled_at', 'pinned', 'tags', 'links', 'paper_authors', 'paper_doi', 'paper_year', 'paper_venue', 'paper_url', 'paper_abstract', 'paper_keywords', 'source_snapshot', 'reading_position', 'annotation_paper', 'annotation_anchor', 'task_status', 'priority', 'schedule_date', 'schedule_start', 'schedule_end', 'schedule_zone', 'reminder_at') BEGIN SELECT RAISE(ABORT, 'Labloom builtin attributes cannot be deleted.'); END;
+--> statement-breakpoint
+CREATE TRIGGER registered_attrs_update BEFORE UPDATE OF id, type ON attrs WHEN (OLD.id IN ('deleted', 'independent', 'created_at', 'modified_at', 'recycle_reason', 'recycled_at', 'pinned', 'tags', 'links', 'paper_authors', 'paper_doi', 'paper_year', 'paper_venue', 'paper_url', 'paper_abstract', 'paper_keywords', 'source_snapshot', 'reading_position', 'annotation_paper', 'annotation_anchor', 'task_status', 'priority', 'schedule_date', 'schedule_start', 'schedule_end', 'schedule_zone', 'reminder_at') AND (NEW.id IS NOT OLD.id OR NEW.type IS NOT OLD.type)) OR (NEW.id = 'deleted' AND NEW.type != 'boolean') OR (NEW.id = 'independent' AND NEW.type != 'boolean') OR (NEW.id = 'created_at' AND NEW.type != 'datetime') OR (NEW.id = 'modified_at' AND NEW.type != 'datetime') OR (NEW.id = 'recycle_reason' AND NEW.type != 'select') OR (NEW.id = 'recycled_at' AND NEW.type != 'datetime') OR (NEW.id = 'pinned' AND NEW.type != 'boolean') OR (NEW.id = 'tags' AND NEW.type != 'multiselect') OR (NEW.id = 'links' AND NEW.type != 'page-links') OR (NEW.id = 'paper_authors' AND NEW.type != 'string') OR (NEW.id = 'paper_doi' AND NEW.type != 'string') OR (NEW.id = 'paper_year' AND NEW.type != 'string') OR (NEW.id = 'paper_venue' AND NEW.type != 'string') OR (NEW.id = 'paper_url' AND NEW.type != 'url') OR (NEW.id = 'paper_abstract' AND NEW.type != 'string') OR (NEW.id = 'paper_keywords' AND NEW.type != 'string') OR (NEW.id = 'source_snapshot' AND NEW.type != 'json') OR (NEW.id = 'reading_position' AND NEW.type != 'json') OR (NEW.id = 'annotation_paper' AND NEW.type != 'page-link') OR (NEW.id = 'annotation_anchor' AND NEW.type != 'string') OR (NEW.id = 'task_status' AND NEW.type != 'select') OR (NEW.id = 'priority' AND NEW.type != 'select') OR (NEW.id = 'schedule_date' AND NEW.type != 'date') OR (NEW.id = 'schedule_start' AND NEW.type != 'datetime') OR (NEW.id = 'schedule_end' AND NEW.type != 'datetime') OR (NEW.id = 'schedule_zone' AND NEW.type != 'string') OR (NEW.id = 'reminder_at' AND NEW.type != 'datetime') BEGIN SELECT RAISE(ABORT, 'The ID and type of a Labloom builtin attribute cannot be changed.'); END;
+--> statement-breakpoint
+CREATE TRIGGER registered_attrs_insert BEFORE INSERT ON attrs WHEN (NEW.id = 'deleted' AND NEW.type != 'boolean') OR (NEW.id = 'independent' AND NEW.type != 'boolean') OR (NEW.id = 'created_at' AND NEW.type != 'datetime') OR (NEW.id = 'modified_at' AND NEW.type != 'datetime') OR (NEW.id = 'recycle_reason' AND NEW.type != 'select') OR (NEW.id = 'recycled_at' AND NEW.type != 'datetime') OR (NEW.id = 'pinned' AND NEW.type != 'boolean') OR (NEW.id = 'tags' AND NEW.type != 'multiselect') OR (NEW.id = 'links' AND NEW.type != 'page-links') OR (NEW.id = 'paper_authors' AND NEW.type != 'string') OR (NEW.id = 'paper_doi' AND NEW.type != 'string') OR (NEW.id = 'paper_year' AND NEW.type != 'string') OR (NEW.id = 'paper_venue' AND NEW.type != 'string') OR (NEW.id = 'paper_url' AND NEW.type != 'url') OR (NEW.id = 'paper_abstract' AND NEW.type != 'string') OR (NEW.id = 'paper_keywords' AND NEW.type != 'string') OR (NEW.id = 'source_snapshot' AND NEW.type != 'json') OR (NEW.id = 'reading_position' AND NEW.type != 'json') OR (NEW.id = 'annotation_paper' AND NEW.type != 'page-link') OR (NEW.id = 'annotation_anchor' AND NEW.type != 'string') OR (NEW.id = 'task_status' AND NEW.type != 'select') OR (NEW.id = 'priority' AND NEW.type != 'select') OR (NEW.id = 'schedule_date' AND NEW.type != 'date') OR (NEW.id = 'schedule_start' AND NEW.type != 'datetime') OR (NEW.id = 'schedule_end' AND NEW.type != 'datetime') OR (NEW.id = 'schedule_zone' AND NEW.type != 'string') OR (NEW.id = 'reminder_at' AND NEW.type != 'datetime') BEGIN SELECT RAISE(ABORT, 'The Labloom deleted attribute must have type boolean.') WHERE NEW.id = 'deleted'; SELECT RAISE(ABORT, 'The Labloom builtin attribute has an incompatible type.'); END;
+--> statement-breakpoint
+CREATE TRIGGER pages_registered_attrs_insert AFTER INSERT ON pages WHEN NEW.kind IN ('editable', 'paper', 'annotation', 'task', 'event') BEGIN
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'deleted', NULL WHERE NEW.kind = 'editable' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'independent', NULL WHERE NEW.kind = 'editable' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'created_at', NULL WHERE NEW.kind = 'editable' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'modified_at', NULL WHERE NEW.kind = 'editable' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'recycle_reason', NULL WHERE NEW.kind = 'editable' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'recycled_at', NULL WHERE NEW.kind = 'editable' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'pinned', NULL WHERE NEW.kind = 'editable' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'tags', NULL WHERE NEW.kind = 'editable' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'links', NULL WHERE NEW.kind = 'editable' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'deleted', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'independent', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'created_at', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'modified_at', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'recycle_reason', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'recycled_at', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'pinned', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'tags', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'links', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'paper_authors', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'paper_doi', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'paper_year', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'paper_venue', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'paper_url', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'paper_abstract', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'paper_keywords', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'source_snapshot', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'reading_position', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'deleted', NULL WHERE NEW.kind = 'annotation' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'independent', NULL WHERE NEW.kind = 'annotation' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'created_at', NULL WHERE NEW.kind = 'annotation' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'modified_at', NULL WHERE NEW.kind = 'annotation' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'recycle_reason', NULL WHERE NEW.kind = 'annotation' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'recycled_at', NULL WHERE NEW.kind = 'annotation' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'pinned', NULL WHERE NEW.kind = 'annotation' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'tags', NULL WHERE NEW.kind = 'annotation' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'links', NULL WHERE NEW.kind = 'annotation' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'annotation_paper', NULL WHERE NEW.kind = 'annotation' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'annotation_anchor', NULL WHERE NEW.kind = 'annotation' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'deleted', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'independent', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'created_at', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'modified_at', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'recycle_reason', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'recycled_at', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'pinned', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'tags', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'links', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'task_status', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'priority', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'schedule_date', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'schedule_start', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'schedule_end', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'schedule_zone', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'reminder_at', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'deleted', NULL WHERE NEW.kind = 'event' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'independent', NULL WHERE NEW.kind = 'event' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'created_at', NULL WHERE NEW.kind = 'event' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'modified_at', NULL WHERE NEW.kind = 'event' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'recycle_reason', NULL WHERE NEW.kind = 'event' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'recycled_at', NULL WHERE NEW.kind = 'event' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'pinned', NULL WHERE NEW.kind = 'event' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'tags', NULL WHERE NEW.kind = 'event' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'links', NULL WHERE NEW.kind = 'event' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'schedule_date', NULL WHERE NEW.kind = 'event' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'schedule_start', NULL WHERE NEW.kind = 'event' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'schedule_end', NULL WHERE NEW.kind = 'event' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'schedule_zone', NULL WHERE NEW.kind = 'event' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'reminder_at', NULL WHERE NEW.kind = 'event' ON CONFLICT (page_id, attr_id) DO NOTHING;
+END;
+--> statement-breakpoint
+CREATE TRIGGER pages_registered_attrs_update AFTER UPDATE OF kind ON pages WHEN NEW.kind IS NOT OLD.kind AND NEW.kind IN ('editable', 'paper', 'annotation', 'task', 'event') BEGIN
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'deleted', NULL WHERE NEW.kind = 'editable' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'independent', NULL WHERE NEW.kind = 'editable' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'created_at', NULL WHERE NEW.kind = 'editable' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'modified_at', NULL WHERE NEW.kind = 'editable' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'recycle_reason', NULL WHERE NEW.kind = 'editable' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'recycled_at', NULL WHERE NEW.kind = 'editable' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'pinned', NULL WHERE NEW.kind = 'editable' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'tags', NULL WHERE NEW.kind = 'editable' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'links', NULL WHERE NEW.kind = 'editable' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'deleted', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'independent', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'created_at', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'modified_at', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'recycle_reason', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'recycled_at', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'pinned', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'tags', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'links', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'paper_authors', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'paper_doi', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'paper_year', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'paper_venue', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'paper_url', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'paper_abstract', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'paper_keywords', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'source_snapshot', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'reading_position', NULL WHERE NEW.kind = 'paper' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'deleted', NULL WHERE NEW.kind = 'annotation' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'independent', NULL WHERE NEW.kind = 'annotation' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'created_at', NULL WHERE NEW.kind = 'annotation' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'modified_at', NULL WHERE NEW.kind = 'annotation' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'recycle_reason', NULL WHERE NEW.kind = 'annotation' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'recycled_at', NULL WHERE NEW.kind = 'annotation' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'pinned', NULL WHERE NEW.kind = 'annotation' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'tags', NULL WHERE NEW.kind = 'annotation' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'links', NULL WHERE NEW.kind = 'annotation' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'annotation_paper', NULL WHERE NEW.kind = 'annotation' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'annotation_anchor', NULL WHERE NEW.kind = 'annotation' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'deleted', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'independent', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'created_at', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'modified_at', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'recycle_reason', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'recycled_at', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'pinned', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'tags', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'links', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'task_status', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'priority', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'schedule_date', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'schedule_start', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'schedule_end', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'schedule_zone', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'reminder_at', NULL WHERE NEW.kind = 'task' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'deleted', NULL WHERE NEW.kind = 'event' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'independent', NULL WHERE NEW.kind = 'event' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'created_at', NULL WHERE NEW.kind = 'event' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'modified_at', NULL WHERE NEW.kind = 'event' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'recycle_reason', NULL WHERE NEW.kind = 'event' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'recycled_at', NULL WHERE NEW.kind = 'event' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'pinned', NULL WHERE NEW.kind = 'event' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'tags', NULL WHERE NEW.kind = 'event' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'links', NULL WHERE NEW.kind = 'event' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'schedule_date', NULL WHERE NEW.kind = 'event' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'schedule_start', NULL WHERE NEW.kind = 'event' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'schedule_end', NULL WHERE NEW.kind = 'event' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'schedule_zone', NULL WHERE NEW.kind = 'event' ON CONFLICT (page_id, attr_id) DO NOTHING;
+    INSERT INTO page_attrs (page_id, attr_id, value) SELECT NEW.id, 'reminder_at', NULL WHERE NEW.kind = 'event' ON CONFLICT (page_id, attr_id) DO NOTHING;
+END;
+--> statement-breakpoint
+CREATE TRIGGER page_registered_attrs_delete BEFORE DELETE ON page_attrs WHEN EXISTS (SELECT 1 FROM pages WHERE id = OLD.page_id AND ((kind = 'editable' AND OLD.attr_id IN ('deleted', 'independent', 'created_at', 'modified_at', 'recycle_reason', 'recycled_at', 'pinned', 'tags', 'links')) OR (kind = 'paper' AND OLD.attr_id IN ('deleted', 'independent', 'created_at', 'modified_at', 'recycle_reason', 'recycled_at', 'pinned', 'tags', 'links', 'paper_authors', 'paper_doi', 'paper_year', 'paper_venue', 'paper_url', 'paper_abstract', 'paper_keywords', 'source_snapshot', 'reading_position')) OR (kind = 'annotation' AND OLD.attr_id IN ('deleted', 'independent', 'created_at', 'modified_at', 'recycle_reason', 'recycled_at', 'pinned', 'tags', 'links', 'annotation_paper', 'annotation_anchor')) OR (kind = 'task' AND OLD.attr_id IN ('deleted', 'independent', 'created_at', 'modified_at', 'recycle_reason', 'recycled_at', 'pinned', 'tags', 'links', 'task_status', 'priority', 'schedule_date', 'schedule_start', 'schedule_end', 'schedule_zone', 'reminder_at')) OR (kind = 'event' AND OLD.attr_id IN ('deleted', 'independent', 'created_at', 'modified_at', 'recycle_reason', 'recycled_at', 'pinned', 'tags', 'links', 'schedule_date', 'schedule_start', 'schedule_end', 'schedule_zone', 'reminder_at')))) BEGIN SELECT RAISE(ABORT, 'A Labloom page cannot remove a builtin attribute.'); END;
+--> statement-breakpoint
+CREATE TRIGGER page_registered_attrs_move BEFORE UPDATE OF page_id, attr_id ON page_attrs WHEN (NEW.page_id IS NOT OLD.page_id OR NEW.attr_id IS NOT OLD.attr_id) AND EXISTS (SELECT 1 FROM pages WHERE id = OLD.page_id AND ((kind = 'editable' AND OLD.attr_id IN ('deleted', 'independent', 'created_at', 'modified_at', 'recycle_reason', 'recycled_at', 'pinned', 'tags', 'links')) OR (kind = 'paper' AND OLD.attr_id IN ('deleted', 'independent', 'created_at', 'modified_at', 'recycle_reason', 'recycled_at', 'pinned', 'tags', 'links', 'paper_authors', 'paper_doi', 'paper_year', 'paper_venue', 'paper_url', 'paper_abstract', 'paper_keywords', 'source_snapshot', 'reading_position')) OR (kind = 'annotation' AND OLD.attr_id IN ('deleted', 'independent', 'created_at', 'modified_at', 'recycle_reason', 'recycled_at', 'pinned', 'tags', 'links', 'annotation_paper', 'annotation_anchor')) OR (kind = 'task' AND OLD.attr_id IN ('deleted', 'independent', 'created_at', 'modified_at', 'recycle_reason', 'recycled_at', 'pinned', 'tags', 'links', 'task_status', 'priority', 'schedule_date', 'schedule_start', 'schedule_end', 'schedule_zone', 'reminder_at')) OR (kind = 'event' AND OLD.attr_id IN ('deleted', 'independent', 'created_at', 'modified_at', 'recycle_reason', 'recycled_at', 'pinned', 'tags', 'links', 'schedule_date', 'schedule_start', 'schedule_end', 'schedule_zone', 'reminder_at')))) BEGIN SELECT RAISE(ABORT, 'A Labloom page cannot remove a builtin attribute.'); END;

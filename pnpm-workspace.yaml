@@ -7,3 +7,5 @@ allowBuilds:
 minimumReleaseAgeExclude:
   - electron@45.0.0
   - vite@8.3.5
+patchedDependencies:
+  pdfjs-dist@6.3.289: patches/pdfjs-dist@6.3.289.patch

@@ -16,8 +16,8 @@ export function registerStartupIPCs(window: BrowserWindow, startup: Startup): vo
         choosingWorkspace = true;
         try {
             const result = await dialog.showOpenDialog(window, {
-                title: action === "create" ? "Select an empty folder to create a workspace" : "Select an existing workspace",
-                buttonLabel: action === "create" ? "Create here" : "Open workspace",
+                title: action === "create" ? "选择一个空文件夹来创建工作区" : "选择已有的工作区",
+                buttonLabel: action === "create" ? "在此创建" : "打开工作区",
                 defaultPath: startup.state.lastWorkspace?.path,
                 properties: ["openDirectory", "createDirectory"]
             });

@@ -7,6 +7,7 @@ import { type HistoryState } from "../../../shared/types/knowledge";
 import { PendingInput } from "../Editor/pending-input";
 import { readingTabs, visits } from "../Tab/activity.svelte";
 import type { TabChange, TabView } from "../Tab/visits";
+import { SessionViews, sessionKey } from "./session-views";
 import { knowledgeState, message, perform } from "./feedback.svelte";
 export { knowledgeState, message, perform } from "./feedback.svelte";
 export const confirmation = $state<{ heading: string; text: string; names: string[]; resolve: ((value: boolean) => void) | null }>({ heading: "", text: "", names: [], resolve: null });
@@ -63,6 +64,34 @@ type Listener = (ids: string[], whole: boolean) => void;
 // This registry is not rendered; each session carries its own reactive state.
 // eslint-disable-next-line svelte/prefer-svelte-reactivity
 const sessions = new Map<string, PageSession>();
+// Page views share a tab visit and history, while retaining separate page buffers.
+// eslint-disable-next-line svelte/prefer-svelte-reactivity
+const sessionViews = new Map<string, { views: SessionViews; release: () => void }>();
+function registerPageView(tabId: string, view: TabView): () => void {
+    let group = sessionViews.get(tabId);
+    if (!group) {
+        const views = new SessionViews();
+        const remove = views.add(view);
+        group = { views, release: visits.register(tabId, views) };
+        sessionViews.set(tabId, group);
+        return () => {
+            remove();
+            if (!views.size) {
+                group!.release();
+                sessionViews.delete(tabId);
+            }
+        };
+    }
+    const remove = group.views.add(view);
+    visits.refresh(tabId);
+    return () => {
+        remove();
+        if (!group.views.size) {
+            group.release();
+            sessionViews.delete(tabId);
+        }
+    };
+}
 // Pending writes are awaited at navigation boundaries, never rendered.
 // eslint-disable-next-line svelte/prefer-svelte-reactivity
 const auxiliary = new Map<Promise<unknown>, string>();
@@ -131,8 +160,11 @@ function makeSession(tabId: string, pageId: string): PageSession {
         };
     }
     function ownChange(change: KnowledgeChange): void {
+        void history().catch(error => {
+            knowledgeState.error = message(error);
+        });
         for (const id of [...(change.summaryPages ?? change.pages), ...change.blocks]) {
-            for (const [read, own] of observers.get(id) ?? []) if (own) void perform(read);
+            for (const [read, own] of observers.get(id) ?? []) if (own || change.highlightPages?.includes(id)) void perform(read);
         }
         if (change.backlinks?.includes(pageId)) void perform(async () => {
             state.backlinks = await api.backlinks(pageId);
@@ -384,7 +416,12 @@ function makeSession(tabId: string, pageId: string): PageSession {
             if (result.status === "saved") changed = result.changed;
             return result;
         }) && changed) {
-            await reread([...changed.pages.filter(id => id === pageId), ...changed.blocks]);
+            const ids = [...changed.pages, ...changed.blocks];
+            // An undo belongs to the tab, and may target its now-closed annotation.
+            for (const value of sessions.values()) if (value.tabId === tabId) {
+                const page = value.state.page;
+                if (page) await value.reread(ids.filter(id => id === page.id || Object.hasOwn(page.blocks, id)));
+            }
             if (!readingTabs.has(tabId) && !state.page?.attributes.deleted) input.replay();
         }
     }
@@ -399,7 +436,7 @@ function makeSession(tabId: string, pageId: string): PageSession {
         ...(change.backlinks?.includes(pageId) ? [pageId] : []),
         ...change.pages.filter(id => state.backlinks.some(link => link.sourceId === id))
     ];
-    const release = visits.register(tabId, {
+    const release = registerPageView(tabId, {
         intersection: change => {
             definitionsDirty ||= !!change.definition;
             return intersection(change);
@@ -462,16 +499,17 @@ function makeSession(tabId: string, pageId: string): PageSession {
     };
 }
 export function session(tabId: string, pageId: string): PageSession {
-    let value = sessions.get(tabId);
+    const key = sessionKey(tabId, pageId);
+    let value = sessions.get(key);
     if (!value) {
         value = makeSession(tabId, pageId);
-        sessions.set(tabId, value);
+        sessions.set(key, value);
     }
     return value;
 }
 export function receiveChange(change: KnowledgeChange): void {
     visits.changed(change);
-    sessions.get(change.sourceTab)?.ownChange(change);
+    for (const value of sessions.values()) if (value.tabId === change.sourceTab) value.ownChange(change);
     knowledgeState.change = { ...change, seq: knowledgeState.change.seq + 1 };
 }
 export async function saveAll(): Promise<boolean> {
@@ -499,14 +537,20 @@ export function writeFromTab<T>(id: string, action: () => Promise<T>): Promise<T
 }
 export async function closeSession(tabId: string): Promise<boolean> {
     window.dispatchEvent(new Event("workspace-flush"));
-    const value = sessions.get(tabId);
-    if (!await visits.settled(tabId) || value?.input.waiting || (value && !await value.flush())) {
+    const values = [...sessions.values()].filter(value => value.tabId === tabId);
+    if (!await visits.settled(tabId) || values.some(value => value.input.waiting)) {
+        knowledgeState.error = "此页面未保存，已保留标签页。请处理页面上显示的错误。";
+        return false;
+    }
+    for (const value of values) if (!await value.flush()) {
         knowledgeState.error = "此页面未保存，已保留标签页。请处理页面上显示的错误。";
         return false;
     }
     await Promise.all(otherWrites(tabId));
     await window.api.knowledge.closeTab(tabId);
-    value?.release();
-    sessions.delete(tabId);
+    for (const [key, value] of sessions) if (value.tabId === tabId) {
+        value.release();
+        sessions.delete(key);
+    }
     return true;
 }

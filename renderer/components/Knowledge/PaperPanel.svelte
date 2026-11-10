@@ -10,7 +10,7 @@
             </select>
             <button class="button" disabled={busy || !!page.attributes.deleted} onclick={attach}>添加 PDF</button>
         </div>
-        <button class="text-button" onclick={() => expanded = !expanded}>{expanded ? "收起阅读器" : "展开阅读器"}</button>
+        <button class="text-button" onclick={toggleExpanded}>{expanded ? "收起阅读器" : "展开阅读器"}</button>
     </header>
     {#if error}
         <div class="notice error">{error}<button onclick={() => void openFile(fileId)}>重试读取</button></div>
@@ -18,40 +18,29 @@
     {#if expanded}
         {#if resources.files.length}
             <div class="paper-reader">
-                <Reader bind:this={reader} {source} {fileId} {viewState} anchors={resources.anchors} highlights={resources.highlights} onSelection={value => selection = value} onViewStateChange={savePosition} />
+                <Reader bind:this={reader} {source} {fileId} {viewState} anchors={resources.anchors} highlights={resources.highlights} onSelection={selectText} onHighlight={selectHighlight} onViewStateChange={savePosition} onPasswordAccepted={unlock} />
             </div>
         {:else}
             <div class="empty-state">
                 <p>添加 PDF 后，即可阅读、标记和创建批注。</p>
             </div>
         {/if}
-        <div class="mark-toolbar">
-            <span>{selection ? `已选择第 ${selection.pageNumber} 页的文字` : "在同一页选中文字，留下标记或批注"}</span>
-            <select bind:value={color}>
-                <option value="#F2D675">黄色</option>
-                <option value="#A9C5A0">绿色</option>
-                <option value="#C5B6DC">紫色</option>
-                <option value="#F1B6A7">粉色</option>
-            </select>
-            <button class="button" disabled={!selection || busy || !!page.attributes.deleted} onclick={() => mark(false)}>高亮</button>
-            <button class="button" disabled={!selection || busy || !!page.attributes.deleted} onclick={() => mark(true)}>创建批注</button>
-            {#if selection}
-                <button class="text-button" onclick={() => selection = null}>取消选择</button>
-            {/if}
-        </div>
-        {#if resources.highlights.length}
-            <details class="marks">
-                <summary>原文高亮（{resources.highlights.length}）</summary>
-                {#each resources.highlights as mark (mark.id)}
-                    {@const anchor = resources.anchors.find(item => item.id === mark.anchorId)}
-                    {#if anchor}
-                        <div>
-                            <button class="quote" onclick={() => locate(anchor)}>第 {anchor.pageNumber} 页：{anchor.quote}</button>
-                            <button class="text-button" disabled={!!page.attributes.deleted} onclick={() => remove(mark.id)}>删除高亮</button>
-                        </div>
-                    {/if}
+        {#if (selection || activeHighlight) && !annotationId}
+            <div class="selection-menu" popover="manual" {@attach element => {
+                element.showPopover();
+            }} role="toolbar" aria-label="高亮与批注" style:left={menuLeft + "px"} style:top={menuTop + "px"}>
+                {#each colors as item (item.value)}
+                    <button class="swatch" style:background={item.value} aria-label={item.label + "高亮"} title={item.label} disabled={busy || !!page.attributes.deleted} onclick={() => markColor(item.value)}></button>
                 {/each}
-            </details>
+                <button disabled={busy || !!page.attributes.deleted} onclick={annotateSelection}>{resources.highlights.find(item => item.id === activeHighlight)?.annotationId ? "编辑批注" : activeHighlight ? "添加批注" : "批注"}</button>
+                {#if activeHighlight}<button disabled={busy || !!page.attributes.deleted} onclick={() => remove(activeHighlight!)}>删除</button>{/if}
+                <button onclick={dismiss}>关闭</button>
+            </div>
+        {/if}
+        {#if annotationId}
+            {#key annotationId}
+                <AnnotationPopover pageId={annotationId} {tabId} position={menuPosition} onclose={() => annotationId = null} />
+            {/key}
         {/if}
     {/if}
 </section>
@@ -61,12 +50,9 @@
     .attachments { display: flex; align-items: center; gap: 10px; min-width: 0; }
     select { padding: 7px; border: 1px solid var(--c-line); border-radius: 5px; background: var(--c-paper); color: var(--c-ink); min-width: 0; max-width: 300px; font-size: 12px; }
     .paper-reader { height: 65vh; min-height: 400px; }
-    .mark-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 12px 20px; font-size: 11px; }
-    .mark-toolbar > span { flex: 1; min-width: 180px; color: var(--c-muted); }
-    .marks { padding: 0 20px 16px; font-size: 12px; }
-    summary { cursor: pointer; padding: 10px 0; }
-    .marks > div { display: flex; align-items: center; gap: 20px; border-bottom: 1px dashed var(--c-line); padding: 10px 0; }
-    .quote { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .selection-menu { position: fixed; inset: auto; margin: 0; z-index: 65; display: flex; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--c-line); border-radius: 6px; background: var(--c-paper); color: var(--c-ink); box-shadow: 0 3px 12px #0002; font-size: 12px; }
+    .selection-menu button { padding: 3px; }
+    .selection-menu .swatch { width: 22px; height: 22px; border: 1px solid var(--c-line); border-radius: 50%; }
     .notice { margin: 10px 20px; }
 </style>
 <script lang="ts">
@@ -76,12 +62,30 @@
     import { record } from "../../../shared/attrs/values";
     import { type ReaderSource, type ReaderViewState } from "../Reader/defs";
     import Reader from "../Reader/Reader.svelte";
-    import { knowledgeState, message, perform, trackWrite, writeFromTab, type PageSession } from "./state.svelte";
+    import AnnotationPopover from "./AnnotationPopover.svelte";
+    import { knowledgeState, message, perform, trackWrite, writeFromTab, confirmed, session as pageSession, type PageSession } from "./state.svelte";
     import { openPage } from "../layout/navigation";
     let { page, session, tabId, anchorId }: { page: PageRecord; session: PageSession; tabId: string; anchorId?: string } = $props();
     let resources = $state<PaperResources>({ files: [], anchors: [], highlights: [] }), fileId = $state(""), source = $state.raw<ReaderSource | null>(null), viewState = $state<ReaderViewState | undefined>(undefined);
-    let reader = $state<Reader | null>(null), selection = $state<AnchorInput | null>(null), color = $state("#F2D675"), expanded = $state(true), busy = $state(false), error = $state("");
+    let reader = $state<Reader | null>(null), selection = $state<AnchorInput | null>(null), expanded = $state(true), busy = $state(false), error = $state("");
+    let activeHighlight = $state<string | null>(null), annotationId = $state<string | null>(null);
+    let menuPosition = $state({ x: 0, y: 0 });
+    const menuLeft = $derived(Math.max(12, Math.min(menuPosition.x, window.innerWidth - 310)));
+    const menuTop = $derived(Math.max(48, Math.min(menuPosition.y + 8, window.innerHeight - 60)));
+    const colors = [{ value: "#F2D675", label: "黄色" }, { value: "#A9C5A0", label: "绿色" }, { value: "#C5B6DC", label: "紫色" }, { value: "#F1B6A7", label: "粉色" }];
     let request = 0;
+    async function unlock(password: string): Promise<void> {
+        await window.api.knowledge.unlockPDF(fileId, password);
+        await load();
+    }
+    async function selectText(value: AnchorInput | null, at?: { x: number; y: number }): Promise<void> {
+        selection = value;
+        if (at) menuPosition = at;
+        if (value) {
+            activeHighlight = null;
+            if (annotationId && await pageSession(tabId, annotationId).flush()) annotationId = null;
+        }
+    }
     let locatedId: string | undefined;
     const sourceFiles = new WeakMap<ReaderSource, string>();
     async function load(): Promise<void> {
@@ -107,8 +111,16 @@
             void locate(anchor);
         });
     });
+    async function toggleExpanded(): Promise<void> {
+        if (annotationId && !await pageSession(tabId, annotationId).flush()) return;
+        annotationId = null;
+        dismiss();
+        expanded = !expanded;
+    }
     async function openFile(id: string): Promise<void> {
         if (!id) return;
+        if (annotationId && !await pageSession(tabId, annotationId).flush()) return;
+        annotationId = null;
         const sequence = ++request;
         try {
             const data = await window.api.knowledge.readFile(id);
@@ -153,21 +165,52 @@
             busy = false;
         }
     }
-    async function mark(annotation: boolean): Promise<void> {
-        if (!selection) return;
+    function dismiss(): void {
+        selection = null;
+        activeHighlight = null;
+        reader?.clearSelection();
+    }
+    async function selectHighlight(id: string, at: { x: number; y: number }, annotation = false): Promise<void> {
+        if (annotationId && !await pageSession(tabId, annotationId).flush()) return;
+        dismiss();
+        menuPosition = at;
+        const highlight = resources.highlights.find(item => item.id === id);
+        if (annotation && highlight?.annotationId) annotationId = highlight.annotationId;
+        else {
+            annotationId = null; activeHighlight = id;
+        }
+    }
+    async function markColor(color: string): Promise<void> {
+        if (!selection && !activeHighlight) return;
         busy = true;
         try {
-            const anchor = $state.snapshot(selection);
+            const anchor = selection ? $state.snapshot(selection) : null, id = activeHighlight;
             await writeFromTab(tabId, async () => {
-                if (annotation) {
-                    const id = await window.api.knowledge.annotate(page.id, anchor, tabId);
-                    await session.reread([page.id]);
-                    openPage(id);
-                }
-                else await window.api.knowledge.highlight(page.id, anchor, color, tabId);
-                selection = null;
-                window.getSelection()?.removeAllRanges();
+                if (id) await window.api.knowledge.changeHighlight(id, color, tabId);
+                else if (anchor) await window.api.knowledge.highlight(page.id, anchor, color, tabId);
+                dismiss();
                 await load();
+            });
+        }
+        catch (problem) {
+            error = message(problem);
+        }
+        finally {
+            busy = false;
+        }
+    }
+    async function annotateSelection(): Promise<void> {
+        const existing = resources.highlights.find(item => item.id === activeHighlight);
+        const anchor = existing?.anchorId ?? (selection ? $state.snapshot(selection) : null);
+        if (!anchor) return;
+        busy = true;
+        try {
+            await writeFromTab(tabId, async () => {
+                const id = await window.api.knowledge.annotate(page.id, anchor, tabId, existing?.color);
+                await session.reread([page.id]);
+                dismiss();
+                await load();
+                annotationId = id;
             });
         }
         catch (problem) {
@@ -185,8 +228,10 @@
     function remove(id: string): void {
         void perform(async () => {
             await writeFromTab(tabId, async () => {
-                await window.api.knowledge.removeHighlight(id, tabId);
-                await load();
+                if (await confirmed(token => window.api.knowledge.removeHighlight(id, tabId, token))) {
+                    dismiss();
+                    await session.reread([page.id]);
+                }
             });
         });
     }

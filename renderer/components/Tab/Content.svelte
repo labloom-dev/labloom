@@ -11,8 +11,6 @@
         <About />
     {:else if tab.type === "settings"}
         <Settings />
-    {:else if tab.type === "reader-test"}
-        <ReaderTest />
     {:else if tab.type === "feed"}
         <FeedView />
     {:else}
@@ -28,7 +26,6 @@
     import PageView from "../Knowledge/PageView.svelte";
     import Library from "../Knowledge/Library.svelte";
     import Calendar from "../Knowledge/Calendar.svelte";
-    import ReaderTest from "../tabs/ReaderTest.svelte";
     import FeedView from "../Feed/FeedView.svelte";
     import type { Tab } from "./defs";
 

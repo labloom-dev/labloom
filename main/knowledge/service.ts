@@ -42,9 +42,9 @@ export class KnowledgeService extends KnowledgeRecords {
             if (previous?.type === "title" && block.type !== "title" || block.id === page.titleBlockId && block.type !== "title") throw new Error("页面标题必须保持标题块类型。");
             if (previous?.type === "source") throw new Error("来源片段为只读内容。");
             if (block.type === "source") {
-                // A shallow clipboard copy can point at an existing, immutable quotation.
+                // A shallow clipboard copy points at the anchor; its text is a refreshable cache.
                 const source = block.payload.source!;
-                if (previous || block.payload.inline.length || !this.statement("SELECT 1 FROM anchors WHERE id=? AND file_id=? AND quote=?").get(source.anchorId, source.fileId, source.quote))
+                if (previous || block.payload.inline.length || !this.statement("SELECT 1 FROM anchors WHERE id=?").get(source.anchorId))
                     throw new Error("来源片段为只读内容。");
             }
             plan.putBlock(block);
