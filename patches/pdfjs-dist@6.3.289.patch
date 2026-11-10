@@ -1,0 +1,384 @@
+diff --git a/build/pdf.worker.mjs b/build/pdf.worker.mjs
+index ab24e0df4fe5a9b2b98f0a270982eb9c23197d82..a7db17148f61fce6f360f7d8c15d6be44702698b 100644
+--- a/build/pdf.worker.mjs
++++ b/build/pdf.worker.mjs
+@@ -35803,6 +35803,8 @@ class PartialEvaluator {
+     const textContentItem = {
+       initialized: false,
+       str: [],
++      // Labloom extractor v1: PDF user-space character cells, in extraction order.
++      characters: [],
+       totalWidth: 0,
+       totalHeight: 0,
+       width: 0,
+@@ -35850,6 +35852,108 @@ class PartialEvaluator {
+     const emptyGStateCache = new LocalGStateCache();
+     const preprocessor = new EvaluatorPreprocessor(stream, xref, stateManager);
+     let textState, currentTextState;
++    // These cells use worker font outlines where available and font metrics as
++    // a fallback, never a DOM text span. Transform all four corners so a PDF's own text rotations, CTM,
++    // text rise and horizontal scaling remain in the original page coordinates.
++    const labloomBoundsCache = new WeakMap();
++    let labloomLastCell = null;
++    function labloomBounds(font, glyph) {
++      let cache = labloomBoundsCache.get(font);
++      if (!cache) labloomBoundsCache.set(font, cache = new Map());
++      if (cache.has(glyph.fontChar)) return cache.get(glyph.fontChar);
++      let bounds = null;
++      try {
++        // Use the same renderer and paths as pdf.js, including embedded CFF and
++        // TrueType fonts. compileGlyph does not consume getPath's transfer cache.
++        const renderer = font.renderer;
++        const { glyphId } = lookupCmap(renderer.cmap, glyph.fontChar);
++        const path = renderer.compileGlyph(renderer.glyphs[glyphId], glyphId);
++        const box = [Infinity, Infinity, -Infinity, -Infinity];
++        let x = 0, y = 0;
++        for (let i = 0; i < path.length;) {
++          const op = path[i++];
++          if (op === DrawOPS.moveTo || op === DrawOPS.lineTo) {
++            x = path[i++]; y = path[i++];
++            Util.pointBoundingBox(x, y, box);
++          } else if (op === DrawOPS.curveTo) {
++            const x1 = path[i++], y1 = path[i++], x2 = path[i++], y2 = path[i++], x3 = path[i++], y3 = path[i++];
++            Util.bezierBoundingBox(x, y, x1, y1, x2, y2, x3, y3, box);
++            x = x3; y = y3;
++          } else if (op === DrawOPS.quadraticCurveTo) {
++            const cx = path[i++], cy = path[i++], x2 = path[i++], y2 = path[i++];
++            Util.bezierBoundingBox(x, y, x + (cx - x) * 2 / 3, y + (cy - y) * 2 / 3, x2 + (cx - x2) * 2 / 3, y2 + (cy - y2) * 2 / 3, x2, y2, box);
++            x = x2; y = y2;
++          }
++        }
++        if (box.every(Number.isFinite) && box[2] > box[0] && box[3] > box[1]) bounds = box;
++      } catch {
++        // Type3, system-only and malformed fonts may not expose outline paths.
++      }
++      cache.set(glyph.fontChar, bounds);
++      return bounds;
++    }
++    function labloomCell(text, transform, advance, vertical = false, synthetic = false, bounds = null) {
++      const font = textState.font;
++      const ascent = Number.isFinite(font?.ascent) ? font.ascent : 0.8;
++      const descent = Number.isFinite(font?.descent) ? font.descent : -0.2;
++      const unit = vertical ? Math.hypot(transform[2], transform[3]) : Math.hypot(transform[0], transform[1]);
++      const length = unit ? advance / unit : 0;
++      const [x0, y0, x1, y1] = bounds || (vertical ? [-0.5, Math.min(0, length), 0.5, Math.max(0, length)] : [Math.min(0, length), descent, Math.max(0, length), ascent]);
++      const corners = [[x0, y0], [x1, y0], [x0, y1], [x1, y1]];
++      const points = corners.map(([x, y]) => [
++        transform[0] * x + transform[2] * y + transform[4],
++        transform[1] * x + transform[3] * y + transform[5]
++      ]);
++      const xs = points.map(point => point[0]);
++      const ys = points.map(point => point[1]);
++      const x = Math.min(...xs), y = Math.min(...ys);
++      return { text, rectangle: { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y }, baseline: vertical ? transform[4] : transform[5], vertical, synthetic };
++    }
++    function labloomCharacters(glyph, transform, advance, vertical = false) {
++      const unicode = glyph.unicode;
++      const text = disableNormalization ? unicode : normalizeUnicode(unicode);
++      let bounds = labloomBounds(textState.font, glyph);
++      if (bounds && vertical) {
++        const metric = glyph.vmetric || textState.font.defaultVMetrics;
++        if (metric) {
++          const vx = (glyph.vmetric ? metric[1] : glyph.width / 2) * textState.fontMatrix[0];
++          const vy = metric[2] * textState.fontMatrix[0];
++          bounds = [bounds[0] - vx, bounds[1] - vy, bounds[2] - vx, bounds[3] - vy];
++        }
++      }
++      const letters = Array.from(text);
++      const unit = vertical ? Math.hypot(transform[2], transform[3]) : Math.hypot(transform[0], transform[1]);
++      const dx = vertical ? transform[2] : transform[0];
++      const dy = vertical ? transform[3] : transform[1];
++      return letters.map((letter, index) => {
++        if (bounds) {
++          const [x0, y0, x1, y1] = bounds;
++          const part = vertical ? [x0, y0 + (y1 - y0) * index / letters.length, x1, y0 + (y1 - y0) * (index + 1) / letters.length] : [x0 + (x1 - x0) * index / letters.length, y0, x0 + (x1 - x0) * (index + 1) / letters.length, y1];
++          return labloomCell(letter, transform, advance / letters.length, vertical, false, part);
++        }
++        const shifted = transform.slice();
++        const offset = unit ? advance * index / letters.length / unit : 0;
++        shifted[4] += dx * offset;
++        shifted[5] += dy * offset;
++        return labloomCell(letter, shifted, advance / letters.length, vertical);
++      });
++    }
++    function labloomSpace(transform, width = 0, height = 0) {
++      const cell = labloomCell(" ", transform || getCurrentTextTransform(), height || width, !!height, true);
++      if (labloomLastCell && Math.abs(labloomLastCell.baseline - cell.baseline) < 0.25) {
++        const previous = labloomLastCell.rectangle;
++        if (cell.vertical) { cell.rectangle.x = previous.x; cell.rectangle.width = previous.width; }
++        else { cell.rectangle.y = previous.y; cell.rectangle.height = previous.height; }
++      }
++      return cell;
++    }
++    function labloomEOL(characters) {
++      const last = characters.at(-1) || labloomLastCell;
++      // Give the EOL the last glyph's cell: a line selected by rectangles then
++      // includes exactly the line ending that pdf.js detected for that glyph.
++      const marker = last ? { ...last, rectangle: { ...last.rectangle } } : labloomCell("", getCurrentTextTransform(), 0);
++      return { ...marker, text: "\n", synthetic: true, eol: true };
++    }
+     function pushWhitespace({
+       width = 0,
+       height = 0,
+@@ -35864,7 +35968,8 @@ class PartialEvaluator {
+         height,
+         transform,
+         fontName,
+-        hasEOL: false
++        hasEOL: false,
++        characters: [labloomSpace(transform, width, height)]
+       });
+     }
+     function getCurrentTextTransform() {
+@@ -35958,7 +36063,8 @@ class PartialEvaluator {
+         height: Math.abs(textChunk.totalHeight),
+         transform: textChunk.transform,
+         fontName: textChunk.fontName,
+-        hasEOL: textChunk.hasEOL
++        hasEOL: textChunk.hasEOL,
++        characters: textChunk.hasEOL ? [...textChunk.characters, labloomEOL(textChunk.characters)] : textChunk.characters.slice()
+       };
+     }
+     async function handleSetFont(fontName, fontRef) {
+@@ -36172,6 +36278,9 @@ class PartialEvaluator {
+         if (category.isZeroWidthDiacritic) {
+           scaledDim = 0;
+         }
++        const labloomTransform = getCurrentTextTransform();
++        const labloomAdvance = scaledDim * textChunk.textAdvanceScale * (font.vertical ? 1 : textState.textHScale);
++        const labloomGlyphs = labloomCharacters(glyph, labloomTransform, labloomAdvance, font.vertical);
+         if (!font.vertical) {
+           scaledDim *= textState.textHScale;
+           intersector?.addGlyph(getCurrentTextTransform(), scaledDim, 0, glyph.unicode);
+@@ -36190,10 +36299,13 @@ class PartialEvaluator {
+         const glyphUnicode = glyph.unicode;
+         if (saveLastChar(glyphUnicode)) {
+           textChunk.str.push(" ");
++          textChunk.characters.push(labloomSpace(labloomTransform));
+           intersector?.addExtraChar(" ");
+         }
+         if (!intersector) {
+           textChunk.str.push(glyphUnicode);
++          textChunk.characters.push(...labloomGlyphs);
++          labloomLastCell = labloomGlyphs.at(-1) || labloomLastCell;
+         }
+         if (charSpacing) {
+           if (!font.vertical) {
+@@ -36218,7 +36330,8 @@ class PartialEvaluator {
+           height: 0,
+           transform: getCurrentTextTransform(),
+           fontName: textState.loadedName,
+-          hasEOL: true
++          hasEOL: true,
++          characters: [labloomEOL([])]
+         });
+       }
+     }
+@@ -36227,6 +36340,7 @@ class PartialEvaluator {
+         if (textContentItem.initialized) {
+           resetLastChars();
+           textContentItem.str.push(" ");
++          textContentItem.characters.push(labloomSpace(transf, textContentItem.vertical ? 0 : Math.abs(width) * textContentItem.textAdvanceScale, textContentItem.vertical ? Math.abs(width) * textContentItem.textAdvanceScale : 0));
+           intersector?.addExtraChar(" ");
+         }
+         return false;
+@@ -36259,6 +36373,7 @@ class PartialEvaluator {
+       textContent.items.push(runBidiTransform(textContentItem));
+       textContentItem.initialized = false;
+       textContentItem.str.length = 0;
++      textContentItem.characters.length = 0;
+     }
+     function closePendingMarkedContentItems(level = 0) {
+       if (!includeMarkedContent || markedContentLevel <= level) {
+diff --git a/legacy/build/pdf.worker.mjs b/legacy/build/pdf.worker.mjs
+index c4b622a51f092f4765ffd9dbf2989c2662944f30..8aed3e5dc0344096cf4bc32de1681c40d9a40111 100644
+--- a/legacy/build/pdf.worker.mjs
++++ b/legacy/build/pdf.worker.mjs
+@@ -41861,6 +41861,8 @@ class PartialEvaluator {
+     const textContentItem = {
+       initialized: false,
+       str: [],
++      // Labloom extractor v1: PDF user-space character cells, in extraction order.
++      characters: [],
+       totalWidth: 0,
+       totalHeight: 0,
+       width: 0,
+@@ -41908,6 +41910,108 @@ class PartialEvaluator {
+     const emptyGStateCache = new LocalGStateCache();
+     const preprocessor = new EvaluatorPreprocessor(stream, xref, stateManager);
+     let textState, currentTextState;
++    // These cells use worker font outlines where available and font metrics as
++    // a fallback, never a DOM text span. Transform all four corners so a PDF's own text rotations, CTM,
++    // text rise and horizontal scaling remain in the original page coordinates.
++    const labloomBoundsCache = new WeakMap();
++    let labloomLastCell = null;
++    function labloomBounds(font, glyph) {
++      let cache = labloomBoundsCache.get(font);
++      if (!cache) labloomBoundsCache.set(font, cache = new Map());
++      if (cache.has(glyph.fontChar)) return cache.get(glyph.fontChar);
++      let bounds = null;
++      try {
++        // Use the same renderer and paths as pdf.js, including embedded CFF and
++        // TrueType fonts. compileGlyph does not consume getPath's transfer cache.
++        const renderer = font.renderer;
++        const { glyphId } = lookupCmap(renderer.cmap, glyph.fontChar);
++        const path = renderer.compileGlyph(renderer.glyphs[glyphId], glyphId);
++        const box = [Infinity, Infinity, -Infinity, -Infinity];
++        let x = 0, y = 0;
++        for (let i = 0; i < path.length;) {
++          const op = path[i++];
++          if (op === DrawOPS.moveTo || op === DrawOPS.lineTo) {
++            x = path[i++]; y = path[i++];
++            Util.pointBoundingBox(x, y, box);
++          } else if (op === DrawOPS.curveTo) {
++            const x1 = path[i++], y1 = path[i++], x2 = path[i++], y2 = path[i++], x3 = path[i++], y3 = path[i++];
++            Util.bezierBoundingBox(x, y, x1, y1, x2, y2, x3, y3, box);
++            x = x3; y = y3;
++          } else if (op === DrawOPS.quadraticCurveTo) {
++            const cx = path[i++], cy = path[i++], x2 = path[i++], y2 = path[i++];
++            Util.bezierBoundingBox(x, y, x + (cx - x) * 2 / 3, y + (cy - y) * 2 / 3, x2 + (cx - x2) * 2 / 3, y2 + (cy - y2) * 2 / 3, x2, y2, box);
++            x = x2; y = y2;
++          }
++        }
++        if (box.every(Number.isFinite) && box[2] > box[0] && box[3] > box[1]) bounds = box;
++      } catch {
++        // Type3, system-only and malformed fonts may not expose outline paths.
++      }
++      cache.set(glyph.fontChar, bounds);
++      return bounds;
++    }
++    function labloomCell(text, transform, advance, vertical = false, synthetic = false, bounds = null) {
++      const font = textState.font;
++      const ascent = Number.isFinite(font?.ascent) ? font.ascent : 0.8;
++      const descent = Number.isFinite(font?.descent) ? font.descent : -0.2;
++      const unit = vertical ? Math.hypot(transform[2], transform[3]) : Math.hypot(transform[0], transform[1]);
++      const length = unit ? advance / unit : 0;
++      const [x0, y0, x1, y1] = bounds || (vertical ? [-0.5, Math.min(0, length), 0.5, Math.max(0, length)] : [Math.min(0, length), descent, Math.max(0, length), ascent]);
++      const corners = [[x0, y0], [x1, y0], [x0, y1], [x1, y1]];
++      const points = corners.map(([x, y]) => [
++        transform[0] * x + transform[2] * y + transform[4],
++        transform[1] * x + transform[3] * y + transform[5]
++      ]);
++      const xs = points.map(point => point[0]);
++      const ys = points.map(point => point[1]);
++      const x = Math.min(...xs), y = Math.min(...ys);
++      return { text, rectangle: { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y }, baseline: vertical ? transform[4] : transform[5], vertical, synthetic };
++    }
++    function labloomCharacters(glyph, transform, advance, vertical = false) {
++      const unicode = glyph.unicode;
++      const text = disableNormalization ? unicode : normalizeUnicode(unicode);
++      let bounds = labloomBounds(textState.font, glyph);
++      if (bounds && vertical) {
++        const metric = glyph.vmetric || textState.font.defaultVMetrics;
++        if (metric) {
++          const vx = (glyph.vmetric ? metric[1] : glyph.width / 2) * textState.fontMatrix[0];
++          const vy = metric[2] * textState.fontMatrix[0];
++          bounds = [bounds[0] - vx, bounds[1] - vy, bounds[2] - vx, bounds[3] - vy];
++        }
++      }
++      const letters = Array.from(text);
++      const unit = vertical ? Math.hypot(transform[2], transform[3]) : Math.hypot(transform[0], transform[1]);
++      const dx = vertical ? transform[2] : transform[0];
++      const dy = vertical ? transform[3] : transform[1];
++      return letters.map((letter, index) => {
++        if (bounds) {
++          const [x0, y0, x1, y1] = bounds;
++          const part = vertical ? [x0, y0 + (y1 - y0) * index / letters.length, x1, y0 + (y1 - y0) * (index + 1) / letters.length] : [x0 + (x1 - x0) * index / letters.length, y0, x0 + (x1 - x0) * (index + 1) / letters.length, y1];
++          return labloomCell(letter, transform, advance / letters.length, vertical, false, part);
++        }
++        const shifted = transform.slice();
++        const offset = unit ? advance * index / letters.length / unit : 0;
++        shifted[4] += dx * offset;
++        shifted[5] += dy * offset;
++        return labloomCell(letter, shifted, advance / letters.length, vertical);
++      });
++    }
++    function labloomSpace(transform, width = 0, height = 0) {
++      const cell = labloomCell(" ", transform || getCurrentTextTransform(), height || width, !!height, true);
++      if (labloomLastCell && Math.abs(labloomLastCell.baseline - cell.baseline) < 0.25) {
++        const previous = labloomLastCell.rectangle;
++        if (cell.vertical) { cell.rectangle.x = previous.x; cell.rectangle.width = previous.width; }
++        else { cell.rectangle.y = previous.y; cell.rectangle.height = previous.height; }
++      }
++      return cell;
++    }
++    function labloomEOL(characters) {
++      const last = characters.at(-1) || labloomLastCell;
++      // Give the EOL the last glyph's cell: a line selected by rectangles then
++      // includes exactly the line ending that pdf.js detected for that glyph.
++      const marker = last ? { ...last, rectangle: { ...last.rectangle } } : labloomCell("", getCurrentTextTransform(), 0);
++      return { ...marker, text: "\n", synthetic: true, eol: true };
++    }
+     function pushWhitespace({
+       width = 0,
+       height = 0,
+@@ -41922,7 +42026,8 @@ class PartialEvaluator {
+         height,
+         transform,
+         fontName,
+-        hasEOL: false
++        hasEOL: false,
++        characters: [labloomSpace(transform, width, height)]
+       });
+     }
+     function getCurrentTextTransform() {
+@@ -42016,7 +42121,8 @@ class PartialEvaluator {
+         height: Math.abs(textChunk.totalHeight),
+         transform: textChunk.transform,
+         fontName: textChunk.fontName,
+-        hasEOL: textChunk.hasEOL
++        hasEOL: textChunk.hasEOL,
++        characters: textChunk.hasEOL ? [...textChunk.characters, labloomEOL(textChunk.characters)] : textChunk.characters.slice()
+       };
+     }
+     async function handleSetFont(fontName, fontRef) {
+@@ -42230,6 +42336,9 @@ class PartialEvaluator {
+         if (category.isZeroWidthDiacritic) {
+           scaledDim = 0;
+         }
++        const labloomTransform = getCurrentTextTransform();
++        const labloomAdvance = scaledDim * textChunk.textAdvanceScale * (font.vertical ? 1 : textState.textHScale);
++        const labloomGlyphs = labloomCharacters(glyph, labloomTransform, labloomAdvance, font.vertical);
+         if (!font.vertical) {
+           scaledDim *= textState.textHScale;
+           intersector?.addGlyph(getCurrentTextTransform(), scaledDim, 0, glyph.unicode);
+@@ -42248,10 +42357,13 @@ class PartialEvaluator {
+         const glyphUnicode = glyph.unicode;
+         if (saveLastChar(glyphUnicode)) {
+           textChunk.str.push(" ");
++          textChunk.characters.push(labloomSpace(labloomTransform));
+           intersector?.addExtraChar(" ");
+         }
+         if (!intersector) {
+           textChunk.str.push(glyphUnicode);
++          textChunk.characters.push(...labloomGlyphs);
++          labloomLastCell = labloomGlyphs.at(-1) || labloomLastCell;
+         }
+         if (charSpacing) {
+           if (!font.vertical) {
+@@ -42276,7 +42388,8 @@ class PartialEvaluator {
+           height: 0,
+           transform: getCurrentTextTransform(),
+           fontName: textState.loadedName,
+-          hasEOL: true
++          hasEOL: true,
++          characters: [labloomEOL([])]
+         });
+       }
+     }
+@@ -42285,6 +42398,7 @@ class PartialEvaluator {
+         if (textContentItem.initialized) {
+           resetLastChars();
+           textContentItem.str.push(" ");
++          textContentItem.characters.push(labloomSpace(transf, textContentItem.vertical ? 0 : Math.abs(width) * textContentItem.textAdvanceScale, textContentItem.vertical ? Math.abs(width) * textContentItem.textAdvanceScale : 0));
+           intersector?.addExtraChar(" ");
+         }
+         return false;
+@@ -42317,6 +42431,7 @@ class PartialEvaluator {
+       textContent.items.push(runBidiTransform(textContentItem));
+       textContentItem.initialized = false;
+       textContentItem.str.length = 0;
++      textContentItem.characters.length = 0;
+     }
+     function closePendingMarkedContentItems(level = 0) {
+       if (!includeMarkedContent || markedContentLevel <= level) {

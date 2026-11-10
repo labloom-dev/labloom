@@ -152,7 +152,8 @@ export const anchors = sqliteTable("anchors", {
     pageNumber: integer("page_number").notNull(),
     rectangles: text("rectangles", { mode: "json" }).$type<import("../../shared/types/papers").Rectangle[]>().notNull(),
     quote: text("quote").notNull(),
-    context: text("context").notNull()
+    context: text("context").notNull(),
+    extractorVersion: text("extractor_version").notNull()
 }, table => [index("anchors_file_page").on(table.fileId, table.pageNumber)]);
 export const highlights = sqliteTable("highlights", {
     id: text("id").primaryKey().notNull(),

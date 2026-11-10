@@ -12,7 +12,7 @@ import {
 } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { EventBus, FindState, PDFFindController, PDFLinkService, PDFViewer } from "pdfjs-dist/legacy/web/pdf_viewer.mjs";
 import viewerCss from "pdfjs-dist/legacy/web/pdf_viewer.css?inline";
-import workerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
+import workerUrl from "pdfjs-dist/legacy/build/pdf.worker.mjs?url";
 import { scalePresets, type ReaderError, type ReaderRotation, type ReaderScalePreset, type ReaderViewState } from "./defs";
 
 export { FindState, PasswordResponses, type PDFDocumentProxy };
@@ -33,6 +33,10 @@ export function loadDocument(data: Uint8Array): PDFDocumentLoadingTask {
         standardFontDataUrl: resourceUrl("standard_fonts"),
         wasmUrl: resourceUrl("wasm"),
         iccUrl: resourceUrl("iccs"),
+        // Character cells and painted glyphs must use the same available outline.
+        // Browser system-font substitution has no worker outline and differs
+        // from Node extraction, so use pdf.js' bundled standard fonts instead.
+        useSystemFonts: false,
         enableXfa: false
     });
 }

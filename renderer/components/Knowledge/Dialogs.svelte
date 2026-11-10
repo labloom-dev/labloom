@@ -1,8 +1,10 @@
 {#if knowledgeState.error}
     <div class="notice error toast">{knowledgeState.error}<button onclick={() => knowledgeState.error = ""}>关闭</button></div>
+{:else if knowledgeState.notice}
+    <div class="notice toast" role="status">{knowledgeState.notice}<button onclick={() => notify("")}>关闭</button></div>
 {/if}
 {#if confirmation.resolve}
-    <div class="shade">
+    <div class="shade" popover="manual" {@attach element => element.showPopover()} role="dialog" aria-modal="true" aria-label={confirmation.heading}>
         <section class="paper-card confirmation">
             <h2>{confirmation.heading}</h2>
             <p>{confirmation.text}</p>
@@ -21,7 +23,7 @@
     </div>
 {/if}
 <style>
-    .shade { position: fixed; inset: 36px 0 0; z-index: 900; display: grid; place-items: center; padding: 24px; background: #0006; }
+    .shade { position: fixed; inset: 36px 0 0; width: auto; height: auto; margin: 0; border: 0; color: var(--c-ink); z-index: 900; display: grid; place-items: center; padding: 24px; background: #0006; }
     .confirmation { width: min(520px, 100%); max-height: 80vh; padding: 24px; overflow: auto; }
     h2 { margin: 0 0 16px; font-size: 19px; }
     p, li { font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
@@ -32,4 +34,5 @@
 </style>
 <script lang="ts">
     import { answer, confirmation, knowledgeState } from "./state.svelte";
+    import { notify } from "./feedback.svelte";
 </script>

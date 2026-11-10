@@ -1,6 +1,6 @@
 import { type AttributeDefinition, type AttributeImpact, type AttributeValue } from "./attributes";
 import { type Backlink, type CommitResult, type BlockDeletion, type ChangePreview, type EditCommit, type KnowledgeChange, type Placement, type ResolvedTarget, type PageKind, type PageList, type PageQuery, type PageRecord, type PageObjects, type Target } from "./content";
-import { type AnchorInput, type PaperImport, type PaperResources, type ReadingPosition } from "./papers";
+import { type Anchor, type AnchorInput, type PaperImport, type PaperResources, type ReadingPosition } from "./papers";
 
 export type HistoryState = { canUndo: boolean; redo: { id: string; time: number }[] };
 export type Notice = { id: string; pageId: string; title: string; createdAt: number; isRead: boolean };
@@ -28,10 +28,13 @@ export type KnowledgeAPI = {
     importPDF(pageId?: string, tabId?: string): Promise<PaperImport | null>;
     resources(pageId: string): Promise<PaperResources>;
     readFile(fileId: string): Promise<Uint8Array>;
+    getAnchor(id: string): Promise<Anchor>;
+    unlockPDF(fileId: string, password: string): Promise<void>;
+    changeHighlight(id: string, color: string, tabId?: string): Promise<void>;
     position(pageId: string, fileId: string, value: ReadingPosition, tabId?: string): Promise<void>;
     highlight(pageId: string, anchor: AnchorInput, color: string, tabId?: string): Promise<void>;
-    removeHighlight(id: string, tabId?: string): Promise<void>;
-    annotate(pageId: string, anchor: AnchorInput, tabId?: string): Promise<string>;
+    removeHighlight(id: string, tabId: string, confirmation?: string): Promise<CommitResult>;
+    annotate(pageId: string, anchor: AnchorInput | string, tabId?: string, color?: string): Promise<string>;
     notices(): Promise<Notice[]>;
     readNotice(id: string, tabId: string): Promise<void>;
     onChanged(listener: (change: KnowledgeChange) => void): () => void;

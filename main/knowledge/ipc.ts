@@ -111,21 +111,25 @@ export function registerKnowledgeIPCs(window: BrowserWindow, startup: Startup): 
     });
     ipc(channels.resources, id => get().papers.resources(string(id)));
     ipc(channels.readFile, id => get().papers.read(string(id)));
+    ipc(channels.getAnchor, id => get().papers.getAnchor(string(id)));
+    ipc(channels.unlockPDF, (file, password) => get().papers.unlockPDF(string(file), string(password)));
+    ipc(channels.changeHighlight, (id, color, source) => {
+        const { papers } = get(), mark = string(id), owners = papers.highlightOwners(mark);
+        papers.changeHighlight(mark, string(color));
+        notice(optional(source) ?? "", owners);
+    });
     ipc(channels.position, (id, file, value, source) => {
         get().papers.position(string(id), string(file), value as ReadingPosition);
         notice(optional(source) ?? "", [string(id)]);
     });
-    ipc(channels.highlight, (id, anchor, color, source) => {
-        get().papers.mark(string(id), anchor as AnchorInput, string(color));
+    ipc(channels.highlight, async (id, anchor, color, source) => {
+        await get().papers.mark(string(id), anchor as AnchorInput, string(color));
         notice(optional(source) ?? "", [string(id)]);
     });
-    ipc(channels.removeHighlight, (id, source) => {
-        const owners = get().papers.removeHighlight(string(id));
-        notice(optional(source) ?? "", owners);
-    });
-    ipc(channels.annotate, (id, anchor, source) => {
+    ipc(channels.removeHighlight, (id, source, confirmation) => get().papers.removeHighlight(string(id), tab(source), optional(confirmation)));
+    ipc(channels.annotate, async (id, anchor, source, color) => {
         const { papers, knowledge } = get();
-        const annotation = papers.annotate(string(id), anchor as AnchorInput);
+        const annotation = await papers.annotate(string(id), anchor as AnchorInput | string, optional(color));
         const reference = knowledge.incoming({ kind: "page", id: annotation }).filter(row => row.sourceKind === "block").map(row => row.sourceId);
         notice(optional(source) ?? "", [string(id), annotation], [...reference, ...Object.keys(knowledge.get(annotation).blocks)]);
         return annotation;

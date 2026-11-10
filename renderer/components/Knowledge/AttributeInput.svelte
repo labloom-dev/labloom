@@ -3,7 +3,7 @@
         {#if definition.type === "page-link" && typeof value === "string"}
             <button class="text-button" onclick={() => openPage(value as string)}>打开关联页面</button>
         {:else}
-            <span class="readonly">{display(value)}</span>
+            <span class="readonly">{value === null ? "未填写" : display(definition, value, { zone })}</span>
         {/if}
     {:else if definition.type === "boolean"}
         <select value={value === null ? "" : String(value)} onchange={event => onchange(event.currentTarget.value === "" ? null : event.currentTarget.value === "true")}>
@@ -74,6 +74,7 @@
 <script lang="ts">
     import { type AttributeDefinition, type AttributeValue } from "../../../shared/types/attributes";
     import { wallToSeconds, secondsToWall } from "../../../shared/content/time";
+    import { display } from "../../../shared/attrs/format";
     import { openPage } from "../layout/navigation";
     import { message } from "./state.svelte";
     import TargetPicker from "./TargetPicker.svelte";
@@ -87,9 +88,5 @@
         catch (problem) {
             error = message(problem);
         }
-    }
-    function display(value: AttributeValue): string {
-        if (definition.type === "datetime" && typeof value === "number") return new Date(value * 1000).toISOString();
-        return value === null ? "未填写" : typeof value === "object" ? JSON.stringify(value) : String(value);
     }
 </script>

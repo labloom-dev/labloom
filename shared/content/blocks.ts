@@ -15,7 +15,7 @@ export function blockText(block: ContentBlock): string {
         if (typeof value.text === "string") return value.text;
         return Array.isArray(value.content) ? value.content.map(walk).join(" ") : "";
     };
-    return block.payload.inline.map(node => node.type === "text" ? node.text : node.type === "inlineReference" ? node.attrs.label : "\n").join("") + (block.payload.table ? walk(block.payload.table) : "") + (block.payload.source?.quote ?? "");
+    return block.payload.inline.map(node => node.type === "text" ? node.text : node.type === "inlineReference" ? node.attrs.label : "\n").join("") + (block.payload.table ? walk(block.payload.table) : "");
 }
 
 export function payload(type: ContentBlock["type"], text = ""): BlockPayload {
@@ -44,7 +44,7 @@ export function validateBlock(value: unknown): asserts value is ContentBlock {
     if (["title", "heading_1", "heading_2", "heading_3", "code", "table", "hr", "blocked_reference", "source"].includes(String(value.type)) && value.children.length) throw new Error("此类型的块不能包含子块。");
     if (value.type === "blocked_reference" && body.target !== null && !validTarget(body.target)) throw new Error("引用块必须指定页面或块目标。");
     if (value.type !== "blocked_reference" && body.target !== undefined) throw new Error("只有引用块可以保存块级引用目标。");
-    if (value.type === "source" && (!record(body.source) || !validUUID(body.source.fileId) || !validUUID(body.source.anchorId) || typeof body.source.quote !== "string")) throw new Error("来源片段缺少固定附件和锚点。");
+    if (value.type === "source" && (!record(body.source) || !validUUID(body.source.anchorId) || Object.keys(body.source).some(key => key !== "anchorId"))) throw new Error("来源片段缺少固定附件和锚点。");
     if (value.type === "table") {
         const visit = (node: unknown, parent: string): boolean => {
             if (!record(node) || typeof node.type !== "string") return false;

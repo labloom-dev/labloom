@@ -10,9 +10,13 @@ export async function restoreTabs(): Promise<void> {
         if (!record(group) || typeof group.id !== "string" || groupIds.includes(group.id) || !Array.isArray(group.tabs)) return;
         groupIds.push(group.id);
         for (const tab of group.tabs) {
-            if (!record(tab) || typeof tab.id !== "string" || tabIds.includes(tab.id) || typeof tab.title !== "string" || !["page", "overview", "library", "papers", "calendar", "feed", "settings", "about", "reader-test"].includes(String(tab.type)) || (tab.type === "page" && typeof tab.pageId !== "string")) return;
+            if (record(tab) && tab.type === "reader-test") continue;
+            if (!record(tab) || typeof tab.id !== "string" || tabIds.includes(tab.id) || typeof tab.title !== "string" || !["page", "overview", "library", "papers", "calendar", "feed", "settings", "about"].includes(String(tab.type)) || (tab.type === "page" && typeof tab.pageId !== "string")) return;
             tabIds.push(tab.id);
         }
+        const removedActive = group.tabs.some(tab => record(tab) && tab.type === "reader-test" && tab.id === group.activeTabId);
+        group.tabs = group.tabs.filter(tab => !record(tab) || tab.type !== "reader-test");
+        if (removedActive) group.activeTabId = group.tabs[0]?.id ?? null;
         if (group.activeTabId !== null && !group.tabs.some(tab => tab.id === group.activeTabId)) return;
     }
     const leaves: string[] = [];

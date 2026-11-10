@@ -16,7 +16,7 @@ export type BlockPayload = {
     collapsed?: boolean;
     target?: Target | null;
     table?: RichNode;
-    source?: { fileId: string; anchorId: string; quote: string };
+    source?: { anchorId: string };
 };
 export type ContentBlock = { id: string; type: ContentBlockKind; payload: BlockPayload; children: string[] };
 export type PageSummary = {

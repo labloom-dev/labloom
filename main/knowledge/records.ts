@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import { search } from "../../shared/attrs/format";
 import { decodeValue, encodeValue, record, validUUID } from "../../shared/attrs/values";
 import { blockText, payload, validateBlock } from "../../shared/content/blocks";
+import { PDF_EXTRACTOR_VERSION } from "../../shared/content/pdf-text";
 import { pageKinds, type ContentBlock, type PageKind, type PageList, type PageQuery, type PageRecord, type PageObjects, type PageSummary, type Target } from "../../shared/types/content";
 import { type AttributeDefinition, type AttributeValue } from "../../shared/types/attributes";
 import { type WorkspaceDatabase } from "../storage/database";
@@ -176,10 +177,17 @@ export class KnowledgeRecords {
             blocks: visible, sharedUses: this.sharedUses([...seen]), attributes: this.valuesFor([id]).get(id) ?? {} };
     }
 
+    private contentText(block: ContentBlock): string {
+        if (block.type === "source" && block.payload.source) {
+            return this.statement("SELECT quote FROM anchors WHERE id=? AND extractor_version=?").pluck().get(block.payload.source.anchorId, PDF_EXTRACTOR_VERSION) as string ?? "";
+        }
+        return blockText(block);
+    }
+
     private excerpt(ids: string[], blocks: Record<string, ContentBlock>): string {
         let text = "";
         for (const id of ids) {
-            if (blocks[id]) text += (text ? " " : "") + blockText(blocks[id]);
+            if (blocks[id]) text += (text ? " " : "") + this.contentText(blocks[id]);
             if (text.length >= 240) break;
         }
         return text.slice(0, 240);
@@ -215,7 +223,8 @@ export class KnowledgeRecords {
         let cte = "";
         if (keyword) {
             cte = `WITH RECURSIVE hits(kind,id) AS (
-                SELECT 'block', id FROM blocks WHERE instr(knowledge_lower(knowledge_text(type,content)), ?) > 0
+                SELECT 'block', b.id FROM blocks b LEFT JOIN anchors a ON b.type='source' AND a.extractor_version='${PDF_EXTRACTOR_VERSION}' AND a.id=CASE WHEN json_valid(b.content) THEN json_extract(b.content,'$.source.anchorId') END
+                WHERE instr(knowledge_lower(CASE WHEN b.type='source' THEN coalesce(a.quote,'') ELSE knowledge_text(b.type,b.content) END), ?) > 0
                 UNION SELECT u.container_kind, u.container_id FROM hits h JOIN block_uses u ON u.block_id=h.id WHERE h.kind='block'
             ), matches(id) AS (
                 SELECT id FROM hits WHERE kind='page'
