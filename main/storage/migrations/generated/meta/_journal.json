@@ -1,0 +1,39 @@
+{
+    "version": 1,
+    "dialect": "sqlite",
+    "baseVersion": 4,
+    "entries": [
+        {
+            "version": 5,
+            "tag": "0005_drizzle_baseline"
+        },
+        {
+            "version": 6,
+            "tag": "0006_generic_attributes"
+        },
+        {
+            "version": 7,
+            "tag": "0007_block_editing"
+        },
+        {
+            "version": 8,
+            "tag": "0008_paper_resources"
+        },
+        {
+            "version": 9,
+            "tag": "0009_reminder_delivery"
+        },
+        {
+            "version": 10,
+            "tag": "0010_incremental_edits"
+        },
+        {
+            "version": 11,
+            "tag": "0011_backfill_undo_objects"
+        },
+        {
+            "version": 12,
+            "tag": "0012_unix_timestamps"
+        }
+    ]
+}

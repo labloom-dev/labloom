@@ -1,15 +1,10 @@
-import { v4 } from "uuid";
+import { getGroupID } from "./ids";
 import type { GroupID, LayoutNode, Tab, TabGroup, TabID } from "./defs";
 import type { XYDirection } from "../types";
-import { tabState } from "./state.svelte";
+import { tabState, visitedTabs } from "./state.svelte";
+import { tabLifecycle } from "./lifecycle";
 
-export function isTabID(id: string): id is TabID {
-    return id.startsWith("tab-");
-}
-
-export function getTabID(): TabID {
-    return `tab-${v4()}` as TabID;
-}
+export { getTabID } from "./ids";
 
 function findGroup(id: GroupID): TabGroup | undefined {
     return tabState.groups.find(group => group.id === id);
@@ -46,6 +41,17 @@ export function updateTab(tab: Tab): boolean {
 export function removeTab(id: TabID): boolean {
     const group = findTabGroup(id);
     if (!group) return false;
+    if (tabLifecycle.close) {
+        void tabLifecycle.close(id).then(saved => {
+            const current = findTabGroup(id);
+            if (saved && current) {
+                visitedTabs.delete(id);
+                detachTab(current, current.tabs.findIndex(tab => tab.id === id));
+            }
+        });
+        return true;
+    }
+    visitedTabs.delete(id);
     detachTab(group, group.tabs.findIndex(tab => tab.id === id));
     return true;
 }
@@ -95,7 +101,7 @@ function splitLeaf(node: LayoutNode, groupId: GroupID, newId: GroupID, direction
 
 export function splitGroup(groupId: GroupID, direction: XYDirection): GroupID | null {
     if (!findGroup(groupId) || (direction !== "horizontal" && direction !== "vertical")) return null;
-    const id = `group-${v4()}` as GroupID;
+    const id = getGroupID();
     tabState.groups.push({ id, tabs: [], activeTabId: null });
     tabState.layout = splitLeaf(tabState.layout, groupId, id, direction);
     tabState.focusedGroupId = id;

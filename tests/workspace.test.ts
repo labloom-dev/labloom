@@ -17,12 +17,13 @@ if (!testRoot) throw new Error("Run these tests with node tests/run-workspace.mj
 
 const applicationId = 0x4c424c4d;
 const oldTimestamp = "2001-02-03T04:05:06.789Z";
+const oldMs = Date.parse(oldTimestamp);
 
 type WorkspaceMeta = {
     id: string;
     name: string;
-    created_at: string;
-    last_modified_at: string;
+    created_at: number;
+    last_modified_at: number;
     settings: string;
 };
 
@@ -107,25 +108,37 @@ function snapshot<T>(path: string, action: (database: Database.Database) => T): 
     }
 }
 
-test("new workspaces contain the six strict tables and reopen without changing timestamps", t => {
+test("new workspaces contain the core and feed tables and reopen without changing timestamps", t => {
     const workspace = fresh(t);
     const { database, info } = workspace;
     assert.equal(database.pragma("application_id", { simple: true }), applicationId);
     assert.equal(database.pragma("user_version", { simple: true }), workspaceFormatVersion);
     assert.equal(database.pragma("foreign_keys", { simple: true }), 1);
     assert.deepEqual(database.prepare("SELECT name, strict FROM pragma_table_list WHERE name NOT LIKE 'sqlite_%' ORDER BY name").all(), [
+        { name: "anchors", strict: 0 },
+        { name: "attachments", strict: 0 },
         { name: "attrs", strict: 1 },
         { name: "block_uses", strict: 1 },
         { name: "blocks", strict: 1 },
+        { name: "edit_tabs", strict: 0 },
+        { name: "feed_items", strict: 0 },
+        { name: "feed_sources", strict: 0 },
+        { name: "highlights", strict: 0 },
+        { name: "link_index", strict: 0 },
+        { name: "notifications", strict: 0 },
+        { name: "page_attachments", strict: 0 },
         { name: "page_attrs", strict: 1 },
         { name: "pages", strict: 1 },
+        { name: "reminder_schedules", strict: 0 },
+        { name: "undo_nodes", strict: 0 },
+        { name: "undo_objects", strict: 0 },
         { name: "workspace_meta", strict: 1 }
     ]);
     const before = meta(database);
     assert.equal(before.id, info.id);
     assert.equal(before.name, info.name);
     assert.equal(before.created_at, before.last_modified_at);
-    assert.equal(new Date(before.created_at).toISOString(), before.created_at);
+    assert.ok(Number.isSafeInteger(before.created_at));
     assert.equal(before.settings, "{}");
     assert.ok(existsSync(join(info.path, "attachments")));
     database.close();
@@ -142,8 +155,8 @@ test("version 1 migrates without changing workspace identity, creation time, or 
     assert.deepEqual(meta(database), {
         id,
         name: "Existing workspace",
-        created_at: oldTimestamp,
-        last_modified_at: oldTimestamp,
+        created_at: oldMs,
+        last_modified_at: oldMs,
         settings: "{}"
     });
     assert.equal(readFileSync(join(root, "attachments", "preserved.txt"), "utf8"), "keep this attachment");
@@ -315,19 +328,19 @@ test("rollback restores source data, derived uses, and last_modified_at together
     const { database } = fresh(t);
     const shared = block(database);
     const created = page(database, [shared]);
-    database.prepare("UPDATE workspace_meta SET last_modified_at = ?").run(oldTimestamp);
+    database.prepare("UPDATE workspace_meta SET last_modified_at = ?").run(oldMs);
     const before = uses(database);
     const rollback = database.transaction(() => {
         database.prepare("UPDATE pages SET children = '[]' WHERE id = ?").run(created.id);
         database.prepare("UPDATE blocks SET content = 'changed' WHERE id = ?").run(shared);
-        assert.notEqual(meta(database).last_modified_at, oldTimestamp);
+        assert.notEqual(meta(database).last_modified_at, oldMs);
         throw new Error("abort this edit");
     });
     assert.throws(rollback, /abort this edit/);
     assert.deepEqual(uses(database), before);
     assert.deepEqual(database.prepare("SELECT children FROM pages WHERE id = ?").get(created.id), { children: JSON.stringify([shared]) });
     assert.deepEqual(database.prepare("SELECT content FROM blocks WHERE id = ?").get(shared), { content: null });
-    assert.equal(meta(database).last_modified_at, oldTimestamp);
+    assert.equal(meta(database).last_modified_at, oldMs);
 });
 
 test("the reverse index can be rebuilt without modifying business data or timestamps", t => {
@@ -384,19 +397,19 @@ test("business edits update last_modified_at while reads and unchanged updates d
         }
     ];
     for (const edit of edits) {
-        database.prepare("UPDATE workspace_meta SET last_modified_at = ?").run(oldTimestamp);
+        database.prepare("UPDATE workspace_meta SET last_modified_at = ?").run(oldMs);
         edit();
         const current = meta(database);
-        assert.notEqual(current.last_modified_at, oldTimestamp);
-        assert.equal(new Date(current.last_modified_at).toISOString(), current.last_modified_at);
+        assert.notEqual(current.last_modified_at, oldMs);
+        assert.ok(Number.isSafeInteger(current.last_modified_at));
         assert.equal(current.created_at, createdAt);
     }
 
     const remaining = page(database);
     database.exec("INSERT INTO attrs (id, type) VALUES ('custom:unchanged', 'number')");
     database.prepare("INSERT INTO page_attrs VALUES (?, 'custom:unchanged', NULL)").run(remaining.id);
-    database.prepare("UPDATE workspace_meta SET last_modified_at = ?").run(oldTimestamp);
+    database.prepare("UPDATE workspace_meta SET last_modified_at = ?").run(oldMs);
     database.exec("UPDATE pages SET children = children; UPDATE blocks SET content = content; UPDATE attrs SET metadata = metadata; UPDATE page_attrs SET value = value; UPDATE workspace_meta SET name = name, settings = settings;");
     database.prepare("SELECT * FROM pages").all();
-    assert.equal(meta(database).last_modified_at, oldTimestamp);
+    assert.equal(meta(database).last_modified_at, oldMs);
 });

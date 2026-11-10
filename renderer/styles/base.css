@@ -1,15 +1,27 @@
+@font-face {
+    font-family: "Nunito";
+    src: url("../assets/fonts/nunito.ttf") format("truetype");
+    font-style: normal;
+    font-weight: 200 900;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "JetBrains Mono";
+    src: url("../assets/fonts/jetbrains-mono.ttf") format("truetype");
+    font-style: normal;
+    font-weight: 100 800;
+    font-display: swap;
+}
+
 *, *::before, *::after {
     box-sizing: border-box;
     text-rendering: optimizeLegibility;
-    outline: none;
-    scroll-behavior: smooth;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    font-smooth: always;
     line-height: normal;
     scrollbar-gutter: auto;
     scrollbar-width: thin;
-    line-height: normal;
 }
 
 ::selection {
@@ -24,7 +36,10 @@ body {
     margin: 0;
     height: 100vh;
     width: 100vw;
-    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", Helvetica, "Apple Color Emoji", "Noto Sans Arabic", "Noto Sans Hebrew", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol";
+    color: var(--c-ink);
+    background: var(--c-cream);
+    font-size: 14px;
+    font-family: "Nunito", "PingFang SC", "Microsoft YaHei", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", Helvetica, "Apple Color Emoji", "Noto Sans Arabic", "Noto Sans Hebrew", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol";
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -53,11 +68,65 @@ body {
 
 *[contenteditable]:not([contenteditable="false"]) {
     -webkit-user-modify: read-write-plaintext-only;
+}
 
-    & * {
-        white-space: pre-wrap;
-        word-wrap: normal;
-        word-break: break-word;
-        overflow-wrap: break-word;
+/* Synchronizing a page changes editability, but its text keeps the same line breaks. */
+.tiptap.ProseMirror *, [contenteditable]:not(.ProseMirror):not([contenteditable="false"]) * {
+    white-space: pre-wrap;
+    word-wrap: normal;
+    word-break: break-word;
+    overflow-wrap: break-word;
+}
+
+/* Parked tab panels keep their layout. Their controls stay outside keyboard navigation. */
+.group-content [data-tabs-content][hidden] :is(button, input, textarea, select, a, summary, [tabindex]:not(.ProseMirror)) {
+    interactivity: inert;
+}
+
+button, input, textarea, select {
+    color: inherit;
+    font: inherit;
+}
+
+button, a, input, select, textarea, summary {
+    touch-action: manipulation;
+}
+
+:focus-visible {
+    outline: 3px solid var(--c-border-focus);
+    outline-offset: 3px;
+}
+
+input, textarea, [contenteditable="true"] {
+    user-select: text;
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: .45;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation: none !important;
+        transition: none !important;
+        scroll-behavior: auto !important;
     }
+    button:hover, button:active {
+        transform: none !important;
+    }
+}
+
+.tiptap.ProseMirror {
+    font-size: var(--reading-font-size, 16px);
+}
+
+:root[data-motion="off"] *, :root[data-motion="off"] *::before, :root[data-motion="off"] *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+}
+
+:root[data-motion="off"] button:hover, :root[data-motion="off"] button:active {
+    transform: none !important;
 }

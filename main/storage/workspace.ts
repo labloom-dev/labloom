@@ -6,12 +6,15 @@ import type { Workspace } from "../../shared/types/startup";
 import { createWorkspaceSchema, workspaceFormatVersion } from "./schema";
 import { upgradeWorkspace } from "./upgrade";
 import { validateBuiltinAttrs } from "./builtin-attrs";
+import { createWorkspaceDatabase, type WorkspaceDatabase } from "./database";
+import { workspaceMeta } from "./tables";
 
 const applicationId = 0x4c424c4d;
 
 export type OpenWorkspace = {
     info: Workspace;
     database: Database.Database;
+    db: WorkspaceDatabase;
 };
 
 function directoryPath(path: string): string {
@@ -34,19 +37,25 @@ export function createWorkspace(path: string): OpenWorkspace {
     let createdAttachments = false;
     try {
         database = new Database(databasePath, { fileMustExist: true });
-        database.pragma("foreign_keys = ON");
+        // The complete history can rebuild tables. Validate references before
+        // committing, then enable FK enforcement for normal workspace writes.
+        database.pragma("foreign_keys = OFF");
+        const db = createWorkspaceDatabase(database);
         mkdirSync(attachmentsPath);
         createdAttachments = true;
         const info = { id: randomUUID(), name: basename(root), path: root };
         database.transaction(() => {
             database!.pragma(`application_id = ${applicationId}`);
             createWorkspaceSchema(database!);
-            validateBuiltinAttrs(database!);
-            const now = new Date().toISOString();
-            database!.prepare("INSERT INTO workspace_meta (id, name, created_at, last_modified_at) VALUES (?, ?, ?, ?)")
-                .run(info.id, info.name, now, now);
+            validateBuiltinAttrs(db);
+            const now = Date.now();
+            db.insert(workspaceMeta).values({ id: info.id, name: info.name, createdAt: now, lastModifiedAt: now }).run();
+            if ((database!.pragma("foreign_key_check") as unknown[]).length) {
+                throw new Error("The new workspace failed its foreign key check.");
+            }
         })();
-        return { info, database };
+        database.pragma("foreign_keys = ON");
+        return { info, database, db };
     }
     catch (error) {
         database?.close();
@@ -68,7 +77,11 @@ export function openWorkspace(path: string, expectedId?: string): OpenWorkspace 
         if (!Number.isInteger(version) || version < 1 || version > workspaceFormatVersion) {
             throw new Error("This workspace format is incompatible with this version of Labloom. Open it with a compatible version.");
         }
-        const rows = database.prepare<[], { id: unknown; name: unknown; }>("SELECT id, name FROM workspace_meta").all();
+        if (database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'page_details'").get()) {
+            throw new Error("此工作区来自旧 knowledge-garden 原型，其版本号与通用属性模型不兼容。请使用原版本读取并迁移数据；本次未修改工作区。");
+        }
+        const db = createWorkspaceDatabase(database);
+        const rows = db.select({ id: workspaceMeta.id, name: workspaceMeta.name }).from(workspaceMeta).all();
         const row = rows[0];
         if (rows.length !== 1 || typeof row.id !== "string" || !/^[0-9a-f-]{36}$/i.test(row.id)
             || typeof row.name !== "string" || row.name.length === 0) {
@@ -82,8 +95,8 @@ export function openWorkspace(path: string, expectedId?: string): OpenWorkspace 
         }
         database.pragma("foreign_keys = ON");
         if (version < workspaceFormatVersion) upgradeWorkspace(database, root, version);
-        validateBuiltinAttrs(database);
-        return { info: { id: row.id, name: row.name, path: root }, database };
+        validateBuiltinAttrs(db);
+        return { info: { id: row.id, name: row.name, path: root }, database, db };
     }
     catch (error) {
         database.close();

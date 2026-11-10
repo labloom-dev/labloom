@@ -34,6 +34,15 @@ const { FeedService } = require(join(output, "main/feed/service.js"));
 const { parseFeed, fetchFeed } = require(join(output, "main/feed/parser.js"));
 const { arxivURL, feedURL } = require(join(output, "shared/utils/feed.js"));
 const { createWorkspace, openWorkspace } = require(join(output, "main/storage/workspace.js"));
+const { createWorkspaceDatabase } = require(join(output, "main/storage/database.js"));
+const { createWorkspaceSchema } = require(join(output, "main/storage/schema.js"));
+
+function memoryDatabase() {
+    const database = new Database(":memory:");
+    database.pragma("foreign_keys = ON");
+    createWorkspaceSchema(database);
+    return database;
+}
 
 const rss = `<?xml version="1.0"?><rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
     <channel><title>Research</title><link>https://example.org</link><description>Updates</description>
@@ -69,7 +78,7 @@ test("RSS and Atom retain identities, all authors, summaries and safe links", as
     assert.equal(entry.url, "https://example.org/papers/1");
     assert.equal(entry.summary, "Tool use & evaluation.");
     assert.equal(entry.authors, "Alice");
-    assert.equal(entry.publishedAt, "2026-10-07T10:00:00.000Z");
+    assert.equal(entry.publishedAt, Date.UTC(2026, 9, 7, 10));
     const entries = await parseFeed(atom, "https://rss.arxiv.org/atom/cs.AI");
     assert.equal(entries[0].title, "Language models");
     assert.equal(entries[0].authors, "Alice, Bob");
@@ -99,7 +108,7 @@ test("fetching handles HTTP errors and oversized responses", async () => {
 });
 
 test("blog feeds import the latest ten unique entries and retain older saved articles", async () => {
-    const database = new Database(":memory:");
+    const database = memoryDatabase();
     let latest = 12;
     const load = () => fetchFeed("https://openai.com/news/rss.xml", async () => {
         const items = Array.from({ length: latest }, (_, i) => `<item><guid>blog-${i + 1}</guid><title>Post ${i + 1}</title>
@@ -107,7 +116,7 @@ test("blog feeds import the latest ten unique entries and retain older saved art
         return new Response(`<rss version="2.0"><channel><title>Blog</title>${items.join("")}${items.at(-1)}
             <item><guid>undated</guid><title>No date</title></item></channel></rss>`);
     });
-    const service = new FeedService(database, load);
+    const service = new FeedService(createWorkspaceDatabase(database), load);
     try {
         const entries = await load();
         assert.equal(entries.length, 10);
@@ -158,7 +167,7 @@ test("Anthropic pages provide safe article links, summaries and dates across dat
         assert.equal(new Set(entries.map(entry => entry.externalId)).size, 10);
         assert.equal(entries[0].title, section === "news" ? "Latest announcement" : "Article post-12");
         assert.equal(entries[0].url, section === "news" ? "https://www.anthropic.com/announcement" : `${url}post-12`);
-        assert.equal(entries[0].publishedAt, section === "news" ? "2026-10-13T00:00:00.000Z" : "2026-10-12T00:00:00.000Z");
+        assert.equal(entries[0].publishedAt, Date.UTC(2026, 9, section === "news" ? 13 : 12));
         assert.equal(entries.find(entry => entry.title === "Article post-12").summary, "A summary with \"quotes\", ] brackets and 中文。");
     }
     await assert.rejects(fetchFeed("https://www.anthropic.com/news", async () => new Response("<!DOCTYPE html><h1>Unavailable</h1>")), /未找到 Anthropic 文章/);
@@ -186,7 +195,7 @@ test("entries and read state survive refreshes and reopening the workspace", asy
     const folder = mkdtempSync(join(output, "workspace-"));
     const workspace = createWorkspace(folder);
     const entries = await parseFeed(atom, "https://rss.arxiv.org/atom/cs.AI");
-    const service = new FeedService(workspace.database, async () => entries);
+    const service = new FeedService(workspace.db, async () => entries);
     const id = await service.saveSource({ name: "arXiv", url: "https://rss.arxiv.org/atom/cs.AI" });
     let state = service.getState({ sourceId: id });
     assert.equal(state.total, 2);
@@ -205,7 +214,7 @@ test("entries and read state survive refreshes and reopening the workspace", asy
     workspace.database.close();
     const reopened = openWorkspace(folder);
     try {
-        const restored = new FeedService(reopened.database, async () => entries);
+        const restored = new FeedService(reopened.db, async () => entries);
         assert.equal(restored.getState({}).items.find(saved => saved.id === item.id).isRead, true);
         await restored.saveSource({ id, name: "Renamed", url: "https://rss.arxiv.org/atom/cs.AI" });
         assert.equal(restored.getState({}).sources[0].name, "Renamed");
@@ -218,11 +227,11 @@ test("entries and read state survive refreshes and reopening the workspace", asy
 });
 
 test("failed refresh preserves saved data and does not block other sources", async () => {
-    const database = new Database(":memory:");
+    const database = memoryDatabase();
     database.pragma("foreign_keys = ON");
     let failing = false;
     const entries = await parseFeed(rss, "https://example.org/feed");
-    const service = new FeedService(database, async url => {
+    const service = new FeedService(createWorkspaceDatabase(database), async url => {
         if (failing && url.endsWith("/bad")) throw new Error("Network unavailable");
         return entries;
     });
@@ -246,10 +255,10 @@ test("failed refresh preserves saved data and does not block other sources", asy
 });
 
 test("concurrent refreshes share a request and results are paginated", async () => {
-    const database = new Database(":memory:");
+    const database = memoryDatabase();
     const [entry] = await parseFeed(rss, "https://example.org/feed");
     let calls = 0;
-    const service = new FeedService(database, async () => {
+    const service = new FeedService(createWorkspaceDatabase(database), async () => {
         calls++;
         await new Promise(resolve => setTimeout(resolve, 10));
         return Array.from({ length: 55 }, (_, i) => ({ ...entry, externalId: `paper-${i}` }));

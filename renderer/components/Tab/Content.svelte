@@ -1,12 +1,16 @@
 {#key tab.id}
     {#if tab.type === "page"}
-        <Editor />
+        <PageView {tab} />
+    {:else if tab.type === "library" || tab.type === "papers"}
+        <Library tabId={tab.id} initialView={tab.type === "papers" ? "papers" : "all"} />
+    {:else if tab.type === "calendar"}
+        <Calendar tabId={tab.id} />
     {:else if tab.type === "overview"}
-        <div>overview</div>
+        <Overview tabId={tab.id} />
     {:else if tab.type === "about"}
-        <div>about</div>
+        <About />
     {:else if tab.type === "settings"}
-        <div>settings</div>
+        <Settings />
     {:else if tab.type === "reader-test"}
         <ReaderTest />
     {:else if tab.type === "feed"}
@@ -18,7 +22,12 @@
 
 
 <script lang="ts">
-    import Editor from "../Editor/Editor.svelte";
+    import About from "../tabs/About.svelte";
+    import Overview from "../tabs/Overview.svelte";
+    import Settings from "../tabs/Settings.svelte";
+    import PageView from "../Knowledge/PageView.svelte";
+    import Library from "../Knowledge/Library.svelte";
+    import Calendar from "../Knowledge/Calendar.svelte";
     import ReaderTest from "../tabs/ReaderTest.svelte";
     import FeedView from "../Feed/FeedView.svelte";
     import type { Tab } from "./defs";

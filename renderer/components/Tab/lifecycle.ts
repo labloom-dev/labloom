@@ -1,0 +1,1 @@
+export const tabLifecycle: { close?: (id: string) => Promise<boolean> } = {};

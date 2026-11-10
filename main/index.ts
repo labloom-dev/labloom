@@ -9,6 +9,8 @@ import { AppStorage, developmentDataPath } from "./storage/app";
 import { Startup } from "./startup/startup";
 import { registerStartupIPCs } from "./startup/ipc";
 import { registerFeedIPCs } from "./feed/ipc";
+import { registerAppearanceIPCs } from "./appearance/ipc";
+import { registerKnowledgeIPCs } from "./knowledge/ipc";
 
 
 // Set both paths before ready, so development also isolates Chromium state.
@@ -45,12 +47,12 @@ function createWindow(): void {
 
     const mainWindow = new BrowserWindow({
         ...(process.platform !== "darwin" ? { titleBarOverlay: {
-            color: "#ddd",
-            symbolColor: "#000000",
+            color: "#fffdf7",
+            symbolColor: "#302c25",
             height: 36
         }} : {}),
-        width: 960,
-        height: 540,
+        width: 1280,
+        height: 860,
         minWidth: minWindowWidth,
         minHeight: minContentHeight,
         show: false,
@@ -72,6 +74,8 @@ function createWindow(): void {
     contents.on("render-process-gone", (_event, details) => applicationLog?.record("Renderer exited", details));
     registerStartupIPCs(mainWindow, startup);
     registerFeedIPCs(contents, startup);
+    registerAppearanceIPCs(mainWindow, storage);
+    registerKnowledgeIPCs(mainWindow, startup);
     on(contents, appChannels.openDevTools, () => contents.openDevTools({ mode: "detach" }));
 
     mainWindow.once("ready-to-show", () => {

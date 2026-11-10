@@ -1,10 +1,58 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { AppAPI } from "../shared/app";
-import { appChannels, feedChannels, startupChannels } from "../shared/ipc";
+import { appChannels, appearanceChannels, feedChannels, startupChannels } from "../shared/ipc";
+import { knowledgeChannels, knowledgeChanged, saveBeforeClose, saveBeforeCloseReply } from "../shared/ipc";
 
 // The renderer only gets this typed bridge, never ipcRenderer itself.
 const api: AppAPI = {
     openDevTools: () => ipcRenderer.send(appChannels.openDevTools),
+    knowledge: {
+        list: (...args) => ipcRenderer.invoke(knowledgeChannels.list, ...args),
+        listUpdates: (...args) => ipcRenderer.invoke(knowledgeChannels.listUpdates, ...args),
+        get: (...args) => ipcRenderer.invoke(knowledgeChannels.get, ...args),
+        create: (...args) => ipcRenderer.invoke(knowledgeChannels.create, ...args),
+        readObjects: (...args) => ipcRenderer.invoke(knowledgeChannels.readObjects, ...args),
+        commitEdit: (...args) => ipcRenderer.invoke(knowledgeChannels.commitEdit, ...args),
+        previewEdit: (...args) => ipcRenderer.invoke(knowledgeChannels.previewEdit, ...args),
+        deleteBlock: (...args) => ipcRenderer.invoke(knowledgeChannels.deleteBlock, ...args),
+        place: (...args) => ipcRenderer.invoke(knowledgeChannels.place, ...args),
+        trash: (...args) => ipcRenderer.invoke(knowledgeChannels.trash, ...args),
+        restore: (...args) => ipcRenderer.invoke(knowledgeChannels.restore, ...args),
+        definitions: (...args) => ipcRenderer.invoke(knowledgeChannels.definitions, ...args),
+        define: (...args) => ipcRenderer.invoke(knowledgeChannels.define, ...args),
+        backlinks: (...args) => ipcRenderer.invoke(knowledgeChannels.backlinks, ...args),
+        resolve: (...args) => ipcRenderer.invoke(knowledgeChannels.resolve, ...args),
+        history: (...args) => ipcRenderer.invoke(knowledgeChannels.history, ...args),
+        undo: (...args) => ipcRenderer.invoke(knowledgeChannels.undo, ...args),
+        closeTab: (...args) => ipcRenderer.invoke(knowledgeChannels.closeTab, ...args),
+        loadTabs: (...args) => ipcRenderer.invoke(knowledgeChannels.loadTabs, ...args),
+        saveTabs: (...args) => ipcRenderer.invoke(knowledgeChannels.saveTabs, ...args),
+        importPDF: (...args) => ipcRenderer.invoke(knowledgeChannels.importPDF, ...args),
+        resources: (...args) => ipcRenderer.invoke(knowledgeChannels.resources, ...args),
+        readFile: (...args) => ipcRenderer.invoke(knowledgeChannels.readFile, ...args),
+        position: (...args) => ipcRenderer.invoke(knowledgeChannels.position, ...args),
+        highlight: (...args) => ipcRenderer.invoke(knowledgeChannels.highlight, ...args),
+        removeHighlight: (...args) => ipcRenderer.invoke(knowledgeChannels.removeHighlight, ...args),
+        annotate: (...args) => ipcRenderer.invoke(knowledgeChannels.annotate, ...args),
+        notices: (...args) => ipcRenderer.invoke(knowledgeChannels.notices, ...args),
+        readNotice: (...args) => ipcRenderer.invoke(knowledgeChannels.readNotice, ...args),
+        onChanged: listener => {
+            const handler = (_event: unknown, change: Parameters<typeof listener>[0]): void => listener(change);
+            ipcRenderer.on(knowledgeChanged, handler);
+            return () => ipcRenderer.removeListener(knowledgeChanged, handler);
+        },
+        onCloseRequested: listener => {
+            const handler = (_event: unknown, nonce: string): void => {
+                void listener().then(saved => ipcRenderer.send(saveBeforeCloseReply, nonce, saved), () => ipcRenderer.send(saveBeforeCloseReply, nonce, false));
+            };
+            ipcRenderer.on(saveBeforeClose, handler);
+            return () => ipcRenderer.removeListener(saveBeforeClose, handler);
+        }
+    },
+    appearance: {
+        get: () => ipcRenderer.invoke(appearanceChannels.get),
+        save: value => ipcRenderer.invoke(appearanceChannels.save, value)
+    },
     feed: {
         getState: query => ipcRenderer.invoke(feedChannels.getState, query),
         saveSource: source => ipcRenderer.invoke(feedChannels.saveSource, source),

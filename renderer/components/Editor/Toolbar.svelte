@@ -12,6 +12,7 @@
                 {#each toolbarState.formats as format (format.name)}
                     <Toolbar.Button
                         class={format.active ? "tool-button active" : "tool-button"}
+                        aria-label={format.label}
                         disabled={format.disabled}
                         onclick={() => editor?.chain().focus().toggleMark(format.name).run()}
                     >
@@ -29,6 +30,7 @@
                 <Color {editor} anchor={element} bind:element={colorElement} bind:open={colorOpen} />
                 <Toolbar.Button
                     class="tool-button"
+                    aria-label="清除格式"
                     disabled={!toolbarState.canClear}
                     onclick={clearFormat}
                 >
@@ -39,13 +41,13 @@
                 </Toolbar.Button>
                 <span class="separator"></span>
                 <div class="history-actions">
-                    <Toolbar.Button class="tool-button" disabled={!toolbarState.canUndo} onclick={() => editor?.chain().focus().undo().run()}>
+                    <Toolbar.Button class="tool-button" aria-label="撤销" disabled={!toolbarState.canUndo} onclick={() => editor?.chain().focus().undo().run()}>
                         <span class="icon">
                             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
                             {@html undoIcon}
                         </span>
                     </Toolbar.Button>
-                    <Toolbar.Button class="tool-button" disabled={!toolbarState.canRedo} onclick={() => editor?.chain().focus().redo().run()}>
+                    <Toolbar.Button class="tool-button" aria-label="重做" disabled={!toolbarState.canRedo} onclick={() => editor?.chain().focus().redo().run()}>
                         <span class="icon">
                             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
                             {@html redoIcon}
@@ -63,11 +65,11 @@
         max-width: calc(100vw - 16px);
         padding: .25rem;
         overflow: visible;
-        border: 1px solid var(--dc-c-popover-border);
+        border: 1.5px solid var(--dc-c-popover-text);
         border-radius: .5rem;
         color: var(--dc-c-popover-text);
         background: var(--dc-c-surface);
-        box-shadow: 0 .25rem 1rem var(--dc-c-popover-shadow-soft);
+        box-shadow: 3px 4px 0 var(--dc-c-popover-text);
         font-size: .8125rem;
     }
     .actions, .history-actions {
@@ -76,7 +78,7 @@
         gap: .125rem;
     }
     .actions {
-        flex-wrap: wrap;
+        overflow-x: auto;
     }
     .toolbar :global(button) {
         box-sizing: border-box;
@@ -127,7 +129,7 @@
 
 <script lang="ts">
     import type { Editor } from "@tiptap/core";
-    import type { ResolvedPos } from "@tiptap/pm/model";
+    import { TextSelection } from "@tiptap/pm/state";
     import { Toolbar } from "bits-ui";
     import Color from "./Color.svelte";
     import boldIcon from "../../assets/carbon--text-bold.svg?raw";
@@ -139,7 +141,7 @@
     import undoIcon from "../../assets/carbon--undo.svg?raw";
     import redoIcon from "../../assets/carbon--redo.svg?raw";
 
-    let { editor }: { editor: Editor | null } = $props();
+    let { editor, dock }: { editor: Editor; dock: HTMLDivElement } = $props();
     let element = $state<HTMLDivElement>();
     let colorElement = $state<HTMLDivElement | null>(null);
     let colorOpen = $state(false);
@@ -185,14 +187,15 @@
 
     $effect(() => {
         const instance = editor;
-        if (!instance || !element) return;
+        if (instance.isDestroyed || !element) return;
 
         const dom = instance.view.dom;
         const menu = element;
         let disposed = false;
         let queued = false;
+        // The first pointerdown in this block can precede the toolbar's listeners.
         let selecting = false;
-        let pointerSelection = false;
+        let pointerSelection = selecting;
         let dismissed = false;
         let frame = 0;
 
@@ -200,32 +203,15 @@
             if (menu.matches(":popover-open")) menu.hidePopover();
         }
 
-        function lineRect(position: ResolvedPos, side: number): { top: number; bottom: number } | null {
-            for (let depth = position.depth; depth > 0; depth--) {
-                if (!position.node(depth).isTextblock) continue;
-                const node = instance?.view.nodeDOM(position.before(depth));
-                if (!(node instanceof HTMLElement)) continue;
-                const style = getComputedStyle(node);
-                const lineHeight = parseFloat(style.lineHeight);
-                if (!Number.isFinite(lineHeight) || lineHeight <= 0) return null;
-                const contentTop = node.getBoundingClientRect().top + parseFloat(style.borderTopWidth) + parseFloat(style.paddingTop);
-                const coords = instance!.view.coordsAtPos(position.pos, side);
-                // Marks only identify the line; its bounds use this text block's unmarked line height.
-                const line = Math.max(0, Math.floor(((coords.top + coords.bottom) / 2 - contentTop) / lineHeight));
-                const top = contentTop + line * lineHeight;
-                return { top, bottom: top + lineHeight };
-            }
-            return null;
-        }
-
         function position(): void {
+            frame = 0;
             if (disposed) return;
             if (instance?.isDestroyed || !instance?.isEditable) {
                 colorOpen = false;
                 hide();
                 return;
             }
-            if (instance.state.selection.empty || dismissed) {
+            if (!(instance.state.selection instanceof TextSelection) || instance.state.selection.empty || dismissed) {
                 hide();
                 return;
             }
@@ -244,7 +230,7 @@
             }
 
             // The DOM selection may briefly disappear while window focus changes.
-            const { from, to, $from: fromPosition, $to: toPosition } = instance.state.selection;
+            const { from, to } = instance.state.selection;
             const start = instance.view.domAtPos(from);
             const end = instance.view.domAtPos(to);
             const range = document.createRange();
@@ -262,12 +248,12 @@
             }
 
             if (!menu.matches(":popover-open")) menu.showPopover();
+            const bounds = dock.getBoundingClientRect();
+            menu.style.maxWidth = Math.max(40, Math.min(bounds.width, viewport.width)) + "px";
             const { width, height } = menu.getBoundingClientRect();
-            const left = Math.max(8, Math.min(rect.left + rect.width / 2 - width / 2, window.innerWidth - width - 8));
-            const top = (lineRect(fromPosition, 1) ?? rect).top - height - 8;
-            const bottom = (lineRect(toPosition, -1) ?? rect).bottom + 8;
+            const left = Math.max(bounds.left, viewport.left, Math.min(rect.left, bounds.right - width, viewport.right - width));
             menu.style.left = left + "px";
-            menu.style.top = Math.max(8, Math.min(top >= 8 ? top : bottom, window.innerHeight - height - 8)) + "px";
+            menu.style.top = (bounds.top + Math.max(0, (bounds.height - height) / 2)) + "px";
         }
 
         function update(): void {
@@ -277,10 +263,14 @@
             queueMicrotask(() => {
                 queued = false;
                 if (disposed) return;
+                if (instance.isDestroyed || !instance.isEditable || instance.state.selection.empty || dismissed || selecting) {
+                    if (instance.isDestroyed || !instance.isEditable) colorOpen = false;
+                    hide();
+                    return;
+                }
                 toolbarState = readState(instance);
-                cancelAnimationFrame(frame);
                 // Measure after Svelte has updated the button labels.
-                frame = requestAnimationFrame(position);
+                if (!frame) frame = requestAnimationFrame(position);
             });
         }
 
@@ -295,7 +285,7 @@
 
             if (!inside && instance && !instance.isDestroyed) {
                 const { selection } = instance.state;
-                if (!selection.empty) instance.commands.setTextSelection(selection.head);
+                if (!selection.empty && selection.$head.parent.inlineContent) instance.commands.setTextSelection(selection.head);
                 // Scrollbars and drag handles may keep focus and the browser selection in the editor.
                 dom.blur();
                 const nativeSelection = window.getSelection();

@@ -1,0 +1,3 @@
+{
+    "strictTables": ["attrs", "block_uses", "blocks", "page_attrs", "pages", "workspace_meta"]
+}

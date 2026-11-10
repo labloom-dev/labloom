@@ -34,6 +34,12 @@ pnpm install
 pnpm dev
 ```
 
+### 数据库开发
+
+使用 `pnpm db:generate --name <名称>` 生成迁移，`pnpm db:check` 检查仓库定义与迁移是否一致，`pnpm db:diagram` 查看表结构图，`pnpm test:db` 运行数据库测试。
+
+工作区命令须明确传入 `--workspace <目录>`：`db:init` 创建开发工作区，`db:status` 只读查看版本，`db:migrate` 备份并升级。完整流程见 [数据库开发说明](docs/数据库开发.md)。
+
 ### 打包应用
 
 ```shell

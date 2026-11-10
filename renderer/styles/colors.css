@@ -1,28 +1,39 @@
 :root {
-    /* Application surfaces */
-    --c-selection: #b9d1eb;
-    --c-navbar-background: #ddd;
-    --c-sidebar-background: #ededed;
-    --c-tab-header-background: #eeeeee;
-    --c-tab-header-border: #cccccc;
-    --c-side-panel-background: #e4ead9;
-    --c-resizer-background: #00ffff;
+    /* Warm paper, ink outlines and muted botanical accents. */
+    --c-ink: #302c25;
+    --c-paper: #fffdf7;
+    --c-cream: #f7f3e8;
+    --c-gold: #f2cc78;
+    --c-gold-light: #fff0ca;
+    --c-sage: #e3ebd8;
+    --c-lilac: #eae3f1;
+    --c-peach: #f6e2d4;
+    --c-muted: #776e5d;
+    --c-line: #e3dccb;
+    --c-shadow: 3px 4px 0 var(--c-ink);
+    --c-selection: #f2cc7880;
+    --c-navbar-background: var(--c-paper);
+    --c-sidebar-background: var(--c-paper);
+    --c-tab-header-background: #f2ecdd;
+    --c-tab-header-border: #d6ccb7;
+    --c-side-panel-background: var(--c-paper);
+    --c-resizer-background: #c5b58e;
 
     /* Editor surfaces */
-    --dc-c-selection: #b9d1eb;
+    --dc-c-selection: #f2cc7880;
     --dc-c-paragraph-background: /*#f0f8ff*/transparent;
-    --dc-c-code-background: #ddeeee;
-    --dc-c-drop-cursor: #488aed;
-    --dc-c-accent: #557cdb;
-    --dc-c-surface: #ffffff;
-    --dc-c-surface-hover: #f3f5f9;
-    --dc-c-surface-focus: #edf3ff;
-    --dc-c-popover-border: #d9dde5;
-    --dc-c-popover-text: #242a35;
-    --dc-c-popover-shadow-soft: #18243b0d;
-    --dc-c-divider: #edf0f4;
-    --dc-c-secondary-text: #7b8493;
-    --dc-c-placeholder: #b7bac0;
+    --dc-c-code-background: #f3ecd9;
+    --dc-c-drop-cursor: #a7782e;
+    --dc-c-accent: #946924;
+    --dc-c-surface: #fffdf7;
+    --dc-c-surface-hover: #f7f0df;
+    --dc-c-surface-focus: #fff0ca;
+    --dc-c-popover-border: #d4c8af;
+    --dc-c-popover-text: #302c25;
+    --dc-c-popover-shadow-soft: #302c2510;
+    --dc-c-divider: #e9e1d0;
+    --dc-c-secondary-text: #776e5d;
+    --dc-c-placeholder: #928671;
 
     /* Document palettes: every foreground/background pair exceeds 3:1.
        Keep foregrounds dark and backgrounds light; verify with test:editor-colors. */
@@ -58,36 +69,121 @@
     --dc-c-bg-magenta: #f4def1;
 
     /* PDF reader */
-    --c-reader-background: #e6e7ea;
-    --c-reader-toolbar-background: #fafafa;
-    --c-reader-toolbar-border: #dddddd;
-    --c-reader-input-border: #c9cdd3;
-    --c-reader-muted-text: #666d78;
-    --c-reader-error-text: #b42318;
+    --c-reader-background: #ede8dc;
+    --c-reader-toolbar-background: #fffaf0;
+    --c-reader-toolbar-border: #ddd3bd;
+    --c-reader-input-border: #c8bda4;
+    --c-reader-muted-text: #776e5d;
+    --c-reader-error-text: #a14232;
 
     /* Shared interaction states */
-    --c-accent: #557cdb;
-    --c-surface: #ffffff;
-    --c-surface-hover: #f3f5f9;
-    --c-surface-focus: #edf3ff;
-    --c-border-focus: #b6c8f1;
+    --c-accent: #946924;
+    --c-surface: #fffdf7;
+    --c-surface-hover: #f7f0df;
+    --c-surface-focus: #fff0ca;
+    --c-border-focus: #b38c48;
 
     /* Search launcher */
-    --c-search-trigger-background: #f5f6f8;
-    --c-search-trigger-border: #c9cdd3;
-    --c-search-trigger-border-hover: #a8b3c7;
-    --c-search-trigger-text: #606773;
+    --c-search-trigger-background: #f8f4e9;
+    --c-search-trigger-border: #c8bda4;
+    --c-search-trigger-border-hover: #ab9670;
+    --c-search-trigger-text: #776e5d;
 
     /* Search popover */
-    --c-popover-border: #d9dde5;
-    --c-popover-text: #242a35;
-    --c-search-divider: #edf0f4;
-    --c-search-icon: #66758e;
-    --c-search-placeholder: #858c98;
-    --c-search-heading: #77808f;
-    --c-search-secondary-text: #7b8493;
-    --c-search-footer-background: #fafbfc;
-    --c-kbd-border: #e1e5eb;
-    --c-popover-shadow: #18243b40;
-    --c-popover-shadow-soft: #18243b0d;
+    --c-popover-border: #d4c8af;
+    --c-popover-text: #302c25;
+    --c-search-divider: #e9e1d0;
+    --c-search-icon: #806b48;
+    --c-search-placeholder: #928671;
+    --c-search-heading: #776e5d;
+    --c-search-secondary-text: #776e5d;
+    --c-search-footer-background: #faf6eb;
+    --c-kbd-border: #d9cfba;
+    --c-popover-shadow: #302c2530;
+    --c-popover-shadow-soft: #302c2510;
+}
+
+:root[data-theme="dark"] {
+    --c-dots: #4b493b;
+    color-scheme: dark;
+    --c-ink: #eee4d1;
+    --c-paper: #292923;
+    --c-cream: #22231e;
+    --c-gold: #6f572e;
+    --c-gold-light: #4e432c;
+    --c-sage: #374632;
+    --c-lilac: #443b50;
+    --c-peach: #573b30;
+    --c-muted: #c0b59f;
+    --c-line: #4a463a;
+    --c-shadow: 3px 4px 0 #14150f;
+    --c-tab-header-background: #20221c;
+    --c-tab-header-border: #68604c;
+    --c-accent: #e0b96d;
+    --c-surface: var(--c-paper);
+    --c-surface-hover: #37372b;
+    --c-surface-focus: var(--c-gold-light);
+    --c-reader-background: #20221e;
+    --c-reader-toolbar-background: var(--c-paper);
+    --c-reader-toolbar-border: var(--c-line);
+    --c-reader-input-border: #68604c;
+    --c-reader-muted-text: var(--c-muted);
+    --c-reader-error-text: #f3aa91;
+    --c-search-trigger-background: var(--c-cream);
+    --c-search-trigger-text: var(--c-muted);
+    --c-popover-text: var(--c-ink);
+    --c-search-footer-background: var(--c-cream);
+    --c-kbd-border: #68604c;
+    --dc-c-surface: var(--c-paper);
+    --dc-c-surface-hover: #37372b;
+    --dc-c-surface-focus: var(--c-gold-light);
+    --dc-c-popover-text: var(--c-ink);
+    --dc-c-divider: var(--c-line);
+    --dc-c-secondary-text: var(--c-muted);
+    --dc-c-code-background: #403b2e;
+    --dc-c-placeholder: #a69a85;
+
+    --c-search-trigger-border: #68604c;
+    --c-search-trigger-border-hover: #a69a85;
+    --c-popover-border: #68604c;
+    --c-search-divider: #4a463a;
+    --c-search-icon: #b9ae99;
+    --c-search-placeholder: #a69a85;
+    --c-search-heading: #b9ae99;
+    --c-search-secondary-text: #b9ae99;
+    --c-selection: #b38b4980;
+    --dc-c-selection: #b38b4980;
+    --dc-c-accent: #e0b96d;
+    --dc-c-popover-border: #68604c;
+    --dc-c-drop-cursor: #e0b96d;
+    --c-note-stripe: #303326;
+    --c-note-line: #34382b;
+    --dc-c-fg-default: #eee4d1;
+    --dc-c-fg-gray: #c6c1b5;
+    --dc-c-fg-light-gray: #b2ac9e;
+    --dc-c-fg-red: #ff9e94;
+    --dc-c-fg-yellow: #f3dc87;
+    --dc-c-fg-orange: #f8b47b;
+    --dc-c-fg-green: #9ed5a9;
+    --dc-c-fg-lime: #c4d48c;
+    --dc-c-fg-blue: #9accef;
+    --dc-c-fg-purple: #cfafe8;
+    --dc-c-fg-brown: #d5b798;
+    --dc-c-fg-cyan: #92d1d5;
+    --dc-c-fg-pink: #f0aaca;
+    --dc-c-fg-magenta: #e1a2da;
+    --dc-c-bg-default: #292923;
+    --dc-c-bg-gray: #393932;
+    --dc-c-bg-light-gray: #33332d;
+    --dc-c-bg-red: #49322e;
+    --dc-c-bg-yellow: #443e27;
+    --dc-c-bg-orange: #493928;
+    --dc-c-bg-green: #2e4031;
+    --dc-c-bg-lime: #3c4029;
+    --dc-c-bg-blue: #2b3945;
+    --dc-c-bg-purple: #3c3249;
+    --dc-c-bg-brown: #41372e;
+    --dc-c-bg-cyan: #293e40;
+    --dc-c-bg-pink: #45323c;
+    --dc-c-bg-magenta: #433042;
 }

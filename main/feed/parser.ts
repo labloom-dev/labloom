@@ -43,12 +43,12 @@ export async function parseFeed(xml: string, sourceURL: string): Promise<FeedEnt
         catch { /* Unsafe links remain unavailable in the reader. */ }
         const title = typeof item.title === "string" ? item.title.replace(/\s+/g, " ").trim() : "无标题";
         const date = item.isoDate ?? item.pubDate;
-        const publishedAt = date && Number.isFinite(Date.parse(date)) ? new Date(date).toISOString() : null;
+        const publishedAt = date && Number.isFinite(Date.parse(date)) ? Date.parse(date) : null;
         const authors = item.atomAuthors?.flatMap(author => author.name ?? []).join(", ")
             || item.creators?.join(", ") || item.creator || item.author || "";
         const summary = item.abstractSnippet ?? item.contentSnippet ?? "";
         const externalId = item.guid || item.id || url
-            || createHash("sha256").update(JSON.stringify([title, authors, publishedAt])).digest("hex");
+            || createHash("sha256").update(JSON.stringify([title, authors, publishedAt === null ? null : new Date(publishedAt).toISOString()])).digest("hex");
         return { externalId, title, url, authors, summary, publishedAt };
     });
 }
@@ -93,7 +93,7 @@ export async function fetchFeed(url: string, fetcher: Fetcher = fetch): Promise<
     if (host !== "arxiv.org" && !host.endsWith(".arxiv.org")) {
         const entries = await download(url, fetcher);
         const unique = [...new Map(entries.map(entry => [entry.externalId, entry])).values()];
-        return unique.sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? "")).slice(0, 10);
+        return unique.sort((a, b) => (b.publishedAt ?? -Infinity) - (a.publishedAt ?? -Infinity)).slice(0, 10);
     }
     // arXiv requests share one connection queue, at least three seconds apart.
     const request = arxivQueue.then(async () => {
