@@ -1,6 +1,7 @@
 import { secondsToWall } from "../content/time";
 import { type AttributeDefinition, type AttributeFormat, type AttributeType, type AttributeValue } from "../types/attributes";
 import { builtinValueFormats, isBuiltin } from "./builtins";
+import { isEmpty } from "./values";
 
 type Context = { zone?: string };
 type Format = AttributeFormat;
@@ -19,13 +20,13 @@ const defaults: Record<AttributeType, { display: Format; search?: Format }> = {
 };
 
 export function display(definition: AttributeDefinition, value: AttributeValue, context: Context = {}): string {
-    if (value === null) return "";
+    if (isEmpty(definition.type, value)) return "";
     const override = isBuiltin(definition.id) ? builtinValueFormats[definition.id]?.display : undefined;
     return (override ?? defaults[definition.type].display)(definition, value, context);
 }
 
 export function search(definition: AttributeDefinition, value: AttributeValue, context: Context = {}): string {
-    if (value === null) return "";
+    if (isEmpty(definition.type, value)) return "";
     const override = isBuiltin(definition.id) ? builtinValueFormats[definition.id]?.search : undefined;
     return (override ?? defaults[definition.type].search ?? display)(definition, value, context);
 }

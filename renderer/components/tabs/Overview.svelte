@@ -472,6 +472,7 @@
     import Bloom from "../utils/Bloom.svelte";
     import Icon, { type IconName } from "../utils/Icon.svelte";
     import { openDestination, openPage, createPage, type Destination } from "../layout/navigation";
+    import { currentTimeZone } from "../layout/preferences.svelte";
     import { openFeedItem } from "../Feed/navigation.svelte";
     import { type PageSummary } from "../../../shared/types/content";
     import { registerList } from "../Knowledge/state.svelte";
@@ -483,7 +484,8 @@
     let recent = $state<PageSummary[]>([]);
     let pending = $state(true);
     let error = $state("");
-    let date = $state(today());
+    let now = $state(Date.now());
+    const date = $derived(new Date(now).toLocaleDateString("zh-CN", { timeZone: currentTimeZone(), month: "long", day: "numeric", weekday: "long" }));
     let loading = false;
     let active = true;
     const stats = $derived([
@@ -491,10 +493,6 @@
         { label: "收藏的文献", value: counts?.papers, unit: "篇", caption: "随时回来阅读", icon: "book", tone: "sage", destination: "papers" },
         { label: "待完成任务", value: counts?.tasks, unit: "项", caption: "给研究留出时间", icon: "calendar", tone: "lilac", destination: "calendar" }
     ] satisfies { label: string; value: number | undefined; unit: string; caption: string; icon: IconName; tone: string; destination: Destination }[]);
-
-    function today(): string {
-        return new Date().toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "long" });
-    }
 
     async function load(): Promise<void> {
         if (loading) return;
@@ -519,7 +517,7 @@
     onMount(() => {
         const release = registerList(tabId, change => change.pages, load);
         const timer = setInterval(() => {
-            date = today(); visits.refresh(tabId);
+            now = Date.now(); visits.refresh(tabId);
         }, 60000);
         return () => {
             active = false; clearInterval(timer); release();

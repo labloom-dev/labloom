@@ -117,9 +117,11 @@ test("new workspaces contain the core and feed tables and reopen without changin
     assert.deepEqual(database.prepare("SELECT name, strict FROM pragma_table_list WHERE name NOT LIKE 'sqlite_%' ORDER BY name").all(), [
         { name: "anchors", strict: 0 },
         { name: "attachments", strict: 0 },
+        { name: "attribute_defaults", strict: 0 },
         { name: "attrs", strict: 1 },
         { name: "block_uses", strict: 1 },
         { name: "blocks", strict: 1 },
+        { name: "builtin_page_attrs", strict: 0 },
         { name: "edit_tabs", strict: 0 },
         { name: "feed_items", strict: 0 },
         { name: "feed_sources", strict: 0 },
@@ -243,8 +245,9 @@ test("attribute ownership is distinct from an empty value and ANY retains scalar
     const first = page(database);
     const second = page(database);
     database.exec("INSERT INTO attrs (id, type) VALUES ('custom:text', 'string'), ('custom:number', 'number'), ('label', 'multi_select')");
-    database.prepare("INSERT INTO page_attrs (page_id, attr_id) VALUES (?, 'custom:text')").run(first.id);
-    assert.deepEqual(database.prepare("SELECT value FROM page_attrs WHERE page_id = ? AND attr_id = 'custom:text'").get(first.id), { value: null });
+    assert.throws(() => database.prepare("INSERT INTO page_attrs VALUES (?, 'custom:text', NULL)").run(first.id), /Invalid NULL/);
+    database.prepare("INSERT INTO page_attrs VALUES (?, 'custom:text', '')").run(first.id);
+    assert.deepEqual(database.prepare("SELECT value FROM page_attrs WHERE page_id = ? AND attr_id = 'custom:text'").get(first.id), { value: "" });
     assert.equal(database.prepare("SELECT value FROM page_attrs WHERE page_id = ? AND attr_id = 'custom:text'").get(second.id), undefined);
 
     database.prepare("UPDATE page_attrs SET value = ? WHERE page_id = ? AND attr_id = 'custom:text'").run("000123", first.id);
@@ -256,7 +259,7 @@ test("attribute ownership is distinct from an empty value and ANY retains scalar
     database.prepare("UPDATE attrs SET metadata = ? WHERE id = 'label'").run(metadata);
     database.prepare("INSERT INTO page_attrs VALUES (?, 'label', ?)").run(first.id, JSON.stringify(["option-1"]));
     assert.deepEqual(database.prepare("SELECT metadata FROM attrs WHERE id = 'label'").get(), { metadata });
-    assert.throws(() => database.prepare("INSERT INTO page_attrs (page_id, attr_id) VALUES (?, 'custom:text')").run(first.id), /UNIQUE/);
+    assert.throws(() => database.prepare("INSERT INTO page_attrs VALUES (?, 'custom:text', '')").run(first.id), /UNIQUE/);
     database.prepare("DELETE FROM page_attrs WHERE page_id = ? AND attr_id = 'custom:text'").run(first.id);
     assert.ok(database.prepare("SELECT id FROM attrs WHERE id = 'custom:text'").get());
 });
@@ -266,7 +269,7 @@ test("foreign keys, JSON shapes, and block-use positions reject invalid data ato
     const created = page(database);
     database.exec("INSERT INTO attrs (id, type) VALUES ('custom:test', 'string')");
     assert.throws(() => database.prepare("INSERT INTO page_attrs VALUES (?, 'unknown', NULL)").run(created.id), /FOREIGN KEY/);
-    assert.throws(() => database.exec("INSERT INTO page_attrs VALUES ('unknown', 'custom:test', NULL)"), /FOREIGN KEY/);
+    assert.throws(() => database.exec("INSERT INTO page_attrs VALUES ('unknown', 'custom:test', '')"), /FOREIGN KEY/);
     assert.throws(() => database.exec("INSERT INTO pages (id, kind, title_block_id) VALUES ('unknown-title', 'editable', 'unknown')"), /FOREIGN KEY/);
     assert.throws(() => database.prepare("DELETE FROM blocks WHERE id = ?").run(created.title), /FOREIGN KEY/);
 
@@ -362,7 +365,7 @@ test("business edits update last_modified_at while reads and unchanged updates d
     const content = block(database);
     const created = page(database, [content]);
     database.exec("INSERT INTO attrs (id, type) VALUES ('custom:test', 'string')");
-    database.prepare("INSERT INTO page_attrs VALUES (?, 'custom:test', NULL)").run(created.id);
+    database.prepare("INSERT INTO page_attrs VALUES (?, 'custom:test', '')").run(created.id);
 
     const edits = [
         (): void => {

@@ -27,14 +27,13 @@ export const builtinAttrs = {
     schedule_date: { type: "date", metadata: { name: "日期" } },
     schedule_start: { type: "datetime", metadata: { name: "开始时间" } },
     schedule_end: { type: "datetime", metadata: { name: "结束时间" } },
-    schedule_zone: { type: "string", metadata: { name: "时区" } },
     reminder_at: { type: "datetime", metadata: { name: "提醒时间" } }
 } satisfies Record<string, Omit<AttributeDefinition, "id">>;
 
 export type BuiltinAttrId = keyof typeof builtinAttrs;
 export type BuiltinAttrValues = { [Id in BuiltinAttrId]: AttributeValue };
 const common = ["deleted", "independent", "created_at", "modified_at", "recycle_reason", "recycled_at", "pinned", "tags", "links"] as const;
-const schedule = ["schedule_date", "schedule_start", "schedule_end", "schedule_zone", "reminder_at"] as const;
+const schedule = ["schedule_date", "schedule_start", "schedule_end", "reminder_at"] as const;
 export const builtinAttrsByPageKind = {
     editable: [...common],
     paper: [...common, "paper_authors", "paper_doi", "paper_year", "paper_venue", "paper_url", "paper_abstract", "paper_keywords", "source_snapshot", "reading_position"],

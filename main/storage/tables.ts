@@ -1,5 +1,8 @@
 import { desc, sql } from "drizzle-orm";
-import { check, customType, index, integer, primaryKey, sqliteTable, text, unique } from "drizzle-orm/sqlite-core";
+import { check, customType, index, integer, primaryKey, sqliteTable, sqliteView, text, unique } from "drizzle-orm/sqlite-core";
+import { builtinAttrs, builtinAttrsByPageKind } from "../../shared/attrs/builtins";
+import { defaultValue, encodeValue } from "../../shared/attrs/values";
+import { attributeTypes } from "../../shared/types/attributes";
 import { type BlockKind } from "../../shared/types/Block";
 
 // Runtime mappings of the persisted rows. Versioned SQL migrations also install
@@ -45,6 +48,17 @@ export const attrs = sqliteTable("attrs", {
 const anyValue = customType<{ data: string | number | Buffer; }>({
     dataType: () => "ANY"
 });
+
+// The triggers use the same type defaults and page membership as the application.
+const typeDefaults = attributeTypes.map(type => sql`(${type}, ${encodeValue({ id: type, type, metadata: {} }, defaultValue(type))})`);
+export const attributeDefaults = sqliteView("attribute_defaults", {
+    type: text("type"), value: anyValue("value")
+}).as(sql`SELECT column1 AS type, column2 AS value FROM (VALUES ${sql.join(typeDefaults, sql`, `)})`);
+
+const builtinRows = Object.entries(builtinAttrsByPageKind).flatMap(([kind, ids]) => ids.map(id => sql`(${kind}, ${id}, ${builtinAttrs[id].type})`));
+export const builtinPageAttrs = sqliteView("builtin_page_attrs", {
+    kind: text("kind"), attrId: text("attr_id"), type: text("type")
+}).as(sql`SELECT column1 AS kind, column2 AS attr_id, column3 AS type FROM (VALUES ${sql.join(builtinRows, sql`, `)})`);
 
 export const pageAttrs = sqliteTable("page_attrs", {
     pageId: text("page_id").notNull().references(() => pages.id),
@@ -165,7 +179,6 @@ export const reminderSchedules = sqliteTable("reminder_schedules", {
     id: text("id").primaryKey().notNull(),
     pageId: text("page_id").notNull(),
     scheduledAt: integer("scheduled_at").notNull(),
-    zone: text("zone").notNull(),
     state: text("state", { enum: ["pending", "fired", "disabled"] }).notNull()
 }, table => [index("reminders_due").on(table.state, table.scheduledAt)]);
 export const notifications = sqliteTable("notifications", {

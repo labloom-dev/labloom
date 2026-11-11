@@ -3,16 +3,15 @@
         {#if definition.type === "page-link" && typeof value === "string"}
             <button class="text-button" onclick={() => openPage(value as string)}>打开关联页面</button>
         {:else}
-            <span class="readonly">{value === null ? "未填写" : display(definition, value, { zone })}</span>
+            <span class="readonly">{empty ? "未填写" : display(definition, value, { zone })}</span>
         {/if}
     {:else if definition.type === "boolean"}
-        <select value={value === null ? "" : String(value)} onchange={event => onchange(event.currentTarget.value === "" ? null : event.currentTarget.value === "true")}>
-            <option value="">未填写</option>
+        <select value={String(value)} onchange={event => onchange(event.currentTarget.value === "true")}>
             <option value="true">是</option>
             <option value="false">否</option>
         </select>
     {:else if definition.type === "select"}
-        <select value={String(value ?? "")} onchange={event => onchange(event.currentTarget.value || null)}>
+        <select value={empty ? "" : String(value)} onchange={event => onchange(event.currentTarget.value || emptyValue(definition.type))}>
             <option value="">未填写</option>
             {#each definition.metadata.options ?? [] as option (option.id)}
                 <option value={option.id}>{option.name}</option>
@@ -33,7 +32,7 @@
             {#each (Array.isArray(value) ? value : typeof value === "string" ? [value] : []) as id (id)}
                 <span>
                     <button class="text-button" onclick={() => openPage(String(id))}>打开页面</button>
-                    <button onclick={() => onchange(Array.isArray(value) ? value.filter(item => item !== id) : null)}>移除</button>
+                    <button onclick={() => onchange(Array.isArray(value) ? value.filter(item => item !== id) : emptyValue(definition.type))}>移除</button>
                 </span>
             {/each}
             <button class="text-button" onclick={() => picker = !picker}>选择页面</button>
@@ -46,16 +45,17 @@
             }} />
         {/if}
     {:else if definition.type === "datetime"}
-        <input type="datetime-local" value={typeof value === "number" ? secondsToWall(value, zone) : ""} onchange={event => change(() => event.currentTarget.value ? wallToSeconds(event.currentTarget.value, zone) : null)} />
+        <input type="datetime-local" value={empty ? "" : secondsToWall(value as number, zone)} onchange={event => change(() => event.currentTarget.value ? wallToSeconds(event.currentTarget.value, zone) : emptyValue(definition.type))} />
         <small>{zone}</small>
     {:else if definition.type === "json"}
-        <textarea value={value === null ? "" : JSON.stringify(value, null, 2)} onchange={event => change(() => event.currentTarget.value ? JSON.parse(event.currentTarget.value) : null)} placeholder="JSON 值"></textarea>
+        <textarea value={empty ? "" : JSON.stringify(value, null, 2)} onchange={event => change(() => event.currentTarget.value ? JSON.parse(event.currentTarget.value) : emptyValue(definition.type))} placeholder="JSON 值"></textarea>
     {:else if definition.type === "number"}
-        <input type="number" value={typeof value === "number" ? value : ""} onchange={event => onchange(event.currentTarget.value === "" ? null : event.currentTarget.valueAsNumber)} />
+        <input type="number" value={empty ? "" : value as number} onchange={event => onchange(event.currentTarget.value ? event.currentTarget.valueAsNumber : emptyValue(definition.type))} />
     {:else if definition.type === "date"}
-        <input type="date" value={String(value ?? "")} onchange={event => onchange(event.currentTarget.value || null)} />
+        <input type="date" value={empty ? "" : String(value)} onchange={event => onchange(event.currentTarget.value || emptyValue(definition.type))} />
+        {#if empty}<small>未填写</small>{/if}
     {:else}
-        <textarea rows={definition.id === "paper_abstract" ? 4 : 1} value={String(value ?? "")} onchange={event => onchange(event.currentTarget.value)}></textarea>
+        <textarea rows={definition.id === "paper_abstract" ? 4 : 1} value={String(value)} onchange={event => onchange(event.currentTarget.value)}></textarea>
     {/if}
     {#if error}
         <small class="error">{error}</small>
@@ -75,10 +75,14 @@
     import { type AttributeDefinition, type AttributeValue } from "../../../shared/types/attributes";
     import { wallToSeconds, secondsToWall } from "../../../shared/content/time";
     import { display } from "../../../shared/attrs/format";
+    import { emptyValue, isEmpty } from "../../../shared/attrs/values";
+    import { currentTimeZone } from "../layout/preferences.svelte";
     import { openPage } from "../layout/navigation";
     import { message } from "./state.svelte";
     import TargetPicker from "./TargetPicker.svelte";
-    let { definition, value, disabled = false, zone = Intl.DateTimeFormat().resolvedOptions().timeZone, onchange }: { definition: AttributeDefinition; value: AttributeValue; disabled?: boolean; zone?: string; onchange: (value: AttributeValue) => void } = $props();
+    let { definition, value, disabled = false, onchange }: { definition: AttributeDefinition; value: AttributeValue; disabled?: boolean; onchange: (value: AttributeValue) => void } = $props();
+    const zone = $derived(currentTimeZone());
+    const empty = $derived(isEmpty(definition.type, value));
     let picker = $state(false), error = $state("");
     function change(read: () => AttributeValue): void {
         try {

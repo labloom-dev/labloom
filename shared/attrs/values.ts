@@ -1,4 +1,34 @@
-import { attributeTypes, type AttributeDefinition, type AttributeValue } from "../types/attributes";
+import { attributeTypes, type AttributeDefinition, type AttributeType, type AttributeValue } from "../types/attributes";
+
+type ValueRule = { empty: null | "" | readonly [] } | { default: AttributeValue };
+const valueRules = {
+    boolean: { default: false },
+    string: { empty: "" }, url: { empty: "" },
+    number: { empty: null }, date: { empty: null }, datetime: { empty: null },
+    select: { empty: null }, "page-link": { empty: null }, json: { empty: null },
+    multiselect: { empty: [] }, "page-links": { empty: [] }
+} as const satisfies Record<AttributeType, ValueRule>;
+
+export function nullable(type: AttributeType): boolean {
+    return "empty" in valueRules[type];
+}
+
+export function emptyValue(type: AttributeType): AttributeValue {
+    const rule = valueRules[type];
+    if (!("empty" in rule)) throw new Error("此类型的属性不能清空。");
+    return typeof rule.empty === "object" && rule.empty !== null ? [] : rule.empty;
+}
+
+export function defaultValue(type: AttributeType): AttributeValue {
+    const rule = valueRules[type];
+    return "default" in rule ? rule.default : emptyValue(type);
+}
+
+export function isEmpty(type: AttributeType, value: unknown): boolean {
+    const rule = valueRules[type];
+    if (!("empty" in rule)) return false;
+    return Array.isArray(rule.empty) ? Array.isArray(value) && value.length === 0 : value === rule.empty;
+}
 
 export function record(value: unknown): value is Record<string, unknown> {
     return !!value && typeof value === "object" && !Array.isArray(value);
@@ -28,7 +58,7 @@ export function validateDefinition(value: unknown): asserts value is AttributeDe
 }
 
 export function validateValue(definition: AttributeDefinition, value: unknown): asserts value is AttributeValue {
-    if (value === null) return;
+    if (isEmpty(definition.type, value)) return;
     let valid = false;
     const options = definition.metadata.options ?? [];
     switch (definition.type) {
@@ -52,7 +82,7 @@ export function validateValue(definition: AttributeDefinition, value: unknown): 
             break;
         case "url": {
             try {
-                valid = typeof value === "string" && (!value || ["http:", "https:"].includes(new URL(value).protocol));
+                valid = typeof value === "string" && ["http:", "https:"].includes(new URL(value).protocol);
             }
             catch {
                 valid = false;
@@ -67,23 +97,20 @@ export function validateValue(definition: AttributeDefinition, value: unknown): 
 
 export function encodeValue(definition: AttributeDefinition, value: AttributeValue): string | number | null {
     validateValue(definition, value);
-    if (value === null) return null;
     if (definition.type === "boolean") return value ? 1 : 0;
     if (["json", "multiselect", "page-links"].includes(definition.type)) return JSON.stringify(value);
-    return value as string | number;
+    return value as string | number | null;
 }
 
 export function decodeValue(definition: AttributeDefinition, value: unknown): AttributeValue {
     let result = value;
-    if (value !== null) {
-        if (definition.type === "boolean") {
-            if (value !== 0 && value !== 1) throw new Error("已保存的布尔属性无效。");
-            result = value === 1;
-        }
-        else if (["json", "multiselect", "page-links"].includes(definition.type)) {
-            if (typeof value !== "string") throw new Error("已保存的复合属性无效。");
-            result = JSON.parse(value);
-        }
+    if (definition.type === "boolean") {
+        if (value !== 0 && value !== 1) throw new Error("已保存的布尔属性无效。");
+        result = value === 1;
+    }
+    else if (["json", "multiselect", "page-links"].includes(definition.type)) {
+        if (typeof value !== "string") throw new Error("已保存的复合属性无效。");
+        result = JSON.parse(value);
     }
     validateValue(definition, result);
     return result;

@@ -7,7 +7,7 @@ import { v4 } from "./migrations/v4";
 import { generatedMigrations } from "./migrations/generated";
 
 // Append new migrations; never edit a published version to introduce a new schema.
-const workspaceMigrations = [v1, v2, v3, v4, ...generatedMigrations] as const;
+export const workspaceMigrations = [v1, v2, v3, v4, ...generatedMigrations] as const;
 export const workspaceFormatVersion = workspaceMigrations[workspaceMigrations.length - 1].to;
 
 export function migrateWorkspaceSchema(database: Database.Database): void {

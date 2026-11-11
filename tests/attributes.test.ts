@@ -7,8 +7,8 @@ import { createWorkspace, openWorkspace } from "../main/storage/workspace";
 import { AttributeService } from "../main/knowledge/attributes";
 import { builtinAttrs } from "../shared/attrs/builtins";
 import { display, search } from "../shared/attrs/format";
-import { validateValue } from "../shared/attrs/values";
-import { type AttributeDefinition, type AttributeValue } from "../shared/types/attributes";
+import { decodeValue, defaultValue, emptyValue, encodeValue, isEmpty, nullable, validateValue } from "../shared/attrs/values";
+import { attributeTypes, type AttributeDefinition, type AttributeType, type AttributeValue } from "../shared/types/attributes";
 
 function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { id: string; service: AttributeService } {
     const root = process.env.LABLOOM_TEST_ROOT;
@@ -99,8 +99,6 @@ test("every attribute type has display and search text, with independent builtin
         const def = { id: "custom:" + randomUUID(), type, metadata };
         assert.equal(display(def, value, zone), label);
         assert.equal(search(def, value, zone), keyword);
-        assert.equal(display(def, null, zone), "");
-        assert.equal(search(def, null, zone), "");
     }
     for (const [id, value, label] of [
         ["recycle_reason", "unreachable", "失去保留关系"], ["recycled_at", 1794071576, "2026-11-08 01:12"],
@@ -113,4 +111,70 @@ test("every attribute type has display and search text, with independent builtin
     const dt = { id: "created_at", ...builtinAttrs.created_at };
     for (const value of [1.2, Infinity, Number.MAX_SAFE_INTEGER + 1, "2026-11-07T17:12:56.210Z"]) assert.throws(() => validateValue(dt, value));
     validateValue(dt, 0);
+});
+
+test("each attribute type round-trips its canonical empty or required default", () => {
+    const cases: Record<AttributeType, [AttributeValue, string | number | null]> = {
+        string: ["", ""], url: ["", ""], number: [null, null], date: [null, null], datetime: [null, null],
+        select: [null, null], "page-link": [null, null], multiselect: [[], "[]"], "page-links": [[], "[]"],
+        json: [null, "null"], boolean: [false, 0]
+    };
+    for (const type of attributeTypes) {
+        const def = { id: "custom:" + randomUUID(), type, metadata: { options: [] } };
+        const [initial, stored] = cases[type];
+        assert.deepEqual(defaultValue(type), initial);
+        assert.equal(encodeValue(def, initial), stored);
+        assert.deepEqual(decodeValue(def, stored), initial);
+        assert.equal(nullable(type), type !== "boolean");
+        assert.equal(isEmpty(type, initial), nullable(type));
+        if (nullable(type)) {
+            assert.deepEqual(emptyValue(type), initial);
+            assert.equal(display(def, initial), "");
+            assert.equal(search(def, initial), "");
+        }
+        else assert.throws(() => emptyValue(type));
+        for (const other of [null, "", []]) {
+            if (isEmpty(type, other)) continue;
+            if (type === "json") validateValue(def, other); // JSON strings and arrays are ordinary, nonempty JSON values.
+            else assert.throws(() => validateValue(def, other), type);
+        }
+        if (stored !== null) assert.throws(() => decodeValue(def, null), type);
+    }
+    assert.notEqual(defaultValue("page-links"), defaultValue("page-links"));
+});
+
+test("retyping falls back to the target type default, including previously empty rows", t => {
+    const { id, service } = fixture(t);
+    const key = `custom:${randomUUID()}`;
+    for (const [text, type] of [["差不多", "boolean"], ["很急", "number"]] as const) {
+        const original = { id: key, type: "string" as const, metadata: {} };
+        const back = service.applyDefinition(key, original);
+        if (back) service.applyDefinition(key, original, back.token);
+        service.write(id, { [key]: text });
+        const target = { ...original, type };
+        const preview = service.applyDefinition(key, target)!;
+        assert.deepEqual(preview.pages.map(p => p.id), [id]);
+        assert.equal(service.values(id)[key], text);
+        service.applyDefinition(key, target, preview.token);
+        assert.equal(service.values(id)[key], defaultValue(type));
+    }
+    const target = { id: key, type: "page-links" as const, metadata: {} };
+    const impact = service.applyDefinition(key, target)!;
+    service.applyDefinition(key, target, impact.token);
+    assert.deepEqual(service.values(id)[key], []);
+});
+
+test("removing options clears a selected option and preserves remaining multiselect choices", t => {
+    const { id, service } = fixture(t);
+    for (const type of ["select", "multiselect"] as const) {
+        const key = `custom:${randomUUID()}`, a = { id: "a", name: "A" }, b = { id: "b", name: "B" };
+        const original = { id: key, type, metadata: { options: [a, b] } };
+        service.applyDefinition(key, original);
+        service.write(id, { [key]: type === "select" ? a.id : [a.id, b.id] });
+        const next = { ...original, metadata: { options: [b] } };
+        const preview = service.applyDefinition(key, next)!;
+        assert.deepEqual(preview.pages.map(page => page.id), [id]);
+        service.applyDefinition(key, next, preview.token);
+        assert.deepEqual(service.values(id)[key], type === "select" ? null : [b.id]);
+    }
 });

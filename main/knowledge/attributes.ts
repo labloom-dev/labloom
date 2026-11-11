@@ -2,7 +2,7 @@ import { nowSeconds } from "../../shared/content/time";
 import { createHash } from "node:crypto";
 import { eq, inArray, placeholder, sql } from "drizzle-orm";
 import { builtinAttrs, builtinAttrsByPageKind, isBuiltin } from "../../shared/attrs/builtins";
-import { decodeValue, encodeValue, validUUID, validateDefinition, validateValue } from "../../shared/attrs/values";
+import { decodeValue, defaultValue, encodeValue, validUUID, validateDefinition, validateValue } from "../../shared/attrs/values";
 import { type AttributeDefinition, type AttributeImpact, type AttributeValue } from "../../shared/types/attributes";
 import { type PageKind } from "../../shared/types/content";
 import { type WorkspaceDatabase } from "../storage/database";
@@ -118,15 +118,14 @@ export class AttributeService {
             else {
                 this.db.insert(attrs).values(input).onConflictDoUpdate({ target: attrs.id, set: { type: input.type, metadata: input.metadata } }).run();
                 for (const row of rows) {
-                    if (row.value === null) continue;
-                    let value: AttributeValue = null;
+                    let value: AttributeValue;
                     try {
-                        value = before ? decodeValue(before, row.value) : null;
+                        value = decodeValue(before!, row.value);
                         if (input.type === "multiselect" && Array.isArray(value)) value = value.filter(id => input.metadata.options?.some(option => option.id === id));
                         validateValue(input, value);
                     }
                     catch {
-                        value = null;
+                        value = defaultValue(input.type);
                     }
                     this.write(row.pageId, { [id]: value }, true);
                 }

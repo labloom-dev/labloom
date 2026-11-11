@@ -384,6 +384,7 @@
 
 
 <script lang="ts">
+    import { displayMilliseconds } from "../layout/preferences.svelte";
     import { onMount, untrack } from "svelte";
     import type { FeedAPI, FeedItem, FeedSource, FeedSourceInput, FeedState } from "../../../shared/types/feed";
     import Icon from "../utils/Icon.svelte";
@@ -408,7 +409,7 @@
     const source = $derived(feedState.sources.find(item => item.id === sourceId));
 
     function formatDate(date: number | null): string {
-        return date !== null ? new Date(date).toLocaleString() : "未提供时间";
+        return date !== null ? displayMilliseconds(date) : "未提供时间";
     }
 
     async function reload(): Promise<void> {

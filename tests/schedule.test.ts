@@ -5,7 +5,8 @@ import { test, type TestContext } from "node:test";
 import { createWorkspace, openWorkspace } from "../main/storage/workspace";
 import { KnowledgeService } from "../main/knowledge/service";
 import { ReminderService } from "../main/knowledge/reminders";
-import { wallToSeconds, secondsToWall } from "../shared/content/time";
+import { wallToSeconds, secondsToWall, scheduleDay } from "../shared/content/time";
+import { AppStorage } from "../main/storage/app";
 
 function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { knowledge: KnowledgeService; reminders: ReminderService } {
     const workspace = createWorkspace(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "schedule-")));
@@ -49,6 +50,32 @@ test("schedule input uses its selected timezone and detects missing or ambiguous
     assert.equal(secondsToWall(Date.UTC(2026, 10, 7, 1, 30) / 1000, "Asia/Singapore"), "2026-11-07T09:30");
     assert.throws(() => wallToSeconds("2026-03-08T02:30", "America/New_York"), /不存在/);
     assert.throws(() => wallToSeconds("2026-11-01T01:30", "America/New_York"), /两次/);
+});
+
+test("changing the app timezone regroups timed tasks and events without rescheduling a UTC reminder", t => {
+    const { knowledge, reminders, database } = fixture(t);
+    const storage = new AppStorage(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "schedule-prefs-")));
+    storage.load();
+    const at = wallToSeconds("2026-11-08T01:12", "Asia/Shanghai");
+    const values = { schedule_date: "2026-11-08", schedule_start: at };
+    const task = knowledge.create("task", "A", { ...values, reminder_at: at });
+    const event = knowledge.create("event", "B", values);
+    const pending = database.prepare("SELECT id,scheduled_at,state FROM reminder_schedules WHERE page_id=?");
+    const original = pending.get(task.id);
+    assert.equal(original?.scheduled_at, at);
+    assert.equal(original?.state, "pending");
+    const columns = database.prepare("SELECT name FROM pragma_table_info('reminder_schedules')").pluck().all();
+    assert.ok(!columns.includes("zone"));
+    for (const [timeZone, day] of [["Asia/Shanghai", "2026-11-08"], ["UTC", "2026-11-07"]]) {
+        storage.saveAppearance({ ...storage.getAppearance(), timeZone });
+        const zone = storage.getAppearance().timeZone;
+        for (const page of [task, event]) assert.equal(scheduleDay(knowledge.get(page.id).attributes, zone), day);
+        assert.equal(scheduleDay({ schedule_date: "2026-11-08" }, zone), "2026-11-08");
+        assert.deepEqual(pending.get(task.id), original);
+        assert.deepEqual(reminders.due(at * 1000 - 1), []);
+    }
+    assert.deepEqual(reminders.due(at * 1000).map(n => n.pageId), [task.id]);
+    assert.deepEqual(reminders.due(at * 1000), []);
 });
 
 test("editing one reminder reconciles only its page and delivers at the first due second", t => {

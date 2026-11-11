@@ -13,7 +13,7 @@ export type LegacyPage = { page: PageRow; attrs: { attrId: string; value: string
 type HighlightRow = typeof highlights.$inferSelect;
 export type StoredState = Record<string, BlockRow | PagePatch | LegacyPage | HighlightRow | null>;
 export type RowChanges = { before: StoredState; after: StoredState };
-export type ReminderValues = { deleted: boolean; at: number | null; zone: string | null };
+export type ReminderValues = { deleted: boolean; at: number | null };
 export type ReminderChange = { pageId: string; before: ReminderValues; after: ReminderValues };
 const key = (t: Target): string => t.kind + ":" + t.id;
 const targetOf = (l: LinkRow): Target => ({ kind: l.targetKind, id: l.targetId });
@@ -139,7 +139,7 @@ export class EditChanges {
     setValue(pageId: string, id: string, value: ValueRow | null, def: AttributeDefinition): void {
         const before = this.readValue(pageId, id);
         if (same(before, value)) return;
-        if (["reminder_at", "schedule_zone", "deleted"].includes(id) && !this.schedules.has(pageId) && ["task", "event"].includes(this.data.header(pageId).kind)) {
+        if (["reminder_at", "deleted"].includes(id) && !this.schedules.has(pageId) && ["task", "event"].includes(this.data.header(pageId).kind)) {
             this.schedules.set(pageId, this.reminderValues(pageId));
         }
         const prev = this.pageChanges("before", pageId), next = this.pageChanges("after", pageId);
@@ -153,7 +153,7 @@ export class EditChanges {
             const ids = Array.isArray(decoded) ? decoded as string[] : typeof decoded === "string" ? [decoded] : [];
             this.setLinks({ kind: "page", id: pageId }, id, ids.map(id => ({ kind: "page", id })));
         }
-        if ((id === "deleted" && value?.value === 1) || (id === "independent" && value?.value === 0 && before?.value !== 0)) {
+        if ((id === "deleted" && value?.value === 1) || (id === "independent" && value?.value === 0 && before?.value === 1)) {
             this.seeds.push({ kind: "page", id: pageId });
             this.direct.add(pageId);
             this.causes.add("attribute:" + id);
@@ -177,8 +177,7 @@ export class EditChanges {
     }
 
     private reminderValues(id: string): ReminderValues {
-        return { deleted: this.readValue(id, "deleted")?.value === 1, at: this.readValue(id, "reminder_at")?.value as number ?? null,
-            zone: this.readValue(id, "schedule_zone")?.value as string ?? null };
+        return { deleted: this.readValue(id, "deleted")?.value === 1, at: this.readValue(id, "reminder_at")?.value as number ?? null };
     }
 
     reminderChanges(): ReminderChange[] {
@@ -191,7 +190,7 @@ export class EditChanges {
             flags = this.data.flags(id);
             const values = (this.rows.after["page:" + id] as PagePatch | undefined)?.values;
             if (values?.deleted) flags.deleted = values.deleted.value === 1;
-            if (values?.independent) flags.independent = values.independent.value !== 0;
+            if (values?.independent) flags.independent = values.independent.value === 1;
             this.flagCache.set(id, flags);
         }
         return flags;

@@ -4,7 +4,6 @@ import { record, validUUID } from "../../shared/attrs/values";
 import { blockText, payload, references, validateBlock, validTarget } from "../../shared/content/blocks";
 import { type AttributeDefinition, type AttributeImpact, type AttributeValue } from "../../shared/types/attributes";
 import { pageKinds, type Backlink, type BlockDeletion, type ChangePreview, type CommitResult, type ContentBlock, type EditCommit, type KnowledgeChange, type PageKind, type PageRecord, type Placement, type ResolvedTarget, type Target } from "../../shared/types/content";
-import { type WorkspaceDatabase } from "../storage/database";
 import { fingerprint } from "./attributes";
 import { EditChanges, type ReminderChange, type RowChanges } from "./changes";
 import { KnowledgeRecords } from "./records";
@@ -20,8 +19,6 @@ export class KnowledgeService extends KnowledgeRecords {
     onInvalidated?: (keys: string[], exceptTab?: string) => void;
     onScheduled?: (pages: ReminderChange[]) => void;
     onChanged?: (change: KnowledgeChange) => void;
-
-    constructor(db: WorkspaceDatabase) { super(db); }
 
     private writable(id: string): ReturnType<KnowledgeRecords["header"]> {
         const page = this.header(id);
@@ -65,10 +62,6 @@ export class KnowledgeService extends KnowledgeRecords {
         if ("schedule_start" in attrs || "schedule_end" in attrs) {
             const start = plan.readValue(id, "schedule_start")?.value, end = plan.readValue(id, "schedule_end")?.value;
             if (typeof start === "number" && typeof end === "number" && end < start) throw new Error("结束时间不能早于开始时间。");
-        }
-        if (attrs.schedule_zone) {
-            try { new Intl.DateTimeFormat("zh-CN", { timeZone: String(attrs.schedule_zone) }); }
-            catch { throw new Error("时区无效。"); }
         }
     }
 
@@ -264,8 +257,7 @@ export class KnowledgeService extends KnowledgeRecords {
                 { id: bodyId, type: "paragraph" as const, payload: payload("paragraph"), children: [] }]) this.putBlock(block);
             this.statement("INSERT INTO pages(id,kind,title_block_id,children) VALUES (?,?,?,?)").run(id, kind, titleId, JSON.stringify([bodyId]));
             const now = nowSeconds();
-            const schedule: Record<string, AttributeValue> = kind === "task" || kind === "event" ? { schedule_zone: Intl.DateTimeFormat().resolvedOptions().timeZone } : {};
-            plan.attributes(id, { pinned: false, tags: [], independent: kind !== "annotation", ...schedule, ...(kind === "task" ? { task_status: "todo", priority: "normal" } : {}), ...initial, deleted: false, created_at: now, modified_at: now }, [], true);
+            plan.attributes(id, { independent: kind !== "annotation", ...(kind === "task" ? { task_status: "todo", priority: "normal" } : {}), ...initial, created_at: now, modified_at: now, deleted: false }, [], true);
             this.validateSchedule(plan, id, initial);
             if (parentId) {
                 const reference = randomUUID();

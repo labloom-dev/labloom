@@ -24,7 +24,7 @@ test("appearance persists across app restarts and workspace choices without losi
     writeFileSync(storage.configPath, JSON.stringify({ version: 1, lastWorkspace: first, custom: { preserved: true } }));
     storage.load();
     assert.deepEqual(storage.getAppearance(), defaultAppearance);
-    const appearance = { theme: "system", readingSize: 18, motion: false } as const;
+    const appearance = { theme: "system", readingSize: 18, motion: false, timeZone: "Asia/Shanghai" } as const;
     storage.saveAppearance({ ...appearance, lastWorkspace: null, injected: true });
     storage.remember(second);
     const reopened = new AppStorage(storage.root);
@@ -44,7 +44,8 @@ test("invalid settings cannot overwrite config, and malformed stored appearance 
     writeFileSync(storage.configPath, contents);
     storage.load();
     assert.deepEqual(storage.getAppearance(), defaultAppearance);
-    for (const value of [null, [], {}, { ...defaultAppearance, theme: "bad" }, { ...defaultAppearance, readingSize: "18" }, { ...defaultAppearance, motion: 1 }]) {
+    for (const value of [null, [], {}, { ...defaultAppearance, theme: "bad" }, { ...defaultAppearance, readingSize: "18" }, { ...defaultAppearance, motion: 1 },
+        ...["", null, "+08:00", "Mars/Base"].map(timeZone => ({ ...defaultAppearance, timeZone }))]) {
         assert.throws(() => storage.saveAppearance(value), /Invalid appearance/);
     }
     assert.equal(readFileSync(storage.configPath, "utf8"), contents);

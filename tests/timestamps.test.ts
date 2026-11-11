@@ -7,18 +7,13 @@ import { EditHistory } from "../main/knowledge/history";
 import { ReminderService } from "../main/knowledge/reminders";
 import { KnowledgeService } from "../main/knowledge/service";
 import { createWorkspaceDatabase } from "../main/storage/database";
-import { generatedMigrations } from "../main/storage/migrations/generated";
+import { migrateWorkspaceSchema, workspaceMigrations } from "../main/storage/schema";
 import { runMigrations } from "../main/storage/migrations/runner";
-import { v1 } from "../main/storage/migrations/v1";
-import { v2 } from "../main/storage/migrations/v2";
-import { v3 } from "../main/storage/migrations/v3";
-import { v4 } from "../main/storage/migrations/v4";
 
 test("upgrading old timestamps preserves both undo formats, option cleanup, ordering, due time and milliseconds", t => {
     const db = new Database(":memory:");
     t.after(() => db.close());
-    const migrations = [v1, v2, v3, v4, ...generatedMigrations];
-    runMigrations(db, migrations.filter(m => m.to <= 9));
+    runMigrations(db, workspaceMigrations.filter(m => m.to <= 9));
     const first = "2026-11-07T17:12:56.210Z", last = "2026-11-07T17:32:56.208Z";
     const millis = Date.parse(first), seconds = Math.floor(millis / 1000), later = Math.floor(Date.parse(last) / 1000);
     const field = "custom:" + randomUUID(), a = randomUUID(), b = randomUUID();
@@ -55,7 +50,7 @@ test("upgrading old timestamps preserves both undo formats, option cleanup, orde
     node.run("first", "tab", null, a, legacy(first), legacy(last), first);
     node.run("second", "tab", "first", a, sparse(first), sparse(last), last);
     node.run("union", "keys", null, a, JSON.stringify({ "block:before": null }), JSON.stringify({ "block:after": null }), first);
-    runMigrations(db, migrations);
+    migrateWorkspaceSchema(db);
 
     assert.deepEqual(db.prepare("SELECT object_key FROM undo_objects WHERE node_id='union' ORDER BY object_key").pluck().all(), ["block:after", "block:before"]);
     assert.equal(db.prepare("SELECT retains FROM link_index WHERE source_id=? AND target_id=?").pluck().get(a, b), 1);
@@ -85,5 +80,50 @@ test("upgrading old timestamps preserves both undo formats, option cleanup, orde
         assert.deepEqual(db.prepare("SELECT value,typeof(value) AS type FROM page_attrs WHERE page_id=? AND attr_id=?").get(a, field), { value: expected, type: "integer" });
         assert.equal(db.prepare("SELECT count(*) FROM page_attrs WHERE page_id=? AND attr_id IN ('priority','task_status')").pluck().get(a), 0);
     }
+    assert.deepEqual(db.pragma("foreign_key_check"), []);
+});
+
+test("upgrading v13 removes page zones, normalizes raw NULLs and drops incompatible undo trees", t => {
+    const db = new Database(":memory:");
+    t.after(() => db.close());
+    runMigrations(db, workspaceMigrations.filter(m => m.to <= 13));
+    const id = randomUUID(), title = randomUUID(), jsonAttr = "custom:" + randomUUID();
+    db.prepare("INSERT INTO blocks(id,type) VALUES (?,'title')").run(title);
+    db.prepare("INSERT INTO pages(id,kind,title_block_id) VALUES (?,'task',?)").run(id, title);
+    db.prepare("UPDATE page_attrs SET value='Asia/Shanghai' WHERE page_id=? AND attr_id='schedule_zone'").run(id);
+    db.prepare("INSERT INTO attrs(id,type) VALUES (?,'json')").run(jsonAttr);
+    db.prepare("INSERT INTO page_attrs VALUES (?,?,NULL)").run(id, jsonAttr);
+    db.prepare("INSERT INTO reminder_schedules VALUES ('r',?,500,'Asia/Shanghai','pending')").run(id);
+
+    const key = "page:" + id;
+    const tab = db.prepare("INSERT INTO edit_tabs(id,cursor) VALUES (?,?)");
+    const node = db.prepare("INSERT INTO undo_nodes(id,tab_id,parent_id,page_id,before_state,after_state,created_at) VALUES (?,?,?,?,?,'{}',0)");
+    const object = db.prepare("INSERT INTO undo_objects(node_id,object_key) VALUES (?,?)");
+    for (const [name, patch] of Object.entries({
+        zone: { values: { schedule_zone: { value: "UTC" } } },
+        sparse: { values: { links: { value: null } } },
+        legacy: { attrs: [{ attrId: jsonAttr, value: null }] },
+        valid: { values: { reminder_at: { value: null }, [jsonAttr]: null } }
+    })) {
+        tab.run(name, name);
+        node.run(name, name, null, id, JSON.stringify({ [key]: patch }));
+        object.run(name, key);
+    }
+    node.run("child", "sparse", "sparse", id, "{}");
+    object.run("child", key);
+    db.prepare("UPDATE edit_tabs SET cursor='child' WHERE id='sparse'").run();
+
+    migrateWorkspaceSchema(db);
+    const value = db.prepare("SELECT value FROM page_attrs WHERE page_id=? AND attr_id=?").pluck();
+    assert.equal(db.prepare("SELECT id FROM attrs WHERE id='schedule_zone'").get(), undefined);
+    assert.equal(value.get(id, "schedule_zone"), undefined);
+    assert.equal(value.get(id, "pinned"), 0);
+    assert.equal(value.get(id, "links"), "[]");
+    assert.equal(value.get(id, jsonAttr), "null");
+    assert.equal(value.get(id, "reminder_at"), null);
+    assert.deepEqual(db.prepare("SELECT * FROM reminder_schedules").get(), { id: "r", page_id: id, scheduled_at: 500, state: "pending" });
+    assert.deepEqual(db.prepare("SELECT id FROM undo_nodes").pluck().all(), ["valid"]);
+    assert.deepEqual(db.prepare("SELECT node_id FROM undo_objects").pluck().all(), ["valid"]);
+    assert.deepEqual(db.prepare("SELECT cursor FROM edit_tabs WHERE cursor IS NOT NULL").pluck().all(), ["valid"]);
     assert.deepEqual(db.pragma("foreign_key_check"), []);
 });

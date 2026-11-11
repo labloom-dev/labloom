@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import { search } from "../../shared/attrs/format";
+import { resolveTimeZone } from "../../shared/content/time";
 import { decodeValue, encodeValue, record, validUUID } from "../../shared/attrs/values";
 import { blockText, payload, validateBlock } from "../../shared/content/blocks";
 import { PDF_EXTRACTOR_VERSION } from "../../shared/content/pdf-text";
@@ -40,7 +41,7 @@ export class KnowledgeRecords {
     readonly attributes: AttributeService;
     private readonly prepared = new Map<string, Database.Statement>();
 
-    constructor(readonly db: WorkspaceDatabase) {
+    constructor(readonly db: WorkspaceDatabase, private readonly timeZone: () => string = () => "system") {
         this.sql = db.$client;
         this.attributes = new AttributeService(db);
         this.sql.function("knowledge_text", { deterministic: true }, (type: string, content: string | null) => {
@@ -132,7 +133,7 @@ export class KnowledgeRecords {
 
     flags(id: string): { independent: boolean; deleted: boolean } {
         const state = this.statement("SELECT attr_id AS id, value FROM page_attrs WHERE page_id = ? AND attr_id IN ('independent','deleted')").all(id) as { id: string; value: number | null }[];
-        return { independent: state.some(a => a.id === "independent" && a.value !== 0), deleted: !state.length || state.some(a => a.id === "deleted" && a.value === 1) };
+        return { independent: state.some(a => a.id === "independent" && a.value === 1), deleted: !state.length || state.some(a => a.id === "deleted" && a.value === 1) };
     }
 
     title(id: string): string {
@@ -200,7 +201,7 @@ export class KnowledgeRecords {
             (query.attributes && !record(query.attributes))) throw new Error("页面查询无效。");
         const offset = query.offset ?? 0, limit = query.limit ?? 50;
         if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > 200) throw new Error("分页范围无效。");
-        const where = ["coalesce(d.value,0) = ?"], params: unknown[] = [Number(!!query.deleted)];
+        const where = ["d.value = ?"], params: unknown[] = [Number(!!query.deleted)];
         if (query.ids !== undefined) {
             if (!Array.isArray(query.ids) || !query.ids.every(validUUID)) throw new Error("页面编号列表无效。");
             where.push("p.id IN (SELECT value FROM json_each(?))");
@@ -208,7 +209,7 @@ export class KnowledgeRecords {
         }
         if (query.kind) { where.push("p.kind = ?"); params.push(query.kind); }
         if (query.pinned !== undefined) {
-            where.push("coalesce((SELECT value FROM page_attrs WHERE page_id=p.id AND attr_id='pinned'),0) = ?");
+            where.push("(SELECT value FROM page_attrs WHERE page_id=p.id AND attr_id='pinned') = ?");
             params.push(Number(query.pinned));
         }
         for (const tag of query.tags ?? []) {
@@ -229,11 +230,10 @@ export class KnowledgeRecords {
             ), matches(id) AS (
                 SELECT id FROM hits WHERE kind='page'
                 UNION SELECT v.page_id FROM page_attrs v JOIN attrs a ON a.id=v.attr_id
-                LEFT JOIN page_attrs z ON z.page_id=v.page_id AND z.attr_id='schedule_zone'
-                WHERE v.value IS NOT NULL AND instr(knowledge_search(a.id,a.type,a.metadata,v.value,coalesce(nullif(z.value,''),?)),?) > 0
+                WHERE v.value IS NOT NULL AND instr(knowledge_search(a.id,a.type,a.metadata,v.value,?),?) > 0
             ) `;
             where.push("p.id IN (SELECT id FROM matches)");
-            params.unshift(keyword, Intl.DateTimeFormat().resolvedOptions().timeZone, keyword);
+            params.unshift(keyword, resolveTimeZone(this.timeZone()), keyword);
         }
         const from = " FROM pages p JOIN page_attrs d ON d.page_id=p.id AND d.attr_id='deleted'";
         const filter = " WHERE " + where.join(" AND ");
@@ -247,10 +247,10 @@ export class KnowledgeRecords {
         const selected = (simple ? this.statement(`SELECT p.id, p.kind, p.title_block_id AS titleBlockId, p.children
             FROM page_attrs s INDEXED BY page_attrs_order CROSS JOIN pages p ON p.id=s.page_id
             JOIN page_attrs d ON d.page_id=p.id AND d.attr_id='deleted'
-            WHERE s.attr_id=? AND coalesce(d.value,0)=? ORDER BY s.value DESC,s.page_id LIMIT ? OFFSET ?`).all(dateId, Number(!!query.deleted), limit, offset)
+            WHERE s.attr_id=? AND d.value=? ORDER BY s.value DESC,s.page_id LIMIT ? OFFSET ?`).all(dateId, Number(!!query.deleted), limit, offset)
             : this.statement(cte + "SELECT p.id, p.kind, p.title_block_id AS titleBlockId, p.children" + count + from + join + filter +
             " ORDER BY " + order + ", p.id LIMIT ? OFFSET ?").all(...params, limit, offset)) as ListRow[];
-        const total = simple ? this.statement(query.deleted ? "SELECT count(*) FROM page_attrs WHERE attr_id='deleted' AND value=1" : "SELECT count(*) FROM page_attrs WHERE attr_id='deleted' AND (value=0 OR value IS NULL)").pluck().get() as number : selected[0]?.total ?? (keyword && !offset ? 0 : this.statement(cte + "SELECT count(*)" + from + filter).pluck().get(...params) as number);
+        const total = simple ? this.statement("SELECT count(*) FROM page_attrs WHERE attr_id='deleted' AND value=?").pluck().get(Number(!!query.deleted)) as number : selected[0]?.total ?? (keyword && !offset ? 0 : this.statement(cte + "SELECT count(*)" + from + filter).pluck().get(...params) as number);
         return { selected, total };
     }
 

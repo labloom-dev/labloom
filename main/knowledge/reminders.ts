@@ -11,9 +11,9 @@ export class ReminderService {
     reconcile(changes: ReminderChange[]): void {
         const db = this.knowledge.db;
         for (const { pageId, before, after } of changes) {
-            if (before.deleted === after.deleted && before.at === after.at && before.zone === after.zone) continue;
+            if (before.deleted === after.deleted && before.at === after.at) continue;
             db.update(reminderSchedules).set({ state: "disabled" }).where(and(eq(reminderSchedules.pageId, pageId), eq(reminderSchedules.state, "pending"))).run();
-            if (!after.deleted && !before.deleted && after.at !== null) db.insert(reminderSchedules).values({ id: randomUUID(), pageId, scheduledAt: after.at, zone: after.zone ?? "UTC", state: "pending" }).run();
+            if (!after.deleted && !before.deleted && after.at !== null) db.insert(reminderSchedules).values({ id: randomUUID(), pageId, scheduledAt: after.at, state: "pending" }).run();
         }
     }
 

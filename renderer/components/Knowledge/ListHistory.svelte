@@ -4,13 +4,14 @@
     {#if history.redo.length > 1}
         <select aria-label="选择重做分支" value="" onchange={event => apply("redo", event.currentTarget.value)}>
             <option value="">选择重做分支</option>
-            {#each history.redo as branch (branch.id)}<option value={branch.id}>{new Date(branch.time).toLocaleString()}</option>{/each}
+            {#each history.redo as branch (branch.id)}<option value={branch.id}>{displayMilliseconds(branch.time)}</option>{/each}
         </select>
     {/if}
 {/if}
 
 <script lang="ts">
     import type { HistoryState } from "../../../shared/types/knowledge";
+    import { displayMilliseconds } from "../layout/preferences.svelte";
     import { confirmed, perform, writeFromTab } from "./state.svelte";
     let { tabId, history = $bindable() }: { tabId: string; history: HistoryState } = $props();
     function apply(direction: "undo" | "redo", branch?: string): void {

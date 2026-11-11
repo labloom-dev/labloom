@@ -85,7 +85,9 @@ export class AppStorage {
 
     getAppearance(): Appearance {
         if (!this.config) throw new Error("The configuration has not been loaded successfully. Try again.");
-        return isAppearance(this.config.appearance) ? this.appearanceFields(this.config.appearance) : { ...defaultAppearance };
+        const stored = this.config.appearance;
+        const fields = isRecord(stored) ? { timeZone: defaultAppearance.timeZone, ...stored } : stored;
+        return isAppearance(fields) ? this.appearanceFields(fields) : { ...defaultAppearance };
     }
 
     saveAppearance(value: unknown): Appearance {
@@ -97,7 +99,7 @@ export class AppStorage {
     }
 
     private appearanceFields(value: Appearance): Appearance {
-        return { theme: value.theme, readingSize: value.readingSize, motion: value.motion };
+        return { theme: value.theme, readingSize: value.readingSize, motion: value.motion, timeZone: value.timeZone };
     }
 
     private write(config: AppConfig): void {

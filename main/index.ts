@@ -75,7 +75,7 @@ function createWindow(): void {
     registerStartupIPCs(mainWindow, startup);
     registerFeedIPCs(contents, startup);
     registerAppearanceIPCs(mainWindow, storage);
-    registerKnowledgeIPCs(mainWindow, startup);
+    registerKnowledgeIPCs(mainWindow, startup, storage);
     on(contents, appChannels.openDevTools, () => contents.openDevTools({ mode: "detach" }));
 
     mainWindow.once("ready-to-show", () => {

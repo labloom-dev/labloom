@@ -97,7 +97,7 @@
                             <small>{attributeText("recycle_reason", page.attributes.recycle_reason)}</small>
                         {/if}</span>
                     </span>
-                    <small class="updated">{attributeText("modified_at", page.attributes.modified_at, page.attributes.schedule_zone)}</small>
+                    <small class="updated">{attributeText("modified_at", page.attributes.modified_at)}</small>
                 </button>
             </div>
         {:else}
@@ -157,6 +157,8 @@
     import { onMount, untrack } from "svelte";
     import { type AttributeDefinition, type AttributeValue } from "../../../shared/types/attributes";
     import { display } from "../../../shared/attrs/format";
+    import { defaultValue } from "../../../shared/attrs/values";
+    import { currentTimeZone } from "../layout/preferences.svelte";
     import { builtinAttrs, isBuiltin } from "../../../shared/attrs/builtins";
     import { type PageKind, type PageList, type PageQuery } from "../../../shared/types/content";
     import Icon from "../utils/Icon.svelte";
@@ -175,8 +177,9 @@
     let view = $state(untrack(() => initialView)), keyword = $state(""), applied = $state(""), kind = $state<PageKind | "">(""), sort = $state<PageQuery["sort"]>("modified"), offset = $state(0);
     let selected = $state<string[]>([]), tags = $state<string[]>([]), definitions = $state<AttributeDefinition[]>([]), result = $state<PageList>({ items: [], total: 0 });
     let retry = $state(0);
-    let pending = $state(false), busy = $state(false), error = $state(""), info = $state(""), filterId = $state(""), filterValue = $state<AttributeValue>(null), filters = $state<Record<string, AttributeValue>>({});
+    let pending = $state(false), busy = $state(false), error = $state(""), info = $state(""), filterId = $state(""), filters = $state<Record<string, AttributeValue>>({});
     const filterDefinition = $derived(definitions.find(item => item.id === filterId));
+    let filterValue = $derived<AttributeValue>(filterDefinition ? defaultValue(filterDefinition.type) : null);
     const query = $derived<PageQuery>({ keyword: applied, kind: view === "papers" ? "paper" : kind, sort, offset, limit: 40, deleted: view === "trash", ...(view === "pinned" ? { pinned: true } : {}), tags: [...tags], attributes: { ...filters } });
     let definitionsDirty = false;
     onMount(() => registerList(tabId, change => {
@@ -188,6 +191,7 @@
     }, load));
     $effect(() => {
         void query; void retry;
+        if (query.keyword) currentTimeZone();
         untrack(() => visits.refresh(tabId));
     });
     async function load(ids: string[], initial: boolean): Promise<void> {
@@ -222,9 +226,9 @@
             pending = false;
         }
     }
-    function attributeText(id: string, value: AttributeValue, zone?: AttributeValue): string {
+    function attributeText(id: string, value: AttributeValue): string {
         const definition = definitions.find(item => item.id === id) ?? (isBuiltin(id) ? { id, ...builtinAttrs[id] } : undefined);
-        return definition ? display(definition, value ?? null, { zone: typeof zone === "string" ? zone : undefined }) : "";
+        return definition ? display(definition, value, { zone: currentTimeZone() }) : "";
     }
     async function importPDF(): Promise<void> {
         busy = true;

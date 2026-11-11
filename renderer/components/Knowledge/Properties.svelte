@@ -9,14 +9,16 @@
                 <span>{definition.metadata.name || definition.id}</span>
                 <div>
                     {#if !definition.metadata.readonly}
-                        <button disabled={locked} onclick={() => session.attr(definition.id, null)}>清空</button>
+                        {#if nullable(definition.type)}
+                            <button disabled={locked} onclick={() => session.attr(definition.id, emptyValue(definition.type))}>清空</button>
+                        {/if}
                         {#if !isBuiltin(definition.id)}
                             <button disabled={locked} onclick={() => session.detach(definition.id)}>移除</button>
                         {/if}
                     {/if}
                 </div>
             </div>
-            <AttributeInput {definition} value={page.attributes[definition.id]} disabled={locked} zone={zone} onchange={value => session.attr(definition.id, value)} />
+            <AttributeInput {definition} value={page.attributes[definition.id]} disabled={locked} onchange={value => session.attr(definition.id, value)} />
         </div>
     {/each}
     <div class="attach">
@@ -26,8 +28,9 @@
                 <option value={item.id}>{item.metadata.name}</option>
             {/each}
         </select>
-        <button class="button" disabled={locked || !attachId} onclick={() => {
-            session.attr(attachId, null); attachId = "";
+        <button class="button" disabled={locked || !attachment} onclick={() => {
+            if (attachment) session.attr(attachment.id, defaultValue(attachment.type));
+            attachId = "";
         }}>附加</button>
     </div>
     <AttributeManager {definitions} tabId={session.tabId} />
@@ -45,6 +48,7 @@
 </style>
 <script lang="ts">
     import { isBuiltin } from "../../../shared/attrs/builtins";
+    import { defaultValue, emptyValue, nullable } from "../../../shared/attrs/values";
     import { type AttributeDefinition } from "../../../shared/types/attributes";
     import { type PageSession } from "./state.svelte";
     import AttributeInput from "./AttributeInput.svelte";
@@ -53,15 +57,6 @@
     let { session, definitions }: { session: PageSession; definitions: AttributeDefinition[] } = $props();
     const page = $derived(session.state.page!);
     const locked = $derived(session.state.loading || !!page.attributes.deleted);
-    const zone = $derived.by(() => {
-        const candidate = String(page.attributes.schedule_zone || Intl.DateTimeFormat().resolvedOptions().timeZone);
-        try {
-            new Intl.DateTimeFormat("en", { timeZone: candidate });
-            return candidate;
-        }
-        catch {
-            return "UTC";
-        }
-    });
     let attachId = $state("");
+    const attachment = $derived(definitions.find(item => item.id === attachId));
 </script>

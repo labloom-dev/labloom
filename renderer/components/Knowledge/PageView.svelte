@@ -7,7 +7,7 @@
             <select value="" disabled={syncing} onchange={event => void current.undo("redo", event.currentTarget.value)}>
                 <option value="">选择重做分支</option>
                 {#each current.state.history.redo as branch (branch.id)}
-                    <option value={branch.id}>{new Date(branch.time).toLocaleString()}</option>
+                    <option value={branch.id}>{displayMilliseconds(branch.time)}</option>
                 {/each}
             </select>
         {/if}
@@ -77,6 +77,7 @@
     @container (max-width: 850px) { .page-body { flex-direction: column; } aside { width: 100%; border-left: 0; border-top: 1px solid var(--c-line); } }
 </style>
 <script lang="ts">
+    import { displayMilliseconds } from "../layout/preferences.svelte";
     import { untrack } from "svelte";
     import { type Tab } from "../Tab/defs";
     import { blockText } from "../../../shared/content/blocks";

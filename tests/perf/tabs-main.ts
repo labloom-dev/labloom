@@ -92,7 +92,7 @@ async function run(large: boolean): Promise<boolean> {
         registerStartupIPCs(window, startup);
         registerAppearanceIPCs(window, storage);
         registerFeedIPCs(window.webContents, startup);
-        registerKnowledgeIPCs(window, startup);
+        registerKnowledgeIPCs(window, startup, storage);
         await window.loadURL(process.env.LABLOOM_BENCH_URL!);
         window.webContents.debugger.attach();
         await window.webContents.debugger.sendCommand("Emulation.setFocusEmulationEnabled", { enabled: true });

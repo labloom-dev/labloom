@@ -32,7 +32,7 @@ function reachableFromRoots(pages: GraphPage[], blocks: Map<string, ContentBlock
     // For retention, a linked block needs a position in at least one live page.
     const owned = walkChildren(pages.flatMap(page => [page.titleBlockId, ...page.children]), blocks);
     const visitedPages = new Set<string>(), visitedBlocks = new Set<string>();
-    const queue: Target[] = pages.filter(page => page.attributes.independent !== false).map(page => ({ kind: "page", id: page.id }));
+    const queue: Target[] = pages.filter(page => page.attributes.independent === true).map(page => ({ kind: "page", id: page.id }));
     while (queue.length) {
         const target = queue.pop()!;
         if (target.kind === "page") {

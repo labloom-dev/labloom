@@ -60,9 +60,9 @@ test("Drizzle round-trips JSON, nullable columns, and STRICT ANY values on the w
     db.insert(blocks).values([{ id: "title", type: "title" }, { id: "child", type: "paragraph", content: "Text" }]).run();
     db.insert(pages).values({ id: "page", kind: "editable", titleBlockId: "title", children: ["child", "child"] }).run();
     db.insert(attrs).values({ id: "custom:value", type: "string", metadata: { options: ["one"] } }).run();
-    db.insert(pageAttrs).values({ pageId: "page", attrId: "custom:value" }).run();
-    assert.equal(db.select().from(pageAttrs).where(eq(pageAttrs.attrId, "custom:value")).get()!.value, null);
-    for (const value of ["000123", 123, 0.5, Buffer.from([0, 1, 255]), null]) {
+    db.insert(pageAttrs).values({ pageId: "page", attrId: "custom:value", value: "" }).run();
+    assert.equal(db.select().from(pageAttrs).where(eq(pageAttrs.attrId, "custom:value")).get()!.value, "");
+    for (const value of ["000123", 123, 0.5, Buffer.from([0, 1, 255])]) {
         db.update(pageAttrs).set({ value }).where(eq(pageAttrs.attrId, "custom:value")).run();
         assert.deepEqual(db.select().from(pageAttrs).where(eq(pageAttrs.attrId, "custom:value")).get()!.value, value);
     }
@@ -93,7 +93,7 @@ test("Drizzle transactions roll back rows, trigger-maintained references, and mo
     assert.deepEqual(db.select().from(blockUses).all(), uses);
     assert.deepEqual(db.select().from(workspaceMeta).get(), before);
     assert.throws(() => db.delete(attrs).where(eq(attrs.id, "deleted")).run(), /cannot be deleted/);
-    assert.throws(() => db.update(pageAttrs).set({ value: "1" }).where(eq(pageAttrs.attrId, "deleted")).run(), /must be NULL, 0, or 1/);
+    assert.throws(() => db.update(pageAttrs).set({ value: "1" }).where(eq(pageAttrs.attrId, "deleted")).run(), /must be 0 or 1/);
 });
 
 test("FeedService construction does not create or upgrade schema", t => {

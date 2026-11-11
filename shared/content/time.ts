@@ -1,4 +1,22 @@
+import { type AttributeValue } from "../types/attributes";
+
 export const nowSeconds = (): number => Math.floor(Date.now() / 1000);
+
+export function resolveTimeZone(preference: string): string {
+    return preference === "system" ? Intl.DateTimeFormat().resolvedOptions().timeZone : preference;
+}
+
+export function validTimeZone(preference: unknown): preference is string {
+    if (preference === "system") return true;
+    if (typeof preference !== "string" || !/^[A-Za-z]/.test(preference)) return false;
+    try {
+        new Intl.DateTimeFormat("en", { timeZone: preference });
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
 
 const formatters = new Map<string | undefined, Intl.DateTimeFormat>();
 
@@ -9,6 +27,11 @@ export function secondsToWall(seconds: number, zone?: string): string {
         formatters.set(zone, formatter);
     }
     return formatter.format(seconds * 1000).replace(" ", "T");
+}
+
+export function scheduleDay(attributes: Record<string, AttributeValue>, zone: string): string {
+    if (typeof attributes.schedule_start === "number") return secondsToWall(attributes.schedule_start, zone).slice(0, 10);
+    return typeof attributes.schedule_date === "string" ? attributes.schedule_date : "";
 }
 
 export function wallToSeconds(wall: string, zone: string): number {

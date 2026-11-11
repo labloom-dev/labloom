@@ -7,6 +7,11 @@ import { createWorkspace, openWorkspace } from "../main/storage/workspace";
 import { KnowledgeService } from "../main/knowledge/service";
 import { EditHistory } from "../main/knowledge/history";
 import { fingerprint } from "../main/knowledge/attributes";
+import { AppStorage } from "../main/storage/app";
+import { builtinAttrs, builtinAttrsByPageKind } from "../shared/attrs/builtins";
+import { display } from "../shared/attrs/format";
+import { validateValue } from "../shared/attrs/values";
+import { pageKinds } from "../shared/types/content";
 import { confirmationText } from "../shared/content/confirmation";
 import { payload, blockText } from "../shared/content/blocks";
 import { type ContentBlock, type EditCommit, type CommitResult, type PageRecord } from "../shared/types/content";
@@ -303,16 +308,46 @@ test("incremental links match rebuilding after changing, clearing and undoing al
     check(3);
 });
 
-test("keywords match visible names and local times including created and modified, never the raw representation", t => {
-    const { service } = fixture(t);
-    const e = service.create("event", "A", { schedule_zone: "Asia/Singapore" });
+test("new pages have valid typed values, independent retention and system timestamps", t => {
+    const { service } = fixture(t), parent = service.create();
+    for (const kind of pageKinds) {
+        const page = service.create(kind, kind, {}, kind === "annotation" ? parent.id : undefined);
+        assert.deepEqual(Object.keys(page.attributes).sort(), [...builtinAttrsByPageKind[kind]].sort());
+        for (const id of builtinAttrsByPageKind[kind]) validateValue({ id, ...builtinAttrs[id] }, page.attributes[id]);
+        assert.equal(page.attributes.independent, kind !== "annotation");
+        assert.deepEqual(page.attributes.links, []);
+        assert.ok(Number.isSafeInteger(page.attributes.created_at) && Number.isSafeInteger(page.attributes.modified_at));
+        if (kind === "task") {
+            assert.equal(page.attributes.task_status, "todo");
+            assert.equal(page.attributes.priority, "normal");
+            assert.equal(service.commitEdit({ pageId: page.id, tabId: "status", batch: 1, blocks: [], attributes: { task_status: null, priority: null } }).status, "saved");
+            assert.equal(service.get(page.id).attributes.task_status, null);
+            assert.equal(service.get(page.id).attributes.priority, null);
+        }
+    }
+});
+
+test("keywords and display use the current application timezone on the same open workspace", t => {
+    const { db, info } = fixture(t);
+    const storage = new AppStorage(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "preferences-")));
+    storage.load();
+    storage.remember(info);
+    const service = new KnowledgeService(db, () => storage.getAppearance().timeZone);
+    storage.saveAppearance({ ...storage.getAppearance(), timeZone: "Asia/Shanghai" });
+    const e = service.create("event", "A");
     const anchor = randomUUID(), a = service.create("annotation", "B", { independent: true, annotation_anchor: anchor });
     assert.ok(!("task_status" in e.attributes) && !("priority" in e.attributes));
     const seconds = 1794071576;
     service.attributes.write(e.id, { created_at: seconds, modified_at: seconds + 3600, schedule_start: seconds + 7200 }, true);
     service.attributes.write(a.id, { created_at: 0, modified_at: 0 }, true);
-    for (const keyword of ["tags", "true", "modified", anchor, "1794", "17:12", "未开始"]) assert.equal(service.list({ keyword }).total, 0, keyword);
-    for (const keyword of ["2026", "01:12", "02:12", "03:12", "asia"]) assert.deepEqual(service.list({ keyword }).items.map(p => p.id), [e.id], keyword);
+    const created = (): string => display({ id: "created_at", ...builtinAttrs.created_at }, service.get(e.id).attributes.created_at, { zone: storage.getAppearance().timeZone });
+    assert.equal(created(), "2026-11-08 01:12");
+    for (const keyword of ["tags", "true", "modified", anchor, "1794", "17:12", "未开始", "asia"]) assert.equal(service.list({ keyword }).total, 0, keyword);
+    for (const keyword of ["2026", "01:12", "02:12", "03:12"]) assert.deepEqual(service.list({ keyword }).items.map(p => p.id), [e.id], keyword);
+    storage.saveAppearance({ ...storage.getAppearance(), timeZone: "UTC" });
+    assert.equal(created(), "2026-11-07 17:12");
+    assert.deepEqual(service.list({ keyword: "17:12" }).items.map(p => p.id), [e.id]);
+    assert.equal(service.list({ keyword: "01:12" }).total, 0);
     const tag = randomUUID(), definition = service.attributes.definition("tags");
     service.setDefinition("tags", { ...definition, metadata: { ...definition.metadata, options: [{ id: tag, name: "Research" }] } }, randomUUID());
     service.commitEdit({ pageId: e.id, tabId: "edit", batch: 1, blocks: [], attributes: { tags: [tag] } });

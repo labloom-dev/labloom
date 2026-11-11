@@ -10,6 +10,7 @@ import { workspaceFormatVersion } from "../main/storage/schema";
 import { runMigrations } from "../main/storage/migrations/runner";
 import { v1 } from "../main/storage/migrations/v1";
 import { v2 } from "../main/storage/migrations/v2";
+import { defaultValue, encodeValue } from "../shared/attrs/values";
 import { WorkspaceUpgradeError } from "../main/storage/upgrade";
 
 const testRoot = process.env.LABLOOM_TEST_ROOT;
@@ -69,7 +70,10 @@ test("registered builtins are seeded, with an empty value for each supported pag
     for (const [kind, attrs] of Object.entries(builtinAttrsByPageKind)) {
         const id = page(database, kind);
         assert.deepEqual(database.prepare("SELECT attr_id, value FROM page_attrs WHERE page_id = ? ORDER BY attr_id").all(id),
-            [...attrs].sort().map(attrId => ({ attr_id: attrId, value: null })));
+            [...attrs].sort().map(attrId => {
+                const def = { id: attrId, ...builtinAttrs[attrId] };
+                return { attr_id: attrId, value: encodeValue(def, defaultValue(def.type)) };
+            }));
     }
     assert.equal(database.pragma("user_version", { simple: true }), workspaceFormatVersion);
     assert.deepEqual(database.prepare("SELECT user_version AS labloom_format_version FROM pragma_user_version").get(), {
@@ -94,17 +98,17 @@ test("builtin definitions keep their identity and type while metadata remains ed
     assert.deepEqual(reopened.prepare("SELECT last_modified_at FROM workspace_meta").get(), before);
 });
 
-test("deleted accepts empty and boolean values but cannot be detached or moved", t => {
+test("boolean storage accepts only zero and one, and deleted cannot be detached or moved", t => {
     const { database } = fresh(t);
     const id = page(database, "editable");
     const other = page(database, "paper");
     const update = database.prepare("UPDATE page_attrs SET value = ? WHERE page_id = ? AND attr_id = 'deleted'");
-    for (const value of [0, 1, null]) {
+    for (const value of [0, 1]) {
         update.run(value, id);
         assert.deepEqual(database.prepare("SELECT value FROM page_attrs WHERE page_id = ? AND attr_id = 'deleted'").get(id), { value });
     }
-    for (const value of [2, -1, 0.5, "true", "1", "[]"]) {
-        assert.throws(() => update.run(value, id), /must be NULL, 0, or 1/);
+    for (const value of [null, 2, -1, 0.5, "true", "1", "[]"]) {
+        assert.throws(() => update.run(value, id), /must be 0 or 1/);
     }
     assert.throws(() => database.prepare("DELETE FROM page_attrs WHERE page_id = ? AND attr_id = 'deleted'").run(id), /cannot remove a builtin attribute/);
     database.exec("INSERT INTO attrs (id, type) VALUES ('custom:test', 'boolean')");
@@ -119,7 +123,7 @@ test("ordinary attributes can be attached, removed, and retyped, and page deleti
     const { database } = fresh(t);
     const id = page(database, "editable");
     database.exec("INSERT INTO attrs (id, type) VALUES ('custom:test', 'string')");
-    database.prepare("INSERT INTO page_attrs (page_id, attr_id) VALUES (?, 'custom:test')").run(id);
+    database.prepare("INSERT INTO page_attrs VALUES (?, 'custom:test', '')").run(id);
     database.exec("UPDATE attrs SET type = 'number' WHERE id = 'custom:test'");
     database.prepare("DELETE FROM page_attrs WHERE page_id = ? AND attr_id = 'custom:test'").run(id);
     database.exec("DELETE FROM attrs WHERE id = 'custom:test'");
@@ -135,7 +139,7 @@ test("version 2 gains registered attributes without changing modification time",
     assert.equal(database.pragma("user_version", { simple: true }), workspaceFormatVersion);
     assert.equal(database.prepare("SELECT count(*) FROM attrs").pluck().get(), Object.keys(builtinAttrs).length);
     for (const id of fixture.data) {
-        assert.deepEqual(database.prepare("SELECT attr_id, value FROM page_attrs WHERE page_id = ? AND attr_id = 'deleted'").all(id), [{ attr_id: "deleted", value: null }]);
+        assert.deepEqual(database.prepare("SELECT attr_id, value FROM page_attrs WHERE page_id = ? AND attr_id = 'deleted'").all(id), [{ attr_id: "deleted", value: 0 }]);
     }
     assert.deepEqual(database.prepare("SELECT last_modified_at FROM workspace_meta").get(), { last_modified_at: Date.parse(oldTimestamp) });
     const paths = readdirSync(join(fixture.root, "backups"));
@@ -160,7 +164,7 @@ test("version 2 retains existing builtin metadata and values, including deleted 
     const database = track(t, openWorkspace(fixture.root, fixture.id).database);
     assert.deepEqual(database.prepare("SELECT metadata FROM attrs WHERE id = 'deleted'").get(), { metadata });
     assert.deepEqual(database.prepare("SELECT value FROM page_attrs WHERE page_id = ? AND attr_id = 'deleted'").get(fixture.data[0]), { value: 1 });
-    assert.deepEqual(database.prepare("SELECT value FROM page_attrs WHERE page_id = ? AND attr_id = 'deleted'").get(fixture.data[1]), { value: null });
+    assert.deepEqual(database.prepare("SELECT value FROM page_attrs WHERE page_id = ? AND attr_id = 'deleted'").get(fixture.data[1]), { value: 0 });
     assert.deepEqual(database.prepare("SELECT last_modified_at FROM workspace_meta").get(), { last_modified_at: Date.parse(oldTimestamp) });
 });
 

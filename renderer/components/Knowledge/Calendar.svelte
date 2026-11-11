@@ -18,10 +18,10 @@
         <section class="paper-card month-card">
             <header>
                 <button class="button" onclick={() => shift(-1)}>←</button>
-                <h2>{month.getFullYear()} 年 {month.getMonth() + 1} 月</h2>
+                <h2>{month.getUTCFullYear()} 年 {month.getUTCMonth() + 1} 月</h2>
                 <button class="button" onclick={() => shift(1)}>→</button>
                 <button class="text-button" onclick={() => {
-                    month = new Date(); selected = dateKey(new Date());
+                    now = nowSeconds(); viewedMonth = undefined; selectedDay = undefined;
                 }}>今天</button>
             </header>
             <div class="weekdays">
@@ -31,12 +31,12 @@
             </div>
             <div class="days">
                 {#each days as day (day.key)}
-                    <button class="day" class:selected={selected === day.key} class:outside={day.date.getMonth() !== month.getMonth()} class:today={day.key === today} onclick={() => selected = day.key}>
-                        <strong>{day.date.getDate()}</strong>
-                        {#each scheduled.filter(page => dayOf(page) === day.key).slice(0, 3) as page (page.id)}
+                    <button class="day" class:selected={selected === day.key} class:outside={day.date.getUTCMonth() !== month.getUTCMonth()} class:today={day.key === today} onclick={() => selectedDay = day.key}>
+                        <strong>{day.date.getUTCDate()}</strong>
+                        {#each (byDay[day.key] ?? []).slice(0, 3) as page (page.id)}
                             <span class:done={page.attributes.task_status === "done"}>{page.title || "未命名"}</span>
                         {/each}
-                        {#if scheduled.filter(page => dayOf(page) === day.key).length > 3}
+                        {#if (byDay[day.key]?.length ?? 0) > 3}
                             <small>更多…</small>
                         {/if}
                     </button>
@@ -48,10 +48,10 @@
             {#if pending}
                 <p>正在读取日程…</p>
             {/if}
-            {#each scheduled.filter(page => dayOf(page) === selected) as page (page.id)}
+            {#each byDay[selected] ?? [] as page (page.id)}
                 <div class="agenda-item">
                     <button class="page-link" onclick={() => openPage(page.id)}>
-                        <small>{kindNames[page.kind]} {display({ id: "schedule_zone", ...builtinAttrs.schedule_zone }, page.attributes.schedule_zone ?? null)}</small>
+                        <small>{kindNames[page.kind]}</small>
                         <strong>{page.title || "未命名"}</strong>
                         <span>{timeLabel(page)}</span>
                     </button>
@@ -66,7 +66,7 @@
                 </div>
             {/each}
             <h3>未安排日期</h3>
-            {#each scheduled.filter(page => !dayOf(page)).slice(0, 20) as page (page.id)}
+            {#each (byDay[""] ?? []).slice(0, 20) as page (page.id)}
                 <button class="unscheduled" onclick={() => openPage(page.id)}>{page.title || "未命名"}</button>
             {/each}
         </section>
@@ -77,7 +77,7 @@
         {#each notices as notice (notice.id)}
             <button class:unread={!notice.isRead} onclick={() => read(notice)}>
                 <span>{notice.title}</span>
-                <small>{new Date(notice.createdAt).toLocaleString()}</small>
+                <small>{displayMilliseconds(notice.createdAt)}</small>
                 <span>{notice.isRead ? "已读" : "未读"}</span>
             </button>
         {:else}
@@ -117,37 +117,40 @@
     import { type PageSummary } from "../../../shared/types/content";
     import { type Notice, type HistoryState } from "../../../shared/types/knowledge";
     import ListHistory from "./ListHistory.svelte";
-    import { secondsToWall } from "../../../shared/content/time";
+    import { nowSeconds, scheduleDay, secondsToWall } from "../../../shared/content/time";
     import { display } from "../../../shared/attrs/format";
     import { builtinAttrs } from "../../../shared/attrs/builtins";
     import { createPage, openPage } from "../layout/navigation";
+    import { currentTimeZone, displayMilliseconds } from "../layout/preferences.svelte";
     import { message, confirmed, perform, registerList, writeFromTab } from "./state.svelte";
     import { kindNames } from "./labels";
     import Icon from "../utils/Icon.svelte";
     let { tabId }: { tabId: string } = $props();
     let history = $state.raw<HistoryState>({ canUndo: false, redo: [] });
-    const dateKey = (date: Date): string => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-    const today = dateKey(new Date());
-    let month = $state(new Date()), selected = $state(today), scheduled = $state<PageSummary[]>([]), notices = $state<Notice[]>([]), pending = $state(false), error = $state("");
+    const zone = $derived(currentTimeZone());
+    let now = $state(nowSeconds()), viewedMonth = $state<Date>(), selectedDay = $state<string>();
+    const today = $derived(secondsToWall(now, zone).slice(0, 10));
+    const month = $derived(viewedMonth ?? new Date(today + "T00:00:00Z")), selected = $derived(selectedDay ?? today);
+    let scheduled = $state<PageSummary[]>([]), notices = $state<Notice[]>([]), pending = $state(false), error = $state("");
+    const byDay = $derived(Object.groupBy(scheduled, page => scheduleDay(page.attributes, zone)));
     const days = $derived.by(() => {
-        const first = new Date(month.getFullYear(), month.getMonth(), 1), offset = (first.getDay() + 6) % 7;
+        const first = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth(), 1)), offset = (first.getUTCDay() + 6) % 7;
         return Array.from({ length: 42 }, (_, index) => {
-            const date = new Date(first.getFullYear(), first.getMonth(), index - offset + 1);
-            return { date, key: dateKey(date) };
+            const date = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), index - offset + 1));
+            return { date, key: date.toISOString().slice(0, 10) };
         });
     });
     function shift(amount: number): void {
-        month = new Date(month.getFullYear(), month.getMonth() + amount, 1);
-    }
-    function dayOf(page: PageSummary): string {
-        if (typeof page.attributes.schedule_date === "string") return page.attributes.schedule_date;
-        if (typeof page.attributes.schedule_start === "number") return secondsToWall(page.attributes.schedule_start, typeof page.attributes.schedule_zone === "string" ? page.attributes.schedule_zone : undefined).slice(0, 10);
-        return "";
+        viewedMonth = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + amount, 1));
     }
     function timeLabel(page: PageSummary): string {
-        return typeof page.attributes.schedule_start === "number" ? display({ id: "schedule_start", ...builtinAttrs.schedule_start }, page.attributes.schedule_start, { zone: typeof page.attributes.schedule_zone === "string" ? page.attributes.schedule_zone : undefined }).slice(11) : "全天";
+        return typeof page.attributes.schedule_start === "number" ? display({ id: "schedule_start", ...builtinAttrs.schedule_start }, page.attributes.schedule_start, { zone }).slice(11) : "全天";
     }
     let noticesDirty = false;
+    onMount(() => {
+        const timer = setInterval(() => now = nowSeconds(), 60000);
+        return () => clearInterval(timer);
+    });
     onMount(() => registerList(tabId, change => {
         noticesDirty ||= !!change.notices;
         return (change.summaryPages ?? change.pages).filter(id => !change.kinds || ["task", "event"].includes(change.kinds[id]));

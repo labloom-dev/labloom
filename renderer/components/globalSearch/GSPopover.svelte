@@ -68,10 +68,12 @@
     import search from "../../assets/carbon--search.svg?raw";
     import { type PageSummary } from "../../../shared/types/content";
     import { openPage } from "../layout/navigation";
+    import { currentTimeZone } from "../layout/preferences.svelte";
     import { message } from "../Knowledge/state.svelte";
     let { onclose }: { onclose: () => void } = $props();
     let keyword = $state(""), pending = $state(false), error = $state(""), selected = $state(0), pages = $state<PageSummary[]>([]);
     $effect(() => {
+        currentTimeZone();
         const query = keyword.trim(); let active = true; selected = 0; pending = !!query; const timer = setTimeout(() => {
             if (!query) {
                 pages = []; return;

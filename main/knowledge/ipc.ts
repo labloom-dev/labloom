@@ -8,6 +8,7 @@ import { type BlockDeletion, type EditCommit, type KnowledgeChange, type Placeme
 import { type AnchorInput, type ReadingPosition } from "../../shared/types/papers";
 import { handle, on } from "../ipc";
 import { type Startup } from "../startup/startup";
+import { type AppStorage } from "../storage/app";
 import { notifications, workspaceMeta } from "../storage/tables";
 import { EditHistory } from "./history";
 import { PaperService } from "./papers";
@@ -22,12 +23,12 @@ function changed(change: KnowledgeChange): void {
     for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(knowledgeChanged, change);
 }
 
-export function registerKnowledgeIPCs(window: BrowserWindow, startup: Startup): void {
+export function registerKnowledgeIPCs(window: BrowserWindow, startup: Startup, storage: AppStorage): void {
     let editorStarted = false;
     let services: { knowledge: KnowledgeService; history: EditHistory; papers: PaperService; reminders: ReminderService } | undefined;
     const get = (): NonNullable<typeof services> => {
         if (services) return services;
-        const knowledge = new KnowledgeService(startup.getDatabase());
+        const knowledge = new KnowledgeService(startup.getDatabase(), () => storage.getAppearance().timeZone);
         const history = new EditHistory(knowledge), papers = new PaperService(knowledge, startup.getPath()), reminders = new ReminderService(knowledge);
         knowledge.onScheduled = changes => reminders.reconcile(changes);
         knowledge.onChanged = publish;
