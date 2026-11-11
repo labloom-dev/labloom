@@ -9,7 +9,9 @@ import { EditChanges, type ReminderChange, type RowChanges } from "./changes";
 import { KnowledgeRecords } from "./records";
 
 class DefinitionRollback extends Error {
-    constructor(readonly impact: AttributeImpact) { super("definition preview"); }
+    constructor(readonly impact: AttributeImpact) {
+        super("definition preview");
+    }
 }
 export function checkTab(id: unknown): asserts id is string {
     if (typeof id !== "string" || !id || id.length > 100) throw new Error("编辑会话无效。");

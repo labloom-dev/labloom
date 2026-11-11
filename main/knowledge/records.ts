@@ -24,7 +24,9 @@ export function decodeBlock(row: BlockRow): ContentBlock {
     if (type === "blocked_reference") body.target = null;
     let value: unknown;
     if (row.content?.trimStart().startsWith("{")) {
-        try { value = JSON.parse(row.content); }
+        try {
+            value = JSON.parse(row.content);
+        }
         catch { /* Early workspaces stored plain text verbatim. */ }
     }
     if (record(value) && value.type === type && "schemaVersion" in value) {
@@ -48,8 +50,12 @@ export class KnowledgeRecords {
             if (!content) return "";
             if (!content.trimStart().startsWith("{")) return content;
             let body: ContentBlock["payload"];
-            try { body = JSON.parse(content); }
-            catch { return content; }
+            try {
+                body = JSON.parse(content);
+            }
+            catch {
+                return content;
+            }
             return body?.schemaVersion === 1 && body.type === type && Array.isArray(body.inline) ? blockText({ id: "", type: body.type, payload: body, children: [] }) : content;
         });
         const definitions = new Map<string, { metadata: string; definition: AttributeDefinition }>();
@@ -207,7 +213,10 @@ export class KnowledgeRecords {
             where.push("p.id IN (SELECT value FROM json_each(?))");
             params.push(JSON.stringify(query.ids));
         }
-        if (query.kind) { where.push("p.kind = ?"); params.push(query.kind); }
+        if (query.kind) {
+            where.push("p.kind = ?");
+            params.push(query.kind);
+        }
         if (query.pinned !== undefined) {
             where.push("(SELECT value FROM page_attrs WHERE page_id=p.id AND attr_id='pinned') = ?");
             params.push(Number(query.pinned));

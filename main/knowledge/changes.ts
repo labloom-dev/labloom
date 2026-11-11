@@ -272,7 +272,10 @@ export class EditChanges {
             const queue = [...seeds];
             while (queue.length) {
                 const t = queue.pop()!;
-                if (t.kind === "page") { candidates.add(t.id); continue; }
+                if (t.kind === "page") {
+                    candidates.add(t.id);
+                    continue;
+                }
                 if (inspectedBlocks.has(t.id)) continue;
                 inspectedBlocks.add(t.id);
                 for (const id of this.children(t)) queue.push({ kind: "block", id });
@@ -289,7 +292,10 @@ export class EditChanges {
         while (true) {
             const lost = [...candidates].filter(id => !recycled.has(id) && !this.flags(id).deleted && !this.reachable({ kind: "page", id }, recycled));
             if (!lost.length) return [...recycled].sort();
-            for (const id of lost) { recycled.add(id); expandPage(id); }
+            for (const id of lost) {
+                recycled.add(id);
+                expandPage(id);
+            }
         }
     }
 
