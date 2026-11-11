@@ -73,9 +73,8 @@ function createWindow(): void {
     });
     contents.on("render-process-gone", (_event, details) => applicationLog?.record("Renderer exited", details));
     registerStartupIPCs(mainWindow, startup);
-    registerFeedIPCs(contents, startup);
     registerAppearanceIPCs(mainWindow, storage);
-    registerKnowledgeIPCs(mainWindow, startup, storage);
+    registerFeedIPCs(mainWindow, startup, registerKnowledgeIPCs(mainWindow, startup, storage));
     on(contents, appChannels.openDevTools, () => contents.openDevTools({ mode: "detach" }));
 
     mainWindow.once("ready-to-show", () => {

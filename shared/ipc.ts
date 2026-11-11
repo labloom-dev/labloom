@@ -53,9 +53,17 @@ export const startupChannels = {
 
 export const feedChannels = {
     getState: "feed:get-state",
+    getItem: "feed:get-item",
     saveSource: "feed:save-source",
-    removeSource: "feed:remove-source",
+    setSourceStatus: "feed:set-source-status",
     refresh: "feed:refresh",
     setRead: "feed:set-read",
+    markAllRead: "feed:mark-all-read",
+    setPosition: "feed:set-position",
+    setKeywords: "feed:set-keywords",
+    importItem: "feed:import-item",
     openItem: "feed:open-item"
 } as const;
+
+/** Sent to every window when saved subscriptions or items change. */
+export const feedChanged = "feed:changed";

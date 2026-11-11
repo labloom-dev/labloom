@@ -1,0 +1,1354 @@
+{
+    "version": "6",
+    "dialect": "sqlite",
+    "tables": {
+        "anchors": {
+            "name": "anchors",
+            "columns": {
+                "id": {
+                    "name": "id",
+                    "type": "text",
+                    "primaryKey": true,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "file_id": {
+                    "name": "file_id",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "page_number": {
+                    "name": "page_number",
+                    "type": "integer",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "rectangles": {
+                    "name": "rectangles",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "quote": {
+                    "name": "quote",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "context": {
+                    "name": "context",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "extractor_version": {
+                    "name": "extractor_version",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                }
+            },
+            "indexes": {
+                "anchors_file_page": {
+                    "name": "anchors_file_page",
+                    "columns": [
+                        "file_id",
+                        "page_number"
+                    ],
+                    "isUnique": false
+                }
+            },
+            "foreignKeys": {
+                "anchors_file_id_attachments_id_fk": {
+                    "name": "anchors_file_id_attachments_id_fk",
+                    "tableFrom": "anchors",
+                    "tableTo": "attachments",
+                    "columnsFrom": [
+                        "file_id"
+                    ],
+                    "columnsTo": [
+                        "id"
+                    ],
+                    "onDelete": "no action",
+                    "onUpdate": "no action"
+                }
+            },
+            "compositePrimaryKeys": {},
+            "uniqueConstraints": {},
+            "checkConstraints": {}
+        },
+        "attachments": {
+            "name": "attachments",
+            "columns": {
+                "id": {
+                    "name": "id",
+                    "type": "text",
+                    "primaryKey": true,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "stored_name": {
+                    "name": "stored_name",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "original_name": {
+                    "name": "original_name",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "media_type": {
+                    "name": "media_type",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "size": {
+                    "name": "size",
+                    "type": "integer",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "sha256": {
+                    "name": "sha256",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                }
+            },
+            "indexes": {
+                "attachments_stored_name_unique": {
+                    "name": "attachments_stored_name_unique",
+                    "columns": [
+                        "stored_name"
+                    ],
+                    "isUnique": true
+                }
+            },
+            "foreignKeys": {},
+            "compositePrimaryKeys": {},
+            "uniqueConstraints": {},
+            "checkConstraints": {}
+        },
+        "attrs": {
+            "name": "attrs",
+            "columns": {
+                "id": {
+                    "name": "id",
+                    "type": "text",
+                    "primaryKey": true,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "type": {
+                    "name": "type",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "metadata": {
+                    "name": "metadata",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false,
+                    "default": "'{}'"
+                }
+            },
+            "indexes": {},
+            "foreignKeys": {},
+            "compositePrimaryKeys": {},
+            "uniqueConstraints": {},
+            "checkConstraints": {
+                "attrs_metadata_object": {
+                    "name": "attrs_metadata_object",
+                    "value": "json_valid(\"attrs\".\"metadata\") AND json_type(\"attrs\".\"metadata\") = 'object'"
+                }
+            }
+        },
+        "block_uses": {
+            "name": "block_uses",
+            "columns": {
+                "container_kind": {
+                    "name": "container_kind",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "container_id": {
+                    "name": "container_id",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "slot": {
+                    "name": "slot",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "position": {
+                    "name": "position",
+                    "type": "integer",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "block_id": {
+                    "name": "block_id",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                }
+            },
+            "indexes": {
+                "block_uses_by_block": {
+                    "name": "block_uses_by_block",
+                    "columns": [
+                        "block_id"
+                    ],
+                    "isUnique": false
+                }
+            },
+            "foreignKeys": {},
+            "compositePrimaryKeys": {
+                "block_uses_container_kind_container_id_slot_position_pk": {
+                    "columns": [
+                        "container_kind",
+                        "container_id",
+                        "slot",
+                        "position"
+                    ],
+                    "name": "block_uses_container_kind_container_id_slot_position_pk"
+                }
+            },
+            "uniqueConstraints": {},
+            "checkConstraints": {
+                "block_uses_container_kind": {
+                    "name": "block_uses_container_kind",
+                    "value": "\"block_uses\".\"container_kind\" IN ('page', 'block')"
+                },
+                "block_uses_slot": {
+                    "name": "block_uses_slot",
+                    "value": "\"block_uses\".\"slot\" IN ('title', 'children')"
+                },
+                "block_uses_position": {
+                    "name": "block_uses_position",
+                    "value": "\"block_uses\".\"position\" >= 0"
+                },
+                "block_uses_title": {
+                    "name": "block_uses_title",
+                    "value": "\"block_uses\".\"slot\" != 'title' OR (\"block_uses\".\"container_kind\" = 'page' AND \"block_uses\".\"position\" = 0)"
+                }
+            }
+        },
+        "blocks": {
+            "name": "blocks",
+            "columns": {
+                "id": {
+                    "name": "id",
+                    "type": "text",
+                    "primaryKey": true,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "type": {
+                    "name": "type",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "content": {
+                    "name": "content",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": false,
+                    "autoincrement": false
+                },
+                "children": {
+                    "name": "children",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false,
+                    "default": "'[]'"
+                }
+            },
+            "indexes": {},
+            "foreignKeys": {},
+            "compositePrimaryKeys": {},
+            "uniqueConstraints": {},
+            "checkConstraints": {
+                "blocks_children_array": {
+                    "name": "blocks_children_array",
+                    "value": "json_valid(\"blocks\".\"children\") AND json_type(\"blocks\".\"children\") = 'array'"
+                }
+            }
+        },
+        "edit_tabs": {
+            "name": "edit_tabs",
+            "columns": {
+                "id": {
+                    "name": "id",
+                    "type": "text",
+                    "primaryKey": true,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "cursor": {
+                    "name": "cursor",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": false,
+                    "autoincrement": false
+                }
+            },
+            "indexes": {},
+            "foreignKeys": {},
+            "compositePrimaryKeys": {},
+            "uniqueConstraints": {},
+            "checkConstraints": {}
+        },
+        "feed_items": {
+            "name": "feed_items",
+            "columns": {
+                "id": {
+                    "name": "id",
+                    "type": "text",
+                    "primaryKey": true,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "source_id": {
+                    "name": "source_id",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "external_id": {
+                    "name": "external_id",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": false,
+                    "autoincrement": false
+                },
+                "title": {
+                    "name": "title",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "url": {
+                    "name": "url",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": false,
+                    "autoincrement": false
+                },
+                "normalized_url": {
+                    "name": "normalized_url",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": false,
+                    "autoincrement": false
+                },
+                "content_fingerprint": {
+                    "name": "content_fingerprint",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": false,
+                    "autoincrement": false
+                },
+                "authors": {
+                    "name": "authors",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "summary": {
+                    "name": "summary",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "raw_content": {
+                    "name": "raw_content",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false,
+                    "default": "''"
+                },
+                "has_full_content": {
+                    "name": "has_full_content",
+                    "type": "integer",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false,
+                    "default": false
+                },
+                "published_at": {
+                    "name": "published_at",
+                    "type": "integer",
+                    "primaryKey": false,
+                    "notNull": false,
+                    "autoincrement": false
+                },
+                "origin_snapshot": {
+                    "name": "origin_snapshot",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": false,
+                    "autoincrement": false
+                },
+                "is_read": {
+                    "name": "is_read",
+                    "type": "integer",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false,
+                    "default": false
+                },
+                "reading_position": {
+                    "name": "reading_position",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": false,
+                    "autoincrement": false
+                },
+                "paper_id": {
+                    "name": "paper_id",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": false,
+                    "autoincrement": false
+                }
+            },
+            "indexes": {
+                "feed_items_date": {
+                    "name": "feed_items_date",
+                    "columns": [
+                        "\"published_at\" desc"
+                    ],
+                    "isUnique": false
+                },
+                "feed_items_url": {
+                    "name": "feed_items_url",
+                    "columns": [
+                        "source_id",
+                        "normalized_url"
+                    ],
+                    "isUnique": false
+                },
+                "feed_items_fingerprint": {
+                    "name": "feed_items_fingerprint",
+                    "columns": [
+                        "source_id",
+                        "content_fingerprint"
+                    ],
+                    "isUnique": false
+                },
+                "feed_items_paper": {
+                    "name": "feed_items_paper",
+                    "columns": [
+                        "paper_id"
+                    ],
+                    "isUnique": false
+                },
+                "feed_items_source_id_external_id_unique": {
+                    "name": "feed_items_source_id_external_id_unique",
+                    "columns": [
+                        "source_id",
+                        "external_id"
+                    ],
+                    "isUnique": true
+                }
+            },
+            "foreignKeys": {
+                "feed_items_source_id_feed_sources_id_fk": {
+                    "name": "feed_items_source_id_feed_sources_id_fk",
+                    "tableFrom": "feed_items",
+                    "tableTo": "feed_sources",
+                    "columnsFrom": [
+                        "source_id"
+                    ],
+                    "columnsTo": [
+                        "id"
+                    ],
+                    "onDelete": "no action",
+                    "onUpdate": "no action"
+                }
+            },
+            "compositePrimaryKeys": {},
+            "uniqueConstraints": {},
+            "checkConstraints": {}
+        },
+        "feed_sources": {
+            "name": "feed_sources",
+            "columns": {
+                "id": {
+                    "name": "id",
+                    "type": "text",
+                    "primaryKey": true,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "name": {
+                    "name": "name",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "url": {
+                    "name": "url",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "subscription_status": {
+                    "name": "subscription_status",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false,
+                    "default": "'enabled'"
+                },
+                "auto_refresh": {
+                    "name": "auto_refresh",
+                    "type": "integer",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false,
+                    "default": true
+                },
+                "interval_minutes": {
+                    "name": "interval_minutes",
+                    "type": "integer",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false,
+                    "default": 60
+                },
+                "last_refreshed": {
+                    "name": "last_refreshed",
+                    "type": "integer",
+                    "primaryKey": false,
+                    "notNull": false,
+                    "autoincrement": false
+                },
+                "last_added": {
+                    "name": "last_added",
+                    "type": "integer",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false,
+                    "default": 0
+                },
+                "error": {
+                    "name": "error",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": false,
+                    "autoincrement": false
+                },
+                "last_checked": {
+                    "name": "last_checked",
+                    "type": "integer",
+                    "primaryKey": false,
+                    "notNull": false,
+                    "autoincrement": false
+                },
+                "next_refresh": {
+                    "name": "next_refresh",
+                    "type": "integer",
+                    "primaryKey": false,
+                    "notNull": false,
+                    "autoincrement": false
+                },
+                "failures": {
+                    "name": "failures",
+                    "type": "integer",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false,
+                    "default": 0
+                },
+                "etag": {
+                    "name": "etag",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": false,
+                    "autoincrement": false
+                },
+                "last_modified": {
+                    "name": "last_modified",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": false,
+                    "autoincrement": false
+                }
+            },
+            "indexes": {
+                "feed_sources_url_unique": {
+                    "name": "feed_sources_url_unique",
+                    "columns": [
+                        "url"
+                    ],
+                    "isUnique": true
+                }
+            },
+            "foreignKeys": {},
+            "compositePrimaryKeys": {},
+            "uniqueConstraints": {},
+            "checkConstraints": {
+                "feed_sources_status": {
+                    "name": "feed_sources_status",
+                    "value": "\"feed_sources\".\"subscription_status\" IN ('enabled', 'paused', 'cancelled')"
+                },
+                "feed_sources_interval": {
+                    "name": "feed_sources_interval",
+                    "value": "\"feed_sources\".\"interval_minutes\" BETWEEN 15 AND 1440"
+                }
+            }
+        },
+        "highlights": {
+            "name": "highlights",
+            "columns": {
+                "id": {
+                    "name": "id",
+                    "type": "text",
+                    "primaryKey": true,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "anchor_id": {
+                    "name": "anchor_id",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "color": {
+                    "name": "color",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                }
+            },
+            "indexes": {},
+            "foreignKeys": {
+                "highlights_anchor_id_anchors_id_fk": {
+                    "name": "highlights_anchor_id_anchors_id_fk",
+                    "tableFrom": "highlights",
+                    "tableTo": "anchors",
+                    "columnsFrom": [
+                        "anchor_id"
+                    ],
+                    "columnsTo": [
+                        "id"
+                    ],
+                    "onDelete": "no action",
+                    "onUpdate": "no action"
+                }
+            },
+            "compositePrimaryKeys": {},
+            "uniqueConstraints": {},
+            "checkConstraints": {}
+        },
+        "link_index": {
+            "name": "link_index",
+            "columns": {
+                "source_kind": {
+                    "name": "source_kind",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "source_id": {
+                    "name": "source_id",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "source_field": {
+                    "name": "source_field",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "target_kind": {
+                    "name": "target_kind",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "target_id": {
+                    "name": "target_id",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "retains": {
+                    "name": "retains",
+                    "type": "integer",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false,
+                    "default": true
+                }
+            },
+            "indexes": {
+                "link_index_target": {
+                    "name": "link_index_target",
+                    "columns": [
+                        "target_kind",
+                        "target_id"
+                    ],
+                    "isUnique": false
+                }
+            },
+            "foreignKeys": {},
+            "compositePrimaryKeys": {
+                "link_index_source_kind_source_id_source_field_target_kind_target_id_pk": {
+                    "columns": [
+                        "source_kind",
+                        "source_id",
+                        "source_field",
+                        "target_kind",
+                        "target_id"
+                    ],
+                    "name": "link_index_source_kind_source_id_source_field_target_kind_target_id_pk"
+                }
+            },
+            "uniqueConstraints": {},
+            "checkConstraints": {}
+        },
+        "notifications": {
+            "name": "notifications",
+            "columns": {
+                "id": {
+                    "name": "id",
+                    "type": "text",
+                    "primaryKey": true,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "schedule_id": {
+                    "name": "schedule_id",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "page_id": {
+                    "name": "page_id",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "title": {
+                    "name": "title",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "created_at": {
+                    "name": "created_at",
+                    "type": "integer",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "is_read": {
+                    "name": "is_read",
+                    "type": "integer",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false,
+                    "default": false
+                }
+            },
+            "indexes": {
+                "notifications_schedule_id_unique": {
+                    "name": "notifications_schedule_id_unique",
+                    "columns": [
+                        "schedule_id"
+                    ],
+                    "isUnique": true
+                }
+            },
+            "foreignKeys": {},
+            "compositePrimaryKeys": {},
+            "uniqueConstraints": {},
+            "checkConstraints": {}
+        },
+        "page_attachments": {
+            "name": "page_attachments",
+            "columns": {
+                "page_id": {
+                    "name": "page_id",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "file_id": {
+                    "name": "file_id",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "role": {
+                    "name": "role",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false,
+                    "default": "'fulltext'"
+                },
+                "position": {
+                    "name": "position",
+                    "type": "integer",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                }
+            },
+            "indexes": {},
+            "foreignKeys": {
+                "page_attachments_page_id_pages_id_fk": {
+                    "name": "page_attachments_page_id_pages_id_fk",
+                    "tableFrom": "page_attachments",
+                    "tableTo": "pages",
+                    "columnsFrom": [
+                        "page_id"
+                    ],
+                    "columnsTo": [
+                        "id"
+                    ],
+                    "onDelete": "no action",
+                    "onUpdate": "no action"
+                },
+                "page_attachments_file_id_attachments_id_fk": {
+                    "name": "page_attachments_file_id_attachments_id_fk",
+                    "tableFrom": "page_attachments",
+                    "tableTo": "attachments",
+                    "columnsFrom": [
+                        "file_id"
+                    ],
+                    "columnsTo": [
+                        "id"
+                    ],
+                    "onDelete": "no action",
+                    "onUpdate": "no action"
+                }
+            },
+            "compositePrimaryKeys": {
+                "page_attachments_page_id_file_id_role_pk": {
+                    "columns": [
+                        "page_id",
+                        "file_id",
+                        "role"
+                    ],
+                    "name": "page_attachments_page_id_file_id_role_pk"
+                }
+            },
+            "uniqueConstraints": {},
+            "checkConstraints": {}
+        },
+        "page_attrs": {
+            "name": "page_attrs",
+            "columns": {
+                "page_id": {
+                    "name": "page_id",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "attr_id": {
+                    "name": "attr_id",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "value": {
+                    "name": "value",
+                    "type": "ANY",
+                    "primaryKey": false,
+                    "notNull": false,
+                    "autoincrement": false,
+                    "default": "NULL"
+                }
+            },
+            "indexes": {
+                "page_attrs_by_value": {
+                    "name": "page_attrs_by_value",
+                    "columns": [
+                        "attr_id",
+                        "value"
+                    ],
+                    "isUnique": false
+                },
+                "page_attrs_order": {
+                    "name": "page_attrs_order",
+                    "columns": [
+                        "attr_id",
+                        "\"value\" desc",
+                        "page_id"
+                    ],
+                    "isUnique": false
+                }
+            },
+            "foreignKeys": {
+                "page_attrs_page_id_pages_id_fk": {
+                    "name": "page_attrs_page_id_pages_id_fk",
+                    "tableFrom": "page_attrs",
+                    "tableTo": "pages",
+                    "columnsFrom": [
+                        "page_id"
+                    ],
+                    "columnsTo": [
+                        "id"
+                    ],
+                    "onDelete": "no action",
+                    "onUpdate": "no action"
+                },
+                "page_attrs_attr_id_attrs_id_fk": {
+                    "name": "page_attrs_attr_id_attrs_id_fk",
+                    "tableFrom": "page_attrs",
+                    "tableTo": "attrs",
+                    "columnsFrom": [
+                        "attr_id"
+                    ],
+                    "columnsTo": [
+                        "id"
+                    ],
+                    "onDelete": "no action",
+                    "onUpdate": "no action"
+                }
+            },
+            "compositePrimaryKeys": {
+                "page_attrs_page_id_attr_id_pk": {
+                    "columns": [
+                        "page_id",
+                        "attr_id"
+                    ],
+                    "name": "page_attrs_page_id_attr_id_pk"
+                }
+            },
+            "uniqueConstraints": {},
+            "checkConstraints": {}
+        },
+        "pages": {
+            "name": "pages",
+            "columns": {
+                "id": {
+                    "name": "id",
+                    "type": "text",
+                    "primaryKey": true,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "kind": {
+                    "name": "kind",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "title_block_id": {
+                    "name": "title_block_id",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "children": {
+                    "name": "children",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false,
+                    "default": "'[]'"
+                }
+            },
+            "indexes": {},
+            "foreignKeys": {
+                "pages_title_block_id_blocks_id_fk": {
+                    "name": "pages_title_block_id_blocks_id_fk",
+                    "tableFrom": "pages",
+                    "tableTo": "blocks",
+                    "columnsFrom": [
+                        "title_block_id"
+                    ],
+                    "columnsTo": [
+                        "id"
+                    ],
+                    "onDelete": "no action",
+                    "onUpdate": "no action"
+                }
+            },
+            "compositePrimaryKeys": {},
+            "uniqueConstraints": {},
+            "checkConstraints": {
+                "pages_children_array": {
+                    "name": "pages_children_array",
+                    "value": "json_valid(\"pages\".\"children\") AND json_type(\"pages\".\"children\") = 'array'"
+                }
+            }
+        },
+        "reminder_schedules": {
+            "name": "reminder_schedules",
+            "columns": {
+                "id": {
+                    "name": "id",
+                    "type": "text",
+                    "primaryKey": true,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "page_id": {
+                    "name": "page_id",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "scheduled_at": {
+                    "name": "scheduled_at",
+                    "type": "integer",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "state": {
+                    "name": "state",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                }
+            },
+            "indexes": {
+                "reminders_due": {
+                    "name": "reminders_due",
+                    "columns": [
+                        "state",
+                        "scheduled_at"
+                    ],
+                    "isUnique": false
+                }
+            },
+            "foreignKeys": {},
+            "compositePrimaryKeys": {},
+            "uniqueConstraints": {},
+            "checkConstraints": {}
+        },
+        "undo_nodes": {
+            "name": "undo_nodes",
+            "columns": {
+                "id": {
+                    "name": "id",
+                    "type": "text",
+                    "primaryKey": true,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "tab_id": {
+                    "name": "tab_id",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "parent_id": {
+                    "name": "parent_id",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": false,
+                    "autoincrement": false
+                },
+                "page_id": {
+                    "name": "page_id",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "before_state": {
+                    "name": "before_state",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "after_state": {
+                    "name": "after_state",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "created_at": {
+                    "name": "created_at",
+                    "type": "integer",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                }
+            },
+            "indexes": {
+                "undo_nodes_tab": {
+                    "name": "undo_nodes_tab",
+                    "columns": [
+                        "tab_id"
+                    ],
+                    "isUnique": false
+                },
+                "undo_nodes_parent": {
+                    "name": "undo_nodes_parent",
+                    "columns": [
+                        "parent_id"
+                    ],
+                    "isUnique": false
+                }
+            },
+            "foreignKeys": {
+                "undo_nodes_tab_id_edit_tabs_id_fk": {
+                    "name": "undo_nodes_tab_id_edit_tabs_id_fk",
+                    "tableFrom": "undo_nodes",
+                    "tableTo": "edit_tabs",
+                    "columnsFrom": [
+                        "tab_id"
+                    ],
+                    "columnsTo": [
+                        "id"
+                    ],
+                    "onDelete": "no action",
+                    "onUpdate": "no action"
+                }
+            },
+            "compositePrimaryKeys": {},
+            "uniqueConstraints": {},
+            "checkConstraints": {}
+        },
+        "undo_objects": {
+            "name": "undo_objects",
+            "columns": {
+                "node_id": {
+                    "name": "node_id",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "object_key": {
+                    "name": "object_key",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                }
+            },
+            "indexes": {
+                "undo_objects_key": {
+                    "name": "undo_objects_key",
+                    "columns": [
+                        "object_key"
+                    ],
+                    "isUnique": false
+                }
+            },
+            "foreignKeys": {
+                "undo_objects_node_id_undo_nodes_id_fk": {
+                    "name": "undo_objects_node_id_undo_nodes_id_fk",
+                    "tableFrom": "undo_objects",
+                    "tableTo": "undo_nodes",
+                    "columnsFrom": [
+                        "node_id"
+                    ],
+                    "columnsTo": [
+                        "id"
+                    ],
+                    "onDelete": "cascade",
+                    "onUpdate": "no action"
+                }
+            },
+            "compositePrimaryKeys": {
+                "undo_objects_node_id_object_key_pk": {
+                    "columns": [
+                        "node_id",
+                        "object_key"
+                    ],
+                    "name": "undo_objects_node_id_object_key_pk"
+                }
+            },
+            "uniqueConstraints": {},
+            "checkConstraints": {}
+        },
+        "workspace_meta": {
+            "name": "workspace_meta",
+            "columns": {
+                "id": {
+                    "name": "id",
+                    "type": "text",
+                    "primaryKey": true,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "name": {
+                    "name": "name",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "created_at": {
+                    "name": "created_at",
+                    "type": "integer",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "last_modified_at": {
+                    "name": "last_modified_at",
+                    "type": "integer",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false
+                },
+                "settings": {
+                    "name": "settings",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "autoincrement": false,
+                    "default": "'{}'"
+                }
+            },
+            "indexes": {},
+            "foreignKeys": {},
+            "compositePrimaryKeys": {},
+            "uniqueConstraints": {},
+            "checkConstraints": {
+                "workspace_meta_settings_object": {
+                    "name": "workspace_meta_settings_object",
+                    "value": "json_valid(\"workspace_meta\".\"settings\") AND json_type(\"workspace_meta\".\"settings\") = 'object'"
+                }
+            }
+        }
+    },
+    "views": {
+        "attribute_defaults": {
+            "columns": {
+                "type": {
+                    "name": "type",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": false,
+                    "autoincrement": false
+                },
+                "value": {
+                    "name": "value",
+                    "type": "ANY",
+                    "primaryKey": false,
+                    "notNull": false,
+                    "autoincrement": false
+                }
+            },
+            "name": "attribute_defaults",
+            "isExisting": false,
+            "definition": "SELECT column1 AS type, column2 AS value FROM (VALUES ('string', ''), ('number', null), ('boolean', 0), ('date', null), ('datetime', null), ('select', null), ('multiselect', '[]'), ('url', ''), ('page-link', null), ('page-links', '[]'), ('json', 'null'))"
+        },
+        "builtin_page_attrs": {
+            "columns": {
+                "kind": {
+                    "name": "kind",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": false,
+                    "autoincrement": false
+                },
+                "attr_id": {
+                    "name": "attr_id",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": false,
+                    "autoincrement": false
+                },
+                "type": {
+                    "name": "type",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": false,
+                    "autoincrement": false
+                }
+            },
+            "name": "builtin_page_attrs",
+            "isExisting": false,
+            "definition": "SELECT column1 AS kind, column2 AS attr_id, column3 AS type FROM (VALUES ('editable', 'deleted', 'boolean'), ('editable', 'independent', 'boolean'), ('editable', 'created_at', 'datetime'), ('editable', 'modified_at', 'datetime'), ('editable', 'recycle_reason', 'select'), ('editable', 'recycled_at', 'datetime'), ('editable', 'pinned', 'boolean'), ('editable', 'tags', 'multiselect'), ('editable', 'links', 'page-links'), ('paper', 'deleted', 'boolean'), ('paper', 'independent', 'boolean'), ('paper', 'created_at', 'datetime'), ('paper', 'modified_at', 'datetime'), ('paper', 'recycle_reason', 'select'), ('paper', 'recycled_at', 'datetime'), ('paper', 'pinned', 'boolean'), ('paper', 'tags', 'multiselect'), ('paper', 'links', 'page-links'), ('paper', 'paper_authors', 'string'), ('paper', 'paper_doi', 'string'), ('paper', 'paper_year', 'string'), ('paper', 'paper_venue', 'string'), ('paper', 'paper_url', 'url'), ('paper', 'paper_abstract', 'string'), ('paper', 'paper_keywords', 'string'), ('paper', 'source_snapshot', 'json'), ('paper', 'reading_position', 'json'), ('annotation', 'deleted', 'boolean'), ('annotation', 'independent', 'boolean'), ('annotation', 'created_at', 'datetime'), ('annotation', 'modified_at', 'datetime'), ('annotation', 'recycle_reason', 'select'), ('annotation', 'recycled_at', 'datetime'), ('annotation', 'pinned', 'boolean'), ('annotation', 'tags', 'multiselect'), ('annotation', 'links', 'page-links'), ('annotation', 'annotation_paper', 'page-link'), ('annotation', 'annotation_anchor', 'string'), ('task', 'deleted', 'boolean'), ('task', 'independent', 'boolean'), ('task', 'created_at', 'datetime'), ('task', 'modified_at', 'datetime'), ('task', 'recycle_reason', 'select'), ('task', 'recycled_at', 'datetime'), ('task', 'pinned', 'boolean'), ('task', 'tags', 'multiselect'), ('task', 'links', 'page-links'), ('task', 'task_status', 'select'), ('task', 'priority', 'select'), ('task', 'schedule_date', 'date'), ('task', 'schedule_start', 'datetime'), ('task', 'schedule_end', 'datetime'), ('task', 'reminder_at', 'datetime'), ('event', 'deleted', 'boolean'), ('event', 'independent', 'boolean'), ('event', 'created_at', 'datetime'), ('event', 'modified_at', 'datetime'), ('event', 'recycle_reason', 'select'), ('event', 'recycled_at', 'datetime'), ('event', 'pinned', 'boolean'), ('event', 'tags', 'multiselect'), ('event', 'links', 'page-links'), ('event', 'schedule_date', 'date'), ('event', 'schedule_start', 'datetime'), ('event', 'schedule_end', 'datetime'), ('event', 'reminder_at', 'datetime'))"
+        }
+    },
+    "enums": {},
+    "_meta": {
+        "tables": {},
+        "columns": {}
+    },
+    "internal": {
+        "indexes": {
+            "feed_items_date": {
+                "columns": {
+                    "\"published_at\" desc": {
+                        "isExpression": true
+                    }
+                }
+            },
+            "page_attrs_order": {
+                "columns": {
+                    "\"value\" desc": {
+                        "isExpression": true
+                    }
+                }
+            }
+        }
+    },
+    "id": "4fc5bba6-dd43-4532-9619-ae99ffadb941",
+    "prevId": "07613960-d248-442b-a947-7e79609589dd"
+}

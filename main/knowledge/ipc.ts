@@ -6,6 +6,7 @@ import { knowledgeChannels as channels, knowledgeChanged, saveBeforeClose, saveB
 import { type AttributeDefinition, type AttributeValue } from "../../shared/types/attributes";
 import { type BlockDeletion, type EditCommit, type KnowledgeChange, type Placement, type Target, type PageKind, type PageQuery } from "../../shared/types/content";
 import { type AnchorInput, type ReadingPosition } from "../../shared/types/papers";
+import { type FeedLibrary } from "../feed/service";
 import { handle, on } from "../ipc";
 import { type Startup } from "../startup/startup";
 import { type AppStorage } from "../storage/app";
@@ -23,7 +24,7 @@ function changed(change: KnowledgeChange): void {
     for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(knowledgeChanged, change);
 }
 
-export function registerKnowledgeIPCs(window: BrowserWindow, startup: Startup, storage: AppStorage): void {
+export function registerKnowledgeIPCs(window: BrowserWindow, startup: Startup, storage: AppStorage): FeedLibrary {
     let editorStarted = false;
     let services: { knowledge: KnowledgeService; history: EditHistory; papers: PaperService; reminders: ReminderService } | undefined;
     const get = (): NonNullable<typeof services> => {
@@ -182,4 +183,10 @@ export function registerKnowledgeIPCs(window: BrowserWindow, startup: Startup, s
             });
         }, 15000);
     });
+    // Subscriptions add items to the library through the same services and change notices.
+    return {
+        createPaper: paper => get().papers.createReference(paper),
+        paperState: id => get().papers.state(id),
+        announce: id => notice("", [id], Object.keys(get().knowledge.get(id).blocks))
+    };
 }

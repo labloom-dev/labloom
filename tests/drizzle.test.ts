@@ -51,7 +51,7 @@ function versionThree(): { root: string; id: string; } {
 }
 
 function entry(externalId: string): FeedEntry {
-    return { externalId, title: "Research", url: "https://example.org/article", authors: "Author", summary: "Summary", publishedAt: Date.parse(timestamp) };
+    return { externalId, title: "Research", url: "https://example.org/article", authors: "Author", summary: "Summary", content: "", fullContent: false, publishedAt: Date.parse(timestamp) };
 }
 
 test("Drizzle round-trips JSON, nullable columns, and STRICT ANY values on the workspace connection", t => {
@@ -108,7 +108,7 @@ test("version 3 workspaces gain feed tables during the backed-up workspace upgra
     const { root, id } = versionThree();
     const { database, db } = track(t, openWorkspace(root, id));
     assert.equal(database.pragma("user_version", { simple: true }), workspaceFormatVersion);
-    assert.deepEqual(new FeedService(db).getState({}), { sources: [], items: [], total: 0 });
+    assert.deepEqual(new FeedService(db).getState({}), { sources: [], items: [], total: 0, unreadCount: 0, keywords: [] });
     assert.equal(db.select().from(workspaceMeta).get()!.lastModifiedAt, Date.parse(timestamp));
     const paths = readdirSync(join(root, "backups"));
     assert.equal(paths.length, 1);
@@ -153,14 +153,17 @@ test("upgrading existing FeedService tables preserves source IDs, entries, and r
     assert.equal(state.sources[0].id, "source");
     assert.equal(state.sources[0].unreadCount, 0);
     assert.equal(state.items[0].id, "item");
-    assert.equal(state.items[0].externalId, "external");
+    assert.equal(database.prepare("SELECT external_id FROM feed_items WHERE id = 'item'").pluck().get(), "external");
     assert.equal(state.items[0].isRead, true);
     assert.equal(db.select().from(workspaceMeta).get()!.lastModifiedAt, Date.parse(timestamp));
     service.setRead("item", false);
     assert.equal(database.prepare("SELECT is_read FROM feed_items WHERE id = 'item'").pluck().get(), 0);
     assert.equal(service.getState({}).sources[0].unreadCount, 1);
-    service.removeSource("source");
-    assert.deepEqual(db.select().from(feedItems).all(), []);
+    // Cancelling a subscription keeps what it has already fetched.
+    service.setSourceStatus("source", "cancel");
+    assert.equal(db.select().from(feedItems).all().length, 1);
+    assert.equal(service.getState({}).total, 0);
+    assert.equal(service.getState({ sourceId: "source" }).total, 1);
 });
 
 test("a failed feed schema upgrade rolls back version and newly created tables", t => {
@@ -185,7 +188,7 @@ test("a failed feed schema upgrade rolls back version and newly created tables",
 test("Feed writes remain atomic when an entry fails halfway through a batch", async t => {
     const { db } = track(t, createWorkspace(directory()));
     let entries = [entry("original")];
-    const service = new FeedService(db, async () => entries);
+    const service = new FeedService(db, async request => ({ entries, title: "", url: request.url, etag: null, lastModified: null }));
     const id = await service.saveSource({ name: "Feed", url: "https://example.org/feed" });
     const item = service.getState({}).items[0];
     service.setRead(item.id, true);

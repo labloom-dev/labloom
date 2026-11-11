@@ -90,24 +90,51 @@ export const feedSources = sqliteTable("feed_sources", {
     id: text("id").primaryKey().notNull(),
     name: text("name").notNull(),
     url: text("url").notNull().unique(),
+    // Cancelling keeps the source and its items; only enabled sources are fetched.
+    status: text("subscription_status", { enum: ["enabled", "paused", "cancelled"] }).notNull().default("enabled"),
+    autoRefresh: integer("auto_refresh", { mode: "boolean" }).notNull().default(true),
+    intervalMinutes: integer("interval_minutes").notNull().default(60),
     lastRefreshed: integer("last_refreshed"),
     lastAdded: integer("last_added").notNull().default(0),
-    error: text("error")
-});
+    error: text("error"),
+    lastChecked: integer("last_checked"),
+    // The earliest time the scheduler may fetch again; NULL means due now.
+    nextRefresh: integer("next_refresh"),
+    failures: integer("failures").notNull().default(0),
+    // HTTP validators, replayed verbatim for conditional requests.
+    etag: text("etag"),
+    lastModified: text("last_modified")
+}, table => [
+    check("feed_sources_status", sql`${table.status} IN ('enabled', 'paused', 'cancelled')`),
+    check("feed_sources_interval", sql`${table.intervalMinutes} BETWEEN 15 AND 1440`)
+]);
 
 export const feedItems = sqliteTable("feed_items", {
     id: text("id").primaryKey().notNull(),
-    sourceId: text("source_id").notNull().references(() => feedSources.id, { onDelete: "cascade" }),
-    externalId: text("external_id").notNull(),
+    // No cascade: cancelling a subscription keeps its history.
+    sourceId: text("source_id").notNull().references(() => feedSources.id),
+    externalId: text("external_id"),
     title: text("title").notNull(),
     url: text("url"),
+    normalizedUrl: text("normalized_url"),
+    fingerprint: text("content_fingerprint"),
     authors: text("authors").notNull(),
     summary: text("summary").notNull(),
+    // Source markup as received; it is sanitized when displayed.
+    content: text("raw_content").notNull().default(""),
+    // False when the source only offered a summary for this item.
+    fullContent: integer("has_full_content", { mode: "boolean" }).notNull().default(false),
     publishedAt: integer("published_at"),
-    isRead: integer("is_read", { mode: "boolean" }).notNull().default(false)
+    originSnapshot: text("origin_snapshot", { mode: "json" }).$type<import("../../shared/types/feed").FeedOrigin>(),
+    isRead: integer("is_read", { mode: "boolean" }).notNull().default(false),
+    readingPosition: text("reading_position", { mode: "json" }).$type<import("../../shared/types/feed").FeedPosition>(),
+    paperId: text("paper_id")
 }, table => [
     unique().on(table.sourceId, table.externalId),
-    index("feed_items_date").on(desc(table.publishedAt))
+    index("feed_items_date").on(desc(table.publishedAt)),
+    index("feed_items_url").on(table.sourceId, table.normalizedUrl),
+    index("feed_items_fingerprint").on(table.sourceId, table.fingerprint),
+    index("feed_items_paper").on(table.paperId)
 ]);
 
 // Only actual references enter this rebuildable index; shared block uses do not.

@@ -6,7 +6,7 @@ import Database from "better-sqlite3";
 import { FeedService } from "../main/feed/service";
 import { createWorkspaceDatabase } from "../main/storage/database";
 import { migrateWorkspaceSchema } from "../main/storage/schema";
-import type { FeedQuery, FeedSourceInput } from "../shared/types/feed";
+import type { FeedQuery, FeedSourceAction, FeedSourceInput } from "../shared/types/feed";
 import { arxivURL } from "../shared/utils/feed";
 
 const root = resolve(import.meta.dirname, "..");
@@ -23,7 +23,15 @@ export default defineConfig({
                 const database = new Database(resolve(folder, "feed.sqlite"));
                 database.pragma("foreign_keys = ON");
                 migrateWorkspaceSchema(database);
+                // Followed keywords are workspace settings, so the preview database needs a workspace record.
+                database.prepare("INSERT INTO workspace_meta (id, name, created_at, last_modified_at) SELECT 'preview', 'Feed preview', ?, ? WHERE NOT EXISTS (SELECT 1 FROM workspace_meta)")
+                    .run(Date.now(), Date.now());
                 const feed = new FeedService(createWorkspaceDatabase(database));
+                // The page polls this counter in place of the desktop change notice.
+                let version = 0;
+                feed.onChanged = () => version++;
+                const timer = setInterval(() => void feed.refreshDue().catch(() => {}), 30000);
+                server.httpServer?.once("close", () => clearInterval(timer));
                 server.httpServer?.once("close", () => database.close());
 
                 if (!feed.getState({}).sources.length) {
@@ -61,11 +69,17 @@ export default defineConfig({
                         if (!Array.isArray(args)) throw new Error("无效的预览参数。");
                         let result: unknown;
                         switch (method) {
+                            case "version": result = version; break;
                             case "getState": result = feed.getState(args[0] as FeedQuery); break;
+                            case "getItem": result = feed.getItem(args[0] as string); break;
                             case "saveSource": result = await feed.saveSource(args[0] as FeedSourceInput); break;
-                            case "removeSource": result = feed.removeSource(args[0] as string); break;
+                            case "setSourceStatus": result = feed.setSourceStatus(args[0] as string, args[1] as FeedSourceAction); break;
                             case "refresh": result = await feed.refresh((args[0] ?? undefined) as string | undefined); break;
                             case "setRead": result = feed.setRead(args[0] as string, args[1] as boolean); break;
+                            case "markAllRead": result = feed.markAllRead((args[0] ?? undefined) as string | undefined); break;
+                            case "setPosition": result = feed.setPosition(args[0] as string, args[1] as number); break;
+                            case "setKeywords": result = feed.setKeywords(args[0] as string[]); break;
+                            case "importItem": result = feed.importItem(args[0] as string, args[1] === true); break;
                             case "openItem": result = feed.itemURL(args[0] as string); break;
                             default: throw new Error("未知的预览操作。");
                         }

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { AppAPI } from "../shared/app";
-import { appChannels, appearanceChannels, feedChannels, startupChannels } from "../shared/ipc";
+import { appChannels, appearanceChannels, feedChanged, feedChannels, startupChannels } from "../shared/ipc";
 import { knowledgeChannels, knowledgeChanged, saveBeforeClose, saveBeforeCloseReply } from "../shared/ipc";
 
 // The renderer only gets this typed bridge, never ipcRenderer itself.
@@ -58,11 +58,21 @@ const api: AppAPI = {
     },
     feed: {
         getState: query => ipcRenderer.invoke(feedChannels.getState, query),
+        getItem: id => ipcRenderer.invoke(feedChannels.getItem, id),
         saveSource: source => ipcRenderer.invoke(feedChannels.saveSource, source),
-        removeSource: id => ipcRenderer.invoke(feedChannels.removeSource, id),
+        setSourceStatus: (id, action) => ipcRenderer.invoke(feedChannels.setSourceStatus, id, action),
         refresh: sourceId => ipcRenderer.invoke(feedChannels.refresh, sourceId),
         setRead: (id, isRead) => ipcRenderer.invoke(feedChannels.setRead, id, isRead),
-        openItem: id => ipcRenderer.invoke(feedChannels.openItem, id)
+        markAllRead: sourceId => ipcRenderer.invoke(feedChannels.markAllRead, sourceId),
+        setPosition: (id, progress) => ipcRenderer.invoke(feedChannels.setPosition, id, progress),
+        setKeywords: keywords => ipcRenderer.invoke(feedChannels.setKeywords, keywords),
+        importItem: (id, replace) => ipcRenderer.invoke(feedChannels.importItem, id, replace),
+        openItem: id => ipcRenderer.invoke(feedChannels.openItem, id),
+        onChanged: listener => {
+            const handler = (): void => listener();
+            ipcRenderer.on(feedChanged, handler);
+            return () => ipcRenderer.removeListener(feedChanged, handler);
+        }
     },
     startup: {
         getState: () => ipcRenderer.invoke(startupChannels.getState),

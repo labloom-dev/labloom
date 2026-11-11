@@ -36,3 +36,30 @@ export function arxivURL(categories: string, keyword: string): string {
     }).toString();
     return url.href;
 }
+
+const trackingParameters = /^(utm_[a-z0-9_]+|fbclid|gclid|dclid|msclkid|mc_cid|mc_eid|igshid|spm|ref_src)$/i;
+
+/**
+ * A comparison key for article addresses: the same article reached over HTTP or
+ * HTTPS, with or without campaign parameters or a trailing slash, yields one key.
+ */
+export function normalizeURL(value: string | null): string | null {
+    if (!value) return null;
+    let url: URL;
+    try {
+        url = new URL(value);
+    }
+    catch {
+        return null;
+    }
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    url.protocol = "https:";
+    url.hash = "";
+    url.username = "";
+    url.password = "";
+    if (url.port === "80" || url.port === "443") url.port = "";
+    for (const name of [...url.searchParams.keys()]) if (trackingParameters.test(name)) url.searchParams.delete(name);
+    url.searchParams.sort();
+    if (url.pathname.length > 1 && url.pathname.endsWith("/")) url.pathname = url.pathname.slice(0, -1);
+    return url.href;
+}
