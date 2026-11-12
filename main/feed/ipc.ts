@@ -1,4 +1,4 @@
-import { BrowserWindow, net, shell } from "electron";
+import { app, BrowserWindow, net, shell } from "electron";
 import type { FeedQuery, FeedSourceAction, FeedSourceInput } from "../../shared/types/feed";
 import { feedChanged, feedChannels } from "../../shared/ipc";
 import { handle } from "../ipc";
@@ -11,6 +11,7 @@ const checkInterval = 30 * 1000;
 
 // Shared by every window, so refreshes of one source never run twice.
 let service: FeedService | undefined;
+let checking = false;
 
 export function registerFeedIPCs(window: BrowserWindow, startup: Startup, library: FeedLibrary): void {
     const contents = window.webContents;
@@ -38,6 +39,9 @@ export function registerFeedIPCs(window: BrowserWindow, startup: Startup, librar
     handle(contents, feedChannels.importItem, (id, replace) => feed().importItem(id as string, replace === true));
     handle(contents, feedChannels.openItem, id => shell.openExternal(feed().itemURL(id as string)));
 
+    if (checking) return;
+    checking = true;
+
     // Sources that fell due while the application was closed are fetched on the first check.
     const check = (): void => {
         if (startup.state.status !== "ready") return;
@@ -45,7 +49,11 @@ export function registerFeedIPCs(window: BrowserWindow, startup: Startup, librar
     };
     const timer = setInterval(check, checkInterval);
     const first = setTimeout(check, 3000);
-    window.once("closed", () => {
+    // Neither timer should keep test or benchmark processes alive.
+    timer.unref();
+    first.unref();
+    // Normal app shutdown clears both; app.exit() destroys the whole runtime.
+    app.once("quit", () => {
         clearInterval(timer);
         clearTimeout(first);
     });

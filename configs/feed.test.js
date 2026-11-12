@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { EventEmitter } from "node:events";
+import { runInNewContext } from "node:vm";
 import { createRequire } from "node:module";
 import { resolve, join } from "node:path";
 import ts from "typescript";
@@ -12,7 +14,7 @@ mkdirSync(join(root, "dist"), { recursive: true });
 const output = mkdtempSync(join(root, "dist", "feed-tests-"));
 after(() => rmSync(output, { recursive: true, force: true }));
 writeFileSync(join(output, "package.json"), "{\"type\":\"commonjs\"}");
-const program = ts.createProgram(["main/feed/service.ts", "main/storage/workspace.ts"].map(file => join(root, file)), {
+const program = ts.createProgram(["main/feed/ipc.ts", "main/storage/workspace.ts"].map(file => join(root, file)), {
     target: ts.ScriptTarget.ES2022,
     module: ts.ModuleKind.CommonJS,
     esModuleInterop: true,
@@ -871,4 +873,53 @@ test("an item is added to the library once, and a paper that left the library is
     assert.throws(() => service.importItem(other.id), /Library unavailable/);
     assert.equal(service.getItem(other.id).paperId, null);
     assert.throws(() => new FeedService(createWorkspaceDatabase(database)).importItem(other.id), /不支持/);
+});
+
+test("registering two windows shares one initial and periodic check until the application quits", t => {
+    t.mock.timers.enable({ apis: ["setInterval", "setTimeout"] });
+    const app = new EventEmitter();
+    const refreshDue = t.mock.fn(async () => {});
+    const interval = t.mock.fn(setInterval), timeout = t.mock.fn(setTimeout);
+    const stopInterval = t.mock.fn(clearInterval), stopTimeout = t.mock.fn(clearTimeout);
+    const ipc = join(output, "main/feed/ipc.js"), load = createRequire(ipc);
+    const exports = {};
+    // Load a fresh IPC module with Electron's application lifecycle under test control.
+    runInNewContext(readFileSync(ipc, "utf8"), {
+        exports,
+        require: id => {
+            if (id === "electron") return { app };
+            if (id === "./service") return { FeedService: class {
+                refreshDue = refreshDue;
+            } };
+            return load(id);
+        },
+        setInterval: interval, setTimeout: timeout,
+        clearInterval: stopInterval, clearTimeout: stopTimeout,
+        console
+    });
+    t.after(() => app.emit("quit"));
+    const window = () => Object.assign(new EventEmitter(), { webContents: { ipc: { handle: t.mock.fn() } } });
+    const a = window(), b = window();
+    const startup = { state: { status: "ready" }, getDatabase: () => ({}) };
+    exports.registerFeedIPCs(a, startup, {});
+    exports.registerFeedIPCs(b, startup, {});
+    assert.equal(a.webContents.ipc.handle.mock.callCount(), b.webContents.ipc.handle.mock.callCount());
+    assert.ok(b.webContents.ipc.handle.mock.callCount() > 0, "both windows receive their handlers");
+    assert.equal(interval.mock.callCount(), 1);
+    assert.equal(timeout.mock.callCount(), 1);
+    assert.equal(app.listenerCount("quit"), 1);
+    t.mock.timers.tick(2999);
+    assert.equal(refreshDue.mock.callCount(), 0);
+    t.mock.timers.tick(1);
+    assert.equal(refreshDue.mock.callCount(), 1, "one initial check after three seconds");
+    a.emit("closed");
+    t.mock.timers.tick(27000);
+    assert.equal(refreshDue.mock.callCount(), 2, "one periodic check after thirty seconds, even after the first window closes");
+    t.mock.timers.tick(30000);
+    assert.equal(refreshDue.mock.callCount(), 3);
+    app.emit("quit");
+    assert.equal(stopInterval.mock.callCount(), 1);
+    assert.equal(stopTimeout.mock.callCount(), 1);
+    t.mock.timers.tick(60000);
+    assert.equal(refreshDue.mock.callCount(), 3, "no checks remain after application exit");
 });
