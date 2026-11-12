@@ -32,6 +32,10 @@ pnpm install
 pnpm dev
 ```
 
+### 检查
+
+推送前运行 `pnpm typecheck`、`pnpm lint` 和 `pnpm test`。CI 会在拉取请求和 `main` 分支上运行同样的检查。
+
 ### 数据库开发
 
 使用 `pnpm db:generate --name <名称>` 生成迁移，`pnpm db:check` 检查仓库定义与迁移是否一致，`pnpm db:diagram` 查看表结构图，`pnpm test:db` 运行数据库测试。

@@ -37,7 +37,10 @@ export function registerKnowledgeIPCs(window: BrowserWindow, startup: Startup, s
     };
     const ipc = (channel: string, fn: (...args: unknown[]) => unknown): void => handle(window.webContents, channel, fn);
     const optional = (value: unknown): string | undefined => value === undefined ? undefined : string(value);
-    const tab = (id: unknown): string => { checkTab(id); return id; };
+    const tab = (id: unknown): string => {
+        checkTab(id);
+        return id;
+    };
     function publish(change: KnowledgeChange): void {
         const db = get().knowledge;
         if (change.blocks.length) {
