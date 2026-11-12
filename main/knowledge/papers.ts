@@ -83,6 +83,19 @@ export class PaperService {
         return page;
     }
 
+    /** Creates a paper known only by its bibliographic data, such as a subscription item. Joins the caller's transaction. */
+    createReference(paper: { title: string; authors: string; url: string | null; abstract: string; published: string | null; origin: Record<string, string | null> }): string {
+        return this.knowledge.create("paper", paper.title.slice(0, 1000), {
+            paper_authors: paper.authors, paper_url: paper.url ?? "", paper_abstract: paper.abstract, paper_year: paper.published ?? "", source_snapshot: paper.origin
+        }).id;
+    }
+
+    /** Whether a paper page is still in the library, in the recycle bin, or gone. */
+    state(id: string): "saved" | "recycled" | "missing" {
+        if (!this.knowledge.statement("SELECT 1 FROM pages WHERE id=? AND kind='paper'").get(id)) return "missing";
+        return this.knowledge.flags(id).deleted ? "recycled" : "saved";
+    }
+
     matchingPaper(path: string): { id: string; title: string } | null {
         const db = this.knowledge.db;
         const file = db.select().from(attachments).where(eq(attachments.sha256, digest(readFileSync(path)))).get();

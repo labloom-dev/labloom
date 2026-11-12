@@ -2,12 +2,12 @@
     <h3>{source ? "编辑来源" : "添加来源"}</h3>
     <label>
         名称
-        <input bind:value={name} required maxlength="200" placeholder="例如：机器学习论文" disabled={pending} />
+        <input bind:value={name} maxlength="200" placeholder="留空则使用来源自带的标题" disabled={pending} {@attach focus} />
     </label>
     <label>
         添加方式
         <select bind:value={kind} onchange={selectKind} disabled={pending}>
-            <option value="url">RSS／Atom 或支持的网页地址</option>
+            <option value="url">订阅地址或网站地址</option>
             <option value="arxiv">arXiv 领域与关键词</option>
             {#each blogs as blog (blog.url)}
                 <option value={blog.url}>{blog.name}</option>
@@ -19,7 +19,7 @@
             订阅地址
             <input bind:value={url} type="url" required maxlength="4096" placeholder="https://rss.arxiv.org/atom/cs.LG" disabled={pending} />
         </label>
-        <p class="hint">支持 RSS／Atom，以及 Anthropic 的 News、Engineering 页面。博客来源每次获取最新 10 篇，已保存的文章和阅读状态会保留。</p>
+        <p class="hint">支持 RSS、Atom 和 JSON Feed。填写网站首页时，会自动查找它提供的订阅地址。另外支持 Anthropic 的 News、Engineering 页面。博客来源每次获取最新 10 篇，已保存的文章和阅读状态会保留。</p>
     {:else if kind === "arxiv"}
         <label>
             领域
@@ -43,6 +43,20 @@
     {/if}
     {#if source && address.url && address.url !== source.url}
         <p class="hint">修改地址会保留此来源已保存的条目。</p>
+    {/if}
+    <label class="checkbox"><input type="checkbox" bind:checked={autoRefresh} disabled={pending} />自动刷新</label>
+    {#if autoRefresh}
+        <label>
+            刷新间隔
+            <select bind:value={intervalMinutes} disabled={pending}>
+                {#each intervals as minutes (minutes)}
+                    <option value={minutes}>{intervalLabel(minutes)}</option>
+                {/each}
+            </select>
+        </label>
+    {/if}
+    {#if error}
+        <p class="error" role="alert">{error}</p>
     {/if}
     <div class="actions">
         <button type="submit" disabled={pending || !address.url}>{pending ? "正在处理…" : "保存并校验来源"}</button>
@@ -80,6 +94,24 @@
         background: var(--c-surface);
         color: inherit;
         font: inherit;
+    }
+    .checkbox {
+        flex-direction: row;
+        align-items: center;
+    }
+    input[type="checkbox"] {
+        width: auto;
+        height: auto;
+        margin: 0;
+        accent-color: var(--c-accent);
+    }
+    .error {
+        margin: 8px 0;
+        color: var(--c-reader-error-text);
+        font-size: 12px;
+        line-height: 1.6;
+        overflow-wrap: anywhere;
+        user-select: text;
     }
     .hint, .address {
         margin: 8px 0;
@@ -131,12 +163,14 @@
 
 <script lang="ts">
     import { untrack } from "svelte";
-    import type { FeedSource, FeedSourceInput } from "../../../shared/types/feed";
+    import { feedIntervals, type FeedSource, type FeedSourceInput } from "../../../shared/types/feed";
     import { arxivURL, feedURL } from "../../../shared/utils/feed";
+    import { intervalLabel } from "./labels";
 
-    let { source, pending, onsave, oncancel }: {
+    let { source, pending, error = "", onsave, oncancel }: {
         source?: FeedSource;
         pending: boolean;
+        error?: string;
         onsave: (input: FeedSourceInput) => Promise<void>;
         oncancel: () => void;
     } = $props();
@@ -151,6 +185,10 @@
     let kind = $state(untrack(() => blogs.find(blog => blog.url === source?.url)?.url ?? "url"));
     let categories = $state("");
     let keyword = $state("");
+    let autoRefresh = $state(untrack(() => source?.autoRefresh ?? true));
+    let intervalMinutes = $state<number>(untrack(() => source?.intervalMinutes ?? feedIntervals.default));
+    // A saved interval outside the presets stays selectable.
+    const intervals = $derived([...new Set([15, 30, 60, 120, 180, 360, 720, 1440, intervalMinutes])].sort((a, b) => a - b));
     const address = $derived.by(() => {
         try {
             return { url: kind === "arxiv" ? arxivURL(categories, keyword) : feedURL(kind === "url" ? url : kind), error: "" };
@@ -167,6 +205,10 @@
 
     async function submit(event: SubmitEvent): Promise<void> {
         event.preventDefault();
-        if (!pending && address.url) await onsave({ id: source?.id, name, url: address.url });
+        if (!pending && address.url) await onsave({ id: source?.id, name, url: address.url, autoRefresh, intervalMinutes });
+    }
+
+    function focus(element: HTMLElement): void {
+        element.focus();
     }
 </script>
