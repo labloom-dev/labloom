@@ -35,7 +35,7 @@
         async function load(): Promise<void> {
             try {
                 const value = await window.api.knowledge.resolve(current);
-                if (active) targetValue = value;
+                if (active) targetValue = value ?? { title: "已删除", text: "", status: "deleted" };
             }
             finally {
                 if (active) pending = false;

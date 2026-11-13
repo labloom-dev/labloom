@@ -46,6 +46,14 @@
         {
             "version": 15,
             "tag": "0015_feed_subscriptions"
+        },
+        {
+            "version": 16,
+            "tag": "0016_feed_pdf"
+        },
+        {
+            "version": 17,
+            "tag": "0017_time_precision"
         }
     ]
 }

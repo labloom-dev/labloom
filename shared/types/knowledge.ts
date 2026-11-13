@@ -2,6 +2,8 @@ import { type AttributeDefinition, type AttributeImpact, type AttributeValue } f
 import { type Backlink, type CommitResult, type BlockDeletion, type ChangePreview, type EditCommit, type KnowledgeChange, type Placement, type ResolvedTarget, type PageKind, type PageList, type PageQuery, type PageRecord, type PageObjects, type Target } from "./content";
 import { type Anchor, type AnchorInput, type PaperImport, type PaperResources, type ReadingPosition } from "./papers";
 
+export type PurgeResult = { status: "confirmation"; token: string; pages: { id: string; title: string }[]; links: number } | { status: "deleted"; pages: string[]; blocks: string[] };
+
 export type HistoryState = { canUndo: boolean; redo: { id: string; time: number }[] };
 export type Notice = { id: string; pageId: string; title: string; createdAt: number; isRead: boolean };
 export type KnowledgeAPI = {
@@ -16,6 +18,8 @@ export type KnowledgeAPI = {
     place(input: Placement, confirmation?: string): Promise<CommitResult>;
     trash(ids: string[], tabId: string, confirmation?: string): Promise<CommitResult>;
     restore(ids: string[], tabId: string): Promise<CommitResult>;
+    purge(ids: string[], tabId: string, confirmation?: string): Promise<PurgeResult>;
+    emptyTrash(tabId: string, confirmation?: string): Promise<PurgeResult>;
     definitions(): Promise<AttributeDefinition[]>;
     define(id: string, value: AttributeDefinition | null, tabId: string, token?: string): Promise<AttributeImpact | null>;
     backlinks(id: string): Promise<Backlink[]>;

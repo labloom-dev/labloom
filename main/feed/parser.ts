@@ -6,6 +6,8 @@ import { anthropicSection, parseAnthropic } from "./anthropic";
 
 type ExtraItem = {
     id?: string;
+    links?: { $?: { type?: string; href?: string } }[];
+    enclosures?: { $?: { type?: string; url?: string } }[];
     author?: string;
     atomAuthors?: { name?: string[]; }[];
     creators?: string[];
@@ -47,7 +49,9 @@ const parser = new Parser<{ title?: string }, ExtraItem>({
         item: [
             ["author", "atomAuthors", { keepArray: true }],
             ["dc:creator", "creators", { keepArray: true }],
-            ["summary", "abstract", summaryOptions]
+            ["summary", "abstract", summaryOptions],
+            ["link", "links", { keepArray: true }],
+            ["enclosure", "enclosures", { keepArray: true }]
         ]
     }
 });
@@ -84,6 +88,22 @@ function link(value: unknown, base: string): string | null {
         // Unsafe links remain unavailable in the reader.
         return null;
     }
+}
+
+function pdfURL(article: string | null, attachments: { type?: unknown; url?: unknown }[], base: string): string | null {
+    if (article) {
+        const address = new URL(article);
+        const id = /^\/abs\/((?:\d{4}\.\d{4,5}|[a-z-]+(?:\.[A-Z]{2})?\/\d{7})(?:v\d+)?)\/?$/i.exec(address.pathname)?.[1];
+        if ((address.hostname === "arxiv.org" || address.hostname === "www.arxiv.org" || address.hostname === "export.arxiv.org") && id) {
+            return `https://arxiv.org/pdf/${id}`;
+        }
+    }
+    for (const attachment of attachments) {
+        if (typeof attachment.type !== "string" || attachment.type.trim().toLowerCase() !== "application/pdf") continue;
+        const address = link(attachment.url, base);
+        if (address) return address;
+    }
+    return null;
 }
 
 function time(value: unknown): number | null {
@@ -132,10 +152,14 @@ export async function parseFeed(xml: string, sourceURL: string): Promise<{ title
         const excerpt = atom ? typeof item.abstract === "string" ? item.abstract : "" : item.content ?? "";
         const markup = body || excerpt;
         const summary = (atom && item.abstractSnippet) || item.contentSnippet || plainText(markup);
+        const url = link(item.link, sourceURL);
+        const attachments = atom ? (item.links ?? []).map(value => ({ type: value.$?.type, url: value.$?.href }))
+            : (item.enclosures ?? []).map(value => ({ type: value.$?.type, url: value.$?.url }));
         return {
             externalId: item.guid || item.id || null,
             title: title(item.title, summary),
-            url: link(item.link, sourceURL),
+            url,
+            pdfURL: pdfURL(url, attachments, sourceURL),
             authors: clean(authors),
             summary,
             // Plain text needs no second copy; the summary already holds it.
@@ -165,10 +189,13 @@ export function parseJSONFeed(json: string, sourceURL: string): { title: string;
         const summary = typeof item.summary === "string" && item.summary.trim() ? item.summary.trim() : text.trim() || plainText(html);
         const people = Array.isArray(item.authors) ? item.authors : item.author ? [item.author] : [];
         const id = typeof item.id === "string" || typeof item.id === "number" ? String(item.id) : "";
+        const url = link(item.url, sourceURL) ?? link(item.external_url, sourceURL);
+        const attachments = Array.isArray(item.attachments) ? item.attachments.map(value => ({ type: value?.mime_type, url: value?.url })) : [];
         return {
             externalId: id || null,
             title: title(item.title, summary),
-            url: link(item.url, sourceURL) ?? link(item.external_url, sourceURL),
+            url,
+            pdfURL: pdfURL(url, attachments, sourceURL),
             authors: people.map(person => clean((person as { name?: unknown })?.name)).filter(Boolean).join(", "),
             summary,
             content: html,

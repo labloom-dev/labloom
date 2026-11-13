@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { BrowserWindow, dialog, Notification } from "electron";
+import { BrowserWindow, dialog, net, Notification } from "electron";
 import { desc, eq } from "drizzle-orm";
 import { record } from "../../shared/attrs/values";
 import { knowledgeChannels as channels, knowledgeChanged, saveBeforeClose, saveBeforeCloseReply } from "../../shared/ipc";
@@ -7,12 +7,14 @@ import { type AttributeDefinition, type AttributeValue } from "../../shared/type
 import { type BlockDeletion, type EditCommit, type KnowledgeChange, type Placement, type Target, type PageKind, type PageQuery } from "../../shared/types/content";
 import { type AnchorInput, type ReadingPosition } from "../../shared/types/papers";
 import { type FeedLibrary } from "../feed/service";
+import { importFeedPDF } from "../feed/pdf";
 import { handle, on } from "../ipc";
 import { type Startup } from "../startup/startup";
 import { type AppStorage } from "../storage/app";
 import { notifications, workspaceMeta } from "../storage/tables";
 import { EditHistory } from "./history";
 import { PaperService } from "./papers";
+import { PurgeService } from "./purge";
 import { ReminderService } from "./reminders";
 import { checkTab, KnowledgeService } from "./service";
 
@@ -70,6 +72,9 @@ export function registerKnowledgeIPCs(window: BrowserWindow, startup: Startup, s
     ipc(channels.deleteBlock, (input, confirmation) => get().knowledge.deleteBlock(input as BlockDeletion, optional(confirmation)));
     ipc(channels.trash, (ids, source, confirmation) => get().knowledge.trash(ids as string[], tab(source), optional(confirmation)));
     ipc(channels.restore, (ids, source) => get().knowledge.restore(ids as string[], tab(source)));
+    const purge = (): PurgeService => new PurgeService(get().knowledge, get().history, startup.getPath());
+    ipc(channels.purge, (ids, source, confirmation) => purge().purge(ids as string[], tab(source), optional(confirmation)));
+    ipc(channels.emptyTrash, (source, confirmation) => purge().purge(null, tab(source), optional(confirmation)));
     ipc(channels.create, (kind, title, initial = {}, parentId, source) => {
         if (!record(initial)) throw new Error("页面属性无效。");
         const k = get().knowledge;
@@ -187,6 +192,12 @@ export function registerKnowledgeIPCs(window: BrowserWindow, startup: Startup, s
     return {
         createPaper: paper => get().papers.createReference(paper),
         paperState: id => get().papers.state(id),
+        hasPDF: id => get().papers.hasPDF(id),
+        importPDF: (id, url) => importFeedPDF(url, path => {
+            // pageId attaches to the reference just created; reusePageId would open a different paper.
+            get().papers.importFile(path, id);
+            notice("", [id]);
+        }, net.fetch),
         announce: id => notice("", [id], Object.keys(get().knowledge.get(id).blocks))
     };
 }

@@ -96,6 +96,12 @@ export class PaperService {
         return this.knowledge.flags(id).deleted ? "recycled" : "saved";
     }
 
+    hasPDF(pageId: string): boolean {
+        return Boolean(this.knowledge.db.select({ id: attachments.id }).from(pageAttachments)
+            .innerJoin(attachments, eq(pageAttachments.fileId, attachments.id))
+            .where(and(eq(pageAttachments.pageId, pageId), eq(attachments.mediaType, "application/pdf"))).limit(1).get());
+    }
+
     matchingPaper(path: string): { id: string; title: string } | null {
         const db = this.knowledge.db;
         const file = db.select().from(attachments).where(eq(attachments.sha256, digest(readFileSync(path)))).get();

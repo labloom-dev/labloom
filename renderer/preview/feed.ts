@@ -30,6 +30,7 @@ const api: FeedAPI = {
     setPosition: (id, progress) => request("setPosition", id, progress),
     setKeywords: keywords => request("setKeywords", keywords),
     importItem: (id, replace) => request("importItem", id, replace),
+    fetchPDF: id => request("fetchPDF", id),
     onChanged: listener => {
         // The preview has no push channel, so it asks whether anything changed.
         let known: number | undefined;

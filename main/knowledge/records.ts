@@ -43,7 +43,7 @@ export class KnowledgeRecords {
 
     constructor(readonly db: WorkspaceDatabase, private readonly timeZone: () => string = () => "system") {
         this.sql = db.$client;
-        this.attributes = new AttributeService(db);
+        this.attributes = new AttributeService(db, timeZone);
         this.sql.function("knowledge_text", { deterministic: true }, (type: string, content: string | null) => {
             if (!content) return "";
             if (!content.trimStart().startsWith("{")) return content;
@@ -59,7 +59,7 @@ export class KnowledgeRecords {
                 cached = { metadata, definition: { id, type, metadata: JSON.parse(metadata) } };
                 definitions.set(id, cached);
             }
-            return search(cached.definition, decodeValue(cached.definition, stored), { zone }).toLocaleLowerCase();
+            return search(cached.definition, decodeValue(cached.definition, stored), type === "minute" || type === "hour" ? { zone } : {}).toLocaleLowerCase();
         });
         this.sql.function("knowledge_lower", { deterministic: true }, (value: string) => value.toLocaleLowerCase());
     }

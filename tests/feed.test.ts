@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { join } from "node:path";
 import { test } from "node:test";
 import Database from "better-sqlite3";
@@ -15,10 +16,12 @@ import { v2 } from "../main/storage/migrations/v2";
 import { v3 } from "../main/storage/migrations/v3";
 import { v4 } from "../main/storage/migrations/v4";
 import { createWorkspace } from "../main/storage/workspace";
+import { importFeedPDF } from "../main/feed/pdf";
+import { knownCoordinatePdf } from "./fixtures/pdf-text";
 import { type FeedEntry } from "../shared/types/feed";
 
 function entry(values: Partial<FeedEntry>): FeedEntry {
-    return { externalId: null, title: "Untitled", url: null, authors: "", summary: "", content: "", fullContent: false, publishedAt: null, ...values };
+    return { externalId: null, title: "Untitled", url: null, pdfURL: null, authors: "", summary: "", content: "", fullContent: false, publishedAt: null, ...values };
 }
 
 test("upgrading to subscription status keeps sources, items and read state, and stops deleting history with a source", async t => {
@@ -46,7 +49,7 @@ test("upgrading to subscription status keeps sources, items and read state, and 
     assert.deepEqual(database.prepare("SELECT * FROM feed_items WHERE id = 'read'").get(), {
         id: "read", source_id: "source", external_id: "guid-1", title: "Read article", url: "https://example.org/1?utm_source=rss", normalized_url: null,
         content_fingerprint: null, authors: "Author", summary: "Summary", raw_content: "", has_full_content: 0, published_at: published,
-        origin_snapshot: null, is_read: 1, reading_position: null, paper_id: null
+        pdf_url: null, origin_snapshot: null, is_read: 1, reading_position: null, paper_id: null
     });
     // A source can no longer take its items with it, and its settings are validated.
     assert.throws(() => database.exec("DELETE FROM feed_sources WHERE id = 'source'"), /FOREIGN KEY/);
@@ -132,4 +135,58 @@ test("a subscription item becomes a paper page in the library and stays linked t
     assert.equal(service.getItem(item.id).paperState, "missing");
     workspace.database.prepare("UPDATE feed_items SET paper_id = ? WHERE id = ?").run(knowledge.create("editable", "Note").id, item.id);
     assert.equal(service.getItem(item.id).paperState, "missing");
+});
+
+test("a downloaded PDF attaches to the committed reference and reuses identical stored bytes without merging pages", async t => {
+    const workspace = createWorkspace(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "feed-pdf-")));
+    t.after(() => {
+ if (workspace.database.open) workspace.database.close();
+});
+    const knowledge = new KnowledgeService(workspace.db), papers = new PaperService(knowledge, workspace.info.path);
+    const data = knownCoordinatePdf(), original = join(workspace.info.path, "original.pdf");
+    writeFileSync(original, data);
+    const existingPage = papers.importFile(original).pageId;
+    let requests = 0;
+    const server = createServer((_request, response) => {
+ requests++; response.end(data);
+});
+    t.after(() => {
+ server.closeAllConnections(); return new Promise<void>(resolve => server.close(() => resolve()));
+});
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    const pdfURL = `http://127.0.0.1:${address.port}/paper.pdf`;
+    const library: FeedLibrary = {
+        createPaper: paper => papers.createReference(paper), paperState: id => papers.state(id),
+        hasPDF: id => papers.hasPDF(id),
+        importPDF: (id, url) => importFeedPDF(url, path => {
+ papers.importFile(path, id);
+}),
+        announce: () => {}
+    };
+    const service = new FeedService(workspace.db, async request => ({
+        entries: [entry({ externalId: "download", title: "Subscribed paper", pdfURL })],
+        title: "", url: request.url, etag: null, lastModified: null
+    }), library);
+    await service.saveSource({ name: "Downloads", url: `http://127.0.0.1:${address.port}/feed` });
+    const [item] = service.getState({}).items;
+    const pageId = service.importItem(item.id);
+    assert.notEqual(pageId, existingPage);
+    assert.equal(workspace.database.inTransaction, false);
+    assert.equal(knowledge.get(pageId).title, "Subscribed paper");
+    assert.equal(papers.hasPDF(pageId), false);
+    assert.equal(service.getItem(item.id).pdfStatus, "downloading");
+    await service.fetchPDF(item.id);
+    assert.equal(service.getItem(item.id).pdfStatus, "saved");
+    const originalFiles = (await papers.resources(existingPage)).files;
+    const downloadedFiles = (await papers.resources(pageId)).files;
+    assert.equal(downloadedFiles.length, 1);
+    assert.equal(downloadedFiles[0].id, originalFiles[0].id);
+    assert.deepEqual(Buffer.from(papers.read(downloadedFiles[0].id)), Buffer.from(data));
+    assert.equal(workspace.database.prepare("SELECT count(*) FROM attachments").pluck().get(), 1);
+    assert.equal(knowledge.list({ kind: "paper" }).total, 2);
+    assert.equal(service.getItem(item.id).paperId, pageId);
+    await service.fetchPDF(item.id);
+    assert.equal(requests, 1);
 });

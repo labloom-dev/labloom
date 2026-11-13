@@ -32,6 +32,7 @@ export type FeedEntry = {
     externalId: string | null;
     title: string;
     url: string | null;
+    pdfURL: string | null;
     authors: string;
     summary: string;
     /** Source markup, unsanitized. Empty when the source only has plain text. */
@@ -64,6 +65,8 @@ export type FeedItemDetail = FeedItem & {
     fullContent: boolean;
     readingPosition: FeedPosition | null;
     paperState: FeedPaperState;
+    pdfURL: string | null;
+    pdfStatus: "idle" | "downloading" | "failed" | "saved";
 };
 
 export type FeedQuery = {
@@ -101,6 +104,7 @@ export interface FeedAPI {
     setKeywords: (keywords: string[]) => Promise<string[]>;
     /** Adds the item to the library and returns the paper page. */
     importItem: (id: string, replace?: boolean) => Promise<string>;
+    fetchPDF: (id: string) => Promise<void>;
     openItem: (id: string) => Promise<void>;
     /** Background refreshes and other windows report changes here. */
     onChanged: (listener: () => void) => () => void;

@@ -1,10 +1,12 @@
+import { validTimeSeconds } from "../content/time";
 import { attributeTypes, type AttributeDefinition, type AttributeType, type AttributeValue } from "../types/attributes";
 
 type ValueRule = { empty: null | "" | readonly [] } | { default: AttributeValue };
 const valueRules = {
     boolean: { default: false },
     string: { empty: "" }, url: { empty: "" },
-    number: { empty: null }, date: { empty: null }, datetime: { empty: null },
+    number: { empty: null }, minute: { empty: null }, hour: { empty: null },
+    day: { empty: null }, month: { empty: null }, year: { empty: null },
     select: { empty: null }, "page-link": { empty: null }, json: { empty: null },
     multiselect: { empty: [] }, "page-links": { empty: [] }
 } as const satisfies Record<AttributeType, ValueRule>;
@@ -68,9 +70,7 @@ export function validateValue(definition: AttributeDefinition, value: unknown): 
             break;
         case "boolean": valid = typeof value === "boolean";
             break;
-        case "date": valid = typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
-            break;
-        case "datetime": valid = typeof value === "number" && Number.isSafeInteger(value) && Number.isFinite(new Date(value * 1000).getTime());
+        case "minute": case "hour": case "day": case "month": case "year": valid = validTimeSeconds(definition.type, value);
             break;
         case "select": valid = typeof value === "string" && options.some(option => option.id === value);
             break;

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, existsSync, rmSync, writeFileSync } from "node:fs";
 import { EventEmitter } from "node:events";
+import { createServer } from "node:http";
 import { runInNewContext } from "node:vm";
 import { createRequire } from "node:module";
 import { resolve, join } from "node:path";
@@ -14,7 +15,7 @@ mkdirSync(join(root, "dist"), { recursive: true });
 const output = mkdtempSync(join(root, "dist", "feed-tests-"));
 after(() => rmSync(output, { recursive: true, force: true }));
 writeFileSync(join(output, "package.json"), "{\"type\":\"commonjs\"}");
-const program = ts.createProgram(["main/feed/ipc.ts", "main/storage/workspace.ts"].map(file => join(root, file)), {
+const program = ts.createProgram(["main/feed/ipc.ts", "main/feed/pdf.ts", "main/storage/workspace.ts"].map(file => join(root, file)), {
     target: ts.ScriptTarget.ES2022,
     module: ts.ModuleKind.CommonJS,
     esModuleInterop: true,
@@ -33,6 +34,7 @@ assert.equal(diagnostics.length, 0, ts.formatDiagnosticsWithColorAndContext(diag
 program.emit();
 const require = createRequire(import.meta.url);
 const { FeedService } = require(join(output, "main/feed/service.js"));
+const { importFeedPDF } = require(join(output, "main/feed/pdf.js"));
 const { parseFeed, parseJSONFeed, fetchFeed, discoverFeeds, retryAfter, FeedError } = require(join(output, "main/feed/parser.js"));
 const { arxivURL, feedURL, normalizeURL } = require(join(output, "shared/utils/feed.js"));
 const { createWorkspace, openWorkspace } = require(join(output, "main/storage/workspace.js"));
@@ -79,7 +81,7 @@ function loaderOf(entries) {
 }
 
 function entry(values) {
-    return { externalId: null, title: "Untitled", url: null, authors: "", summary: "", content: "", fullContent: false, publishedAt: null, ...values };
+    return { externalId: null, title: "Untitled", url: null, pdfURL: null, authors: "", summary: "", content: "", fullContent: false, publishedAt: null, ...values };
 }
 
 const minute = 60000;
@@ -177,7 +179,7 @@ test("JSON Feed items are read with their identifiers, authors, content and exte
     assert.equal(title, "Notes");
     assert.equal(entries.length, 3);
     assert.deepEqual(entries[0], {
-        externalId: "42", title: "First", url: "https://example.org/posts/42", authors: "Alice, Bob", summary: "Hello there",
+        externalId: "42", title: "First", url: "https://example.org/posts/42", pdfURL: null, authors: "Alice, Bob", summary: "Hello there",
         content: "<p>Hello <b>there</b></p>", fullContent: true, publishedAt: Date.UTC(2026, 9, 7, 10)
     });
     assert.equal(entries[1].url, "https://other.example/page");
@@ -922,4 +924,150 @@ test("registering two windows shares one initial and periodic check until the ap
     assert.equal(stopTimeout.mock.callCount(), 1);
     t.mock.timers.tick(60000);
     assert.equal(refreshDue.mock.callCount(), 3, "no checks remain after application exit");
+});
+
+test("arXiv PDF addresses are derived from modern and legacy entry addresses only", async () => {
+    const urls = ["https://arxiv.org/abs/2411.01234", "http://export.arxiv.org/abs/2411.01234v2", "https://arxiv.org/abs/hep-th/9901001v1"];
+    const xml = `<feed xmlns="http://www.w3.org/2005/Atom">${[...urls, "https://example.org/abs/2411.01234", "https://arxiv.org/help"].map((url, i) => `<entry><id>${i}</id><link href="${url}" rel="alternate"/></entry>`).join("")}</feed>`;
+    const { entries } = await parseFeed(xml, "https://arxiv.org/feed");
+    assert.deepEqual(entries.map(item => item.pdfURL), ["https://arxiv.org/pdf/2411.01234", "https://arxiv.org/pdf/2411.01234v2", "https://arxiv.org/pdf/hep-th/9901001v1", null, null]);
+});
+
+test("RSS PDF enclosures are selected by MIME type, resolve relative addresses and reject unsafe links", async () => {
+    const { entries } = await parseFeed(`<rss version="2.0"><channel><title>PDF</title>
+        <item><guid>a</guid><enclosure type="audio/mpeg" url="sound.mp3"/><enclosure type="application/pdf" url="/paper.pdf"/></item>
+        <item><guid>b</guid><enclosure type="application/pdf" url="javascript:alert(1)"/></item>
+        <item><guid>c</guid><link>https://example.org/article.pdf</link></item>
+        </channel></rss>`, "https://example.org/feed");
+    assert.deepEqual(entries.map(item => item.pdfURL), ["https://example.org/paper.pdf", null, null]);
+});
+
+test("Atom PDF links do not replace the article link and are selected by MIME type", async () => {
+    const { entries } = await parseFeed(`<feed xmlns="http://www.w3.org/2005/Atom">
+        <entry><id>a</id><link rel="alternate" href="/article"/><link type="text/html" href="/other"/><link type="application/pdf" href="/full.pdf"/></entry>
+        <entry><id>b</id><link type="application/pdf" href="file:///bad.pdf"/></entry></feed>`, "https://example.org/feed");
+    assert.equal(entries[0].url, "https://example.org/article");
+    assert.deepEqual(entries.map(item => item.pdfURL), ["https://example.org/full.pdf", null]);
+});
+
+test("JSON Feed PDF attachments are selected by MIME type without guessing from article addresses", () => {
+    const { entries } = parseJSONFeed(JSON.stringify({ version: "https://jsonfeed.org/version/1.1", items: [
+        { id: "a", url: "/article", attachments: [{ mime_type: "audio/mpeg", url: "/sound" }, { mime_type: "application/pdf", url: "/paper.pdf" }] },
+        { id: "b", attachments: [{ mime_type: "application/pdf", url: "https://user:secret@example.org/a.pdf" }] },
+        { id: "c", url: "https://example.org/article.pdf", attachments: [null, { mime_type: "text/html", url: "/a.pdf" }] }
+    ] }), "https://example.org/feed");
+    assert.deepEqual(entries.map(item => item.pdfURL), ["https://example.org/paper.pdf", null, null]);
+});
+
+async function pdfServer(t) {
+    const pdf = Buffer.from("%PDF-1.4\nlocal test\n%%EOF");
+    const calls = new Map();
+    let retry = false;
+    const server = createServer((request, response) => {
+        const path = request.url;
+        calls.set(path, (calls.get(path) ?? 0) + 1);
+        if (path === "/404" || (path === "/retry" && !retry)) {
+            response.writeHead(404).end();
+        }
+        else if (path === "/html") response.end("<!DOCTYPE html><html>arXiv unavailable</html>");
+        else if (path === "/prefixed") response.end(Buffer.concat([Buffer.from("HTML before PDF"), pdf]));
+        else if (path === "/timeout") { /* Wait until the client aborts. */ }
+        else if (path === "/body-timeout") {
+ response.writeHead(200); response.write("%PDF-");
+}
+        else if (path === "/large") response.end(Buffer.concat([pdf, Buffer.alloc(1024)]));
+        else if (path === "/large-stream") {
+ response.write(pdf); response.end(Buffer.alloc(1024));
+}
+        else response.end(pdf);
+    });
+    t.after(() => {
+ server.closeAllConnections(); return new Promise(resolve => server.close(resolve));
+});
+    await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+    return { url: `http://127.0.0.1:${server.address().port}`, pdf, calls, recover: () => retry = true };
+}
+
+for (const path of ["/ok", "/404", "/html", "/prefixed", "/timeout", "/body-timeout", "/large", "/large-stream", "/retry"]) {
+    test(`PDF import through a local server: ${path}`, async t => {
+        const server = await pdfServer(t);
+        const papers = new Map(), tempFiles = [];
+        const library = {
+            createPaper: paper => {
+ papers.set("paper", { paper, pdf: null }); return "paper";
+},
+            paperState: id => papers.has(id) ? "saved" : "missing",
+            hasPDF: id => Boolean(papers.get(id)?.pdf),
+            importPDF: (id, url) => importFeedPDF(url, file => {
+                tempFiles.push(file);
+                papers.get(id).pdf = readFileSync(file);
+            }, fetch, { maxBytes: 128, timeoutMs: 100 }),
+            announce: () => {}
+        };
+        const { service } = fixture(t, loaderOf([entry({ externalId: "pdf", pdfURL: server.url + path })]), library);
+        await service.saveSource({ name: "PDF", url: server.url + "/feed" });
+        const [item] = service.getState({}).items;
+        const page = service.importItem(item.id);
+        assert.equal(page, "paper", "paper creation returns immediately");
+        assert.equal(papers.size, 1);
+        assert.equal(service.getItem(item.id).pdfStatus, "downloading");
+        assert.equal(server.calls.get(path), undefined, "network work starts after importItem returns");
+        const first = service.fetchPDF(item.id), again = service.fetchPDF(item.id);
+        assert.equal(first, again, "repeated requests share the same attempt");
+        await first;
+        assert.equal(server.calls.get(path), 1);
+        assert.equal(service.getItem(item.id).paperState, "saved");
+        if (path === "/ok") {
+            assert.equal(service.getItem(item.id).pdfStatus, "saved");
+            assert.deepEqual(papers.get(page).pdf, server.pdf);
+            await service.fetchPDF(item.id);
+            assert.equal(server.calls.get(path), 1, "an attached PDF is not downloaded again");
+        }
+        else {
+            assert.equal(service.getItem(item.id).pdfStatus, "failed");
+            assert.equal(papers.get(page).pdf, null);
+            assert.equal(service.getItem(item.id).paperId, page);
+            if (path === "/retry") {
+                server.recover();
+                await service.fetchPDF(item.id);
+                assert.equal(service.getItem(item.id).pdfStatus, "saved");
+                assert.equal(server.calls.get(path), 2);
+                assert.equal(papers.size, 1, "retry attaches to the original paper");
+                assert.deepEqual(papers.get(page).pdf, server.pdf);
+            }
+        }
+        assert.ok(tempFiles.every(file => !existsSync(file)), "download temporary files are removed");
+    });
+}
+
+test("a previously imported paper without a PDF can fetch it, and source refresh preserves the PDF address", async t => {
+    const server = await pdfServer(t);
+    let withAddress = true;
+    let attached = false;
+    const library = {
+        createPaper: () => "paper", paperState: () => "saved", hasPDF: () => attached,
+        importPDF: (_id, url) => importFeedPDF(url, () => {
+ attached = true;
+}, fetch), announce: () => {}
+    };
+    const { service, database } = fixture(t, loaderOf(() => [entry({ externalId: "saved", pdfURL: withAddress ? server.url + "/ok" : null })]), library);
+    await service.saveSource({ name: "PDF", url: server.url + "/feed" });
+    const [item] = service.getState({}).items;
+    database.prepare("UPDATE feed_items SET paper_id = 'paper' WHERE id = ?").run(item.id);
+    assert.equal(service.getItem(item.id).pdfStatus, "idle");
+    withAddress = false;
+    await service.refresh();
+    assert.equal(service.getItem(item.id).pdfURL, server.url + "/ok");
+    await service.fetchPDF(item.id);
+    assert.equal(service.getItem(item.id).pdfStatus, "saved");
+});
+
+test("temporary PDF files are removed when PaperService refuses an attachment", async t => {
+    const server = await pdfServer(t);
+    let temporary;
+    await assert.rejects(importFeedPDF(server.url + "/ok", file => {
+        temporary = file;
+        throw new Error("Paper was deleted");
+    }), /Paper was deleted/);
+    assert.equal(existsSync(temporary), false);
 });

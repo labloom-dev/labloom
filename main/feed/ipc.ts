@@ -37,6 +37,7 @@ export function registerFeedIPCs(window: BrowserWindow, startup: Startup, librar
     handle(contents, feedChannels.setPosition, (id, progress) => feed().setPosition(id as string, progress as number));
     handle(contents, feedChannels.setKeywords, keywords => feed().setKeywords(keywords as string[]));
     handle(contents, feedChannels.importItem, (id, replace) => feed().importItem(id as string, replace === true));
+    handle(contents, feedChannels.fetchPDF, id => feed().fetchPDF(id as string));
     handle(contents, feedChannels.openItem, id => shell.openExternal(feed().itemURL(id as string)));
 
     if (checking) return;

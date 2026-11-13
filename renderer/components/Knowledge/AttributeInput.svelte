@@ -44,15 +44,35 @@
                 } onchange(definition.type === "page-link" ? target.id : [...new Set([...(Array.isArray(value) ? value : []), target.id])]); picker = false;
             }} />
         {/if}
-    {:else if definition.type === "datetime"}
+    {:else if definition.type === "minute"}
         <input type="datetime-local" value={empty ? "" : secondsToWall(value as number, zone)} onchange={event => change(() => event.currentTarget.value ? wallToSeconds(event.currentTarget.value, zone) : emptyValue(definition.type))} />
         <small>{zone}</small>
     {:else if definition.type === "json"}
         <textarea value={empty ? "" : JSON.stringify(value, null, 2)} onchange={event => change(() => event.currentTarget.value ? JSON.parse(event.currentTarget.value) : emptyValue(definition.type))} placeholder="JSON 值"></textarea>
     {:else if definition.type === "number"}
         <input type="number" value={empty ? "" : value as number} onchange={event => onchange(event.currentTarget.value ? event.currentTarget.valueAsNumber : emptyValue(definition.type))} />
-    {:else if definition.type === "date"}
-        <input type="date" value={empty ? "" : String(value)} onchange={event => onchange(event.currentTarget.value || emptyValue(definition.type))} />
+    {:else if definition.type === "hour"}
+        <div class="hour-input">
+            <input type="date" aria-label="日期" value={hourDay} onchange={event => {
+                hourDay = event.currentTarget.value; changeHour();
+            }} />
+            <select aria-label="小时" value={hour} onchange={event => {
+                hour = event.currentTarget.value; changeHour();
+            }}>
+                {#each Array.from({ length: 24 }, (_, index) => String(index).padStart(2, "0")) as item (item)}
+                    <option value={item}>{item}时</option>
+                {/each}
+            </select>
+        </div>
+        <small>{zone}</small>
+    {:else if definition.type === "day"}
+        <input type="date" value={empty ? "" : secondsToDay(value as number)} onchange={event => change(() => event.currentTarget.value ? dayToSeconds(event.currentTarget.value) : emptyValue(definition.type))} />
+        {#if empty}<small>未填写</small>{/if}
+    {:else if definition.type === "month"}
+        <input type="month" value={empty ? "" : secondsToMonth(value as number)} onchange={event => change(() => event.currentTarget.value ? monthToSeconds(event.currentTarget.value) : emptyValue(definition.type))} />
+        {#if empty}<small>未填写</small>{/if}
+    {:else if definition.type === "year"}
+        <input type="text" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" aria-label="四位年份" placeholder="YYYY" value={empty ? "" : secondsToYear(value as number)} onchange={event => change(() => event.currentTarget.value ? yearToSeconds(event.currentTarget.value) : emptyValue(definition.type))} />
         {#if empty}<small>未填写</small>{/if}
     {:else}
         <textarea rows={definition.id === "paper_abstract" ? 4 : 1} value={String(value)} onchange={event => onchange(event.currentTarget.value)}></textarea>
@@ -62,18 +82,21 @@
     {/if}
 </div>
 <style>
-    .attribute-input { min-width: 0; flex: 1; font-size: 12px; }
-    input:not([type="checkbox"]), select, textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--c-line); border-radius: 6px; background: var(--c-paper); color: var(--c-ink); font: inherit; min-width: 0; user-select: text; }
-    textarea { resize: vertical; }
-    .readonly { color: var(--c-muted); overflow-wrap: anywhere; white-space: pre-wrap; }
+    .attribute-input { position: relative; min-width: 0; flex: 1; font-size: var(--font-secondary); }
+    input:not([type="checkbox"]), select, textarea { width: 100%; height: var(--button-height); padding: 2px 5px; border: 1px solid var(--c-line); border-radius: var(--control-radius); background: var(--c-paper); color: var(--c-ink); font: inherit; min-width: 0; user-select: text; }
+    textarea { resize: vertical; min-height: var(--button-height); }
+    .attribute-input:focus-within small, small.error { display: block; position: absolute; top: 100%; left: 0; z-index: 45; background: var(--c-paper); padding: 3px; font-size: var(--font-min); }
+    .readonly { display: block; overflow: hidden; text-overflow: ellipsis; color: var(--c-muted); overflow-wrap: anywhere; white-space: nowrap; }
+    .hour-input { display: flex; gap: 8px; }
+    .hour-input select { width: 78px; flex-shrink: 0; }
     .options, .links { display: flex; flex-wrap: wrap; gap: 8px 12px; }
     .options label, .links span { display: flex; gap: 6px; align-items: center; }
-    small { display: block; margin-top: 5px; color: var(--c-muted); }
+    small { display: none; margin-top: 0; color: var(--c-muted); }
     .error { color: var(--c-reader-error-text); }
 </style>
 <script lang="ts">
     import { type AttributeDefinition, type AttributeValue } from "../../../shared/types/attributes";
-    import { wallToSeconds, secondsToWall } from "../../../shared/content/time";
+    import { dayToSeconds, monthToSeconds, secondsToDay, secondsToMonth, secondsToYear, wallToSeconds, secondsToWall, yearToSeconds } from "../../../shared/content/time";
     import { display } from "../../../shared/attrs/format";
     import { emptyValue, isEmpty } from "../../../shared/attrs/values";
     import { currentTimeZone } from "../layout/preferences.svelte";
@@ -84,6 +107,15 @@
     const zone = $derived(currentTimeZone());
     const empty = $derived(isEmpty(definition.type, value));
     let picker = $state(false), error = $state("");
+    let hourDay = $state(""), hour = $state("00");
+    $effect(() => {
+        const wall = definition.type === "hour" && !empty ? secondsToWall(value as number, zone) : "";
+        hourDay = wall.slice(0, 10);
+        hour = wall.slice(11, 13) || "00";
+    });
+    function changeHour(): void {
+        change(() => hourDay ? wallToSeconds(`${hourDay}T${hour}:00`, zone) : emptyValue(definition.type));
+    }
     function change(read: () => AttributeValue): void {
         try {
             onchange(read());

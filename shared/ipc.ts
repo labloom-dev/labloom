@@ -14,6 +14,8 @@ export const knowledgeChannels = {
     place: "knowledge:place",
     trash: "knowledge:trash",
     restore: "knowledge:restore",
+    purge: "knowledge:purge",
+    emptyTrash: "knowledge:empty-trash",
     definitions: "knowledge:definitions",
     define: "knowledge:define",
     backlinks: "knowledge:backlinks",
@@ -62,6 +64,7 @@ export const feedChannels = {
     setPosition: "feed:set-position",
     setKeywords: "feed:set-keywords",
     importItem: "feed:import-item",
+    fetchPDF: "feed:fetch-pdf",
     openItem: "feed:open-item"
 } as const;
 

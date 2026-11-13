@@ -5,7 +5,7 @@
 
 <main class="onboarding">
     <div class="welcome">
-        <span class="eyebrow">WELCOME TO YOUR KNOWLEDGE GARDEN</span>
+
         <div class="welcome-art"><Bloom /></div>
         <h1>{state ? "让知识，从这里生长。" : "正在打开工作区"}</h1>
         <p class="intro">欢迎来到知织。选一块属于你的空间，种下第一颗灵感。</p>

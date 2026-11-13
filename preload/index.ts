@@ -18,6 +18,8 @@ const api: AppAPI = {
         place: (...args) => ipcRenderer.invoke(knowledgeChannels.place, ...args),
         trash: (...args) => ipcRenderer.invoke(knowledgeChannels.trash, ...args),
         restore: (...args) => ipcRenderer.invoke(knowledgeChannels.restore, ...args),
+        purge: (...args) => ipcRenderer.invoke(knowledgeChannels.purge, ...args),
+        emptyTrash: (...args) => ipcRenderer.invoke(knowledgeChannels.emptyTrash, ...args),
         definitions: (...args) => ipcRenderer.invoke(knowledgeChannels.definitions, ...args),
         define: (...args) => ipcRenderer.invoke(knowledgeChannels.define, ...args),
         backlinks: (...args) => ipcRenderer.invoke(knowledgeChannels.backlinks, ...args),
@@ -67,6 +69,7 @@ const api: AppAPI = {
         setPosition: (id, progress) => ipcRenderer.invoke(feedChannels.setPosition, id, progress),
         setKeywords: keywords => ipcRenderer.invoke(feedChannels.setKeywords, keywords),
         importItem: (id, replace) => ipcRenderer.invoke(feedChannels.importItem, id, replace),
+        fetchPDF: id => ipcRenderer.invoke(feedChannels.fetchPDF, id),
         openItem: id => ipcRenderer.invoke(feedChannels.openItem, id),
         onChanged: listener => {
             const handler = (): void => listener();

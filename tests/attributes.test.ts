@@ -89,8 +89,8 @@ test("every attribute type has display and search text, with independent builtin
     const metadata = { options: [{ id: "x", name: "甲" }, { id: "y", name: "乙" }] };
     const cases: [AttributeDefinition["type"], AttributeValue, string, string][] = [
         ["string", "000123", "000123", "000123"], ["url", "https://labloom.dev", "https://labloom.dev", "https://labloom.dev"],
-        ["number", 0, "0", "0"], ["date", "2026-11-08", "2026-11-08", "2026-11-08"],
-        ["datetime", 1794071576, "2026-11-08 01:12", "2026-11-08 01:12"],
+        ["number", 0, "0", "0"], ["day", Date.UTC(2026, 10, 8) / 1000, "2026-11-08", "2026-11-08"],
+        ["minute", 1794071576, "2026-11-08 01:12", "2026-11-08 01:12"],
         ["boolean", true, "是", ""], ["boolean", false, "否", ""],
         ["select", "x", "甲", "甲"], ["multiselect", ["y", "x"], "乙、甲", "乙、甲"],
         ["page-link", randomUUID(), "", ""], ["page-links", [randomUUID()], "", ""], ["json", { visible: true }, "", ""]
@@ -115,7 +115,7 @@ test("every attribute type has display and search text, with independent builtin
 
 test("each attribute type round-trips its canonical empty or required default", () => {
     const cases: Record<AttributeType, [AttributeValue, string | number | null]> = {
-        string: ["", ""], url: ["", ""], number: [null, null], date: [null, null], datetime: [null, null],
+        string: ["", ""], url: ["", ""], number: [null, null], minute: [null, null], hour: [null, null], day: [null, null], month: [null, null], year: [null, null],
         select: [null, null], "page-link": [null, null], multiselect: [[], "[]"], "page-links": [[], "[]"],
         json: [null, "null"], boolean: [false, 0]
     };

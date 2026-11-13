@@ -80,6 +80,7 @@ export default defineConfig({
                             case "setPosition": result = feed.setPosition(args[0] as string, args[1] as number); break;
                             case "setKeywords": result = feed.setKeywords(args[0] as string[]); break;
                             case "importItem": result = feed.importItem(args[0] as string, args[1] === true); break;
+                            case "fetchPDF": result = await feed.fetchPDF(args[0] as string); break;
                             case "openItem": result = feed.itemURL(args[0] as string); break;
                             default: throw new Error("未知的预览操作。");
                         }

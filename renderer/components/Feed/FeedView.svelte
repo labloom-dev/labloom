@@ -1,6 +1,6 @@
 <section class="feed" class:reading={detail !== null}>
     <header class="top">
-        <div class="heading-copy"><span class="eyebrow">A LETTER FROM THE WORLD</span><h1>订阅动态</h1></div>
+        <div class="heading-copy"><h1>订阅动态</h1></div>
         <p class="summary-line" role="status">{summary}</p>
         <button disabled={!enabled.length || refreshing > 0} onclick={() => refresh()}><Icon name="refresh" size={15} />{refreshing ? "正在刷新…" : "刷新全部"}</button>
         <button class="primary" onclick={() => openForm()}><Icon name="plus" size={15} />添加来源</button>
@@ -183,7 +183,7 @@
             {#if detail}
                 {@const current = detail}
                 <button class="back" onclick={close}>返回列表</button>
-                <span class="eyebrow">READ & DISCOVER</span>
+
                 <h2>{current.title}</h2>
                 <p class="meta metadata">
                     <span>{current.sourceName}</span>
@@ -195,6 +195,9 @@
                     <button onclick={toggleRead}>{current.isRead ? "标为未读" : "标为已读"}</button>
                     {#if current.paperState === "saved" && current.paperId}
                         <button onclick={() => openPaper(current.paperId!)}>已入库 · 打开文献页</button>
+                        {#if current.pdfURL && current.pdfStatus !== "saved"}
+                            <button disabled={current.pdfStatus === "downloading"} onclick={() => fetchPDF(current.id)}>{current.pdfStatus === "downloading" ? "正在获取 PDF…" : "重新获取 PDF"}</button>
+                        {/if}
                     {:else if current.paperState === "none"}
                         <button disabled={importing} onclick={() => importItem(false)}>{importing ? "正在加入…" : "加入文献库"}</button>
                     {/if}
@@ -212,6 +215,9 @@
                         <p>{current.paperState === "recycled" ? "这条内容关联的文献页在回收站中，可以到回收站恢复它。" : "这条内容关联的文献页已不存在。"}也可以重新入库，另建一个文献页。</p>
                         <button disabled={importing} onclick={() => importItem(true)}>重新入库</button>
                     </div>
+                {/if}
+                {#if current.paperState === "saved" && current.pdfStatus === "failed"}
+                    <p class="error" role="alert">PDF 下载失败</p>
                 {/if}
                 {#if current.content}
                     <div class="content" {@attach show(current.content, current.url)}></div>
@@ -251,7 +257,7 @@
         padding: clamp(14px, 2vw, 24px);
         gap: 14px;
         color: var(--c-ink);
-        font-size: 12px;
+        font-size: var(--font-secondary);
         container-type: inline-size;
     }
     .top, .actions, .pagination, .filters, .list-head, .chips, .add {
@@ -272,7 +278,7 @@
     .summary-line {
         margin: 0;
         color: var(--c-muted);
-        font-size: 11px;
+        font-size: var(--font-min);
     }
     .sr {
         position: absolute;
@@ -285,7 +291,7 @@
     button, input, select {
         box-sizing: border-box;
         border: 1px solid var(--c-reader-input-border);
-        border-radius: 8px;
+        border-radius: var(--control-radius);
         background: var(--c-paper);
         color: inherit;
         font: inherit;
@@ -295,19 +301,21 @@
         align-items: center;
         justify-content: center;
         gap: 7px;
-        min-height: 32px;
-        padding: 6px 11px;
+        height: var(--button-height);
+        min-height: var(--button-height);
+        padding: 0 8px;
         font-weight: 700;
     }
     .top > button {
-        min-height: 36px;
-        border: 1.5px solid var(--c-ink);
-        padding: 8px 13px;
-        border-radius: 10px;
+        height: var(--button-height);
+        min-height: var(--button-height);
+        border: var(--border-width) solid var(--c-line);
+        padding: 0 8px;
+        border-radius: var(--control-radius);
     }
     .top > button.primary {
         background: var(--c-gold);
-        box-shadow: 2px 3px 0 var(--c-ink);
+        box-shadow: none;
     }
     button:hover:not(:disabled) {
         background: var(--c-gold-light);
@@ -322,7 +330,7 @@
         outline-offset: var(--focus-offset, 2px);
     }
     input[type="search"], input:not([type]), select {
-        height: 32px;
+        height: var(--button-height);
         min-width: 0;
         max-width: 100%;
         padding-inline: 10px;
@@ -339,7 +347,7 @@
         margin: 0;
         padding: 10px 12px;
         border: 1px solid var(--c-reader-error-text);
-        border-radius: 10px;
+        border-radius: var(--control-radius);
         background: var(--c-peach);
         color: var(--c-reader-error-text);
         line-height: 1.6;
@@ -369,13 +377,13 @@
         padding: 10px;
         overflow-y: auto;
         border: 1px solid var(--c-tab-header-border);
-        border-radius: 12px;
+        border-radius: 0;
         background: var(--c-paper);
     }
     .rail h2, .rail summary {
         margin: 12px 6px 4px;
         color: var(--c-muted);
-        font-size: 10px;
+        font-size: var(--font-min);
         font-weight: 800;
         letter-spacing: 1px;
     }
@@ -389,8 +397,8 @@
     .entry {
         justify-content: flex-start;
         width: 100%;
-        min-height: 34px;
-        padding: 6px 8px;
+        min-height: var(--button-height);
+        padding: 0 8px;
         border-color: transparent;
         background: none;
         text-align: left;
@@ -412,7 +420,7 @@
         flex: none;
         padding: 1px 7px;
         border-radius: 999px;
-        font-size: 10px;
+        font-size: var(--font-min);
         font-weight: 800;
     }
     .count {
@@ -479,7 +487,7 @@
     .context {
         padding: 12px 14px;
         border: 1px solid var(--c-popover-border);
-        border-radius: 10px;
+        border-radius: var(--control-radius);
         background: var(--c-gold-light);
         line-height: 1.7;
     }
@@ -495,7 +503,7 @@
         margin-bottom: 4px;
     }
     .context-head strong {
-        font-size: 13px;
+        font-size: var(--font-body);
     }
     .address {
         /* Query addresses run to several lines; two are enough to recognise one. */
@@ -505,7 +513,7 @@
         -webkit-box-orient: vertical;
         overflow: hidden;
         color: var(--c-muted);
-        font-size: 10px;
+        font-size: var(--font-min);
         overflow-wrap: anywhere;
         user-select: text;
     }
@@ -537,7 +545,7 @@
         font-weight: 700;
     }
     .chip button {
-        min-height: 20px;
+        min-height: var(--button-height);
         padding: 3px;
         border: 0;
         border-radius: 50%;
@@ -550,7 +558,7 @@
         justify-content: space-between;
         min-height: 20px;
         color: var(--c-muted);
-        font-size: 10px;
+        font-size: var(--font-min);
     }
     .link {
         min-height: 0;
@@ -558,7 +566,7 @@
         border: 0;
         background: none;
         color: var(--c-accent);
-        font-size: 11px;
+        font-size: var(--font-min);
     }
     .link:hover:not(:disabled) {
         background: none;
@@ -577,14 +585,14 @@
         position: relative;
         flex: none;
         border: 1px solid var(--c-tab-header-border);
-        border-radius: 12px;
+        border-radius: 0;
         background: var(--c-paper);
         transition: border-color .15s, box-shadow .15s;
     }
     .item.active {
-        border: 1.5px solid var(--c-ink);
+        border: var(--border-width) solid var(--c-line);
         background: var(--c-gold-light);
-        box-shadow: 2px 3px 0 var(--c-ink);
+        box-shadow: none;
     }
     .open {
         display: flex;
@@ -605,7 +613,7 @@
     }
     .open strong {
         color: var(--c-muted);
-        font-size: 13px;
+        font-size: var(--font-body);
         line-height: 1.6;
         font-weight: 700;
     }
@@ -627,10 +635,10 @@
         position: absolute;
         top: 9px;
         right: 9px;
-        min-height: 22px;
+        min-height: var(--button-height);
         padding: 2px 7px;
         gap: 3px;
-        font-size: 10px;
+        font-size: var(--font-min);
         opacity: 0;
     }
     .item:hover .origin, .origin:focus-visible {
@@ -638,7 +646,7 @@
     }
     .meta {
         color: var(--c-muted);
-        font-size: 10px;
+        font-size: var(--font-min);
         line-height: 1.7;
     }
     .metadata {
@@ -668,7 +676,7 @@
     .list > .empty-state {
         min-height: 240px;
         border: 1px dashed var(--c-tab-header-border);
-        border-radius: 12px;
+        border-radius: 0;
         background: var(--c-paper);
     }
 
@@ -676,7 +684,7 @@
         --reader-padding: 24px;
         padding: var(--reader-padding) clamp(18px, 3vw, 34px);
         overflow-y: auto;
-        border: 1.5px solid var(--c-ink);
+        border: var(--border-width) solid var(--c-line);
         border-radius: 15px;
         background: var(--c-paper);
         box-shadow: var(--c-shadow);
@@ -751,7 +759,7 @@
         max-width: 100%;
         height: auto;
         margin-block: 1em;
-        border-radius: 8px;
+        border-radius: var(--control-radius);
     }
     .content :global(a[href]) {
         color: var(--c-accent);
@@ -767,7 +775,7 @@
     .content :global(pre) {
         padding: 12px;
         overflow-x: auto;
-        border-radius: 8px;
+        border-radius: var(--control-radius);
         background: var(--c-cream);
         font-size: .85em;
         line-height: 1.6;
@@ -933,6 +941,11 @@
                 if (request !== requests) return;
             }
             const current = detail;
+            if (current) {
+                const updated = await api.getItem(current.id);
+                if (request !== requests) return;
+                if (detail?.id === current.id) Object.assign(current, updated);
+            }
             const listed = current && next.items.find(item => item.id === current.id);
             if (listed) {
                 pinned = listed;
@@ -1138,6 +1151,18 @@
         }
         finally {
             importing = false;
+        }
+    }
+
+    async function fetchPDF(id: string): Promise<void> {
+        if (detail?.id === id) detail.pdfStatus = "downloading";
+        try {
+            await api.fetchPDF(id);
+            await reload();
+        }
+        catch (cause) {
+            fail(cause);
+            await reload();
         }
     }
 

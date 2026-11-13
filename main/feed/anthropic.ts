@@ -85,6 +85,7 @@ export function parseAnthropic(html: string, sourceURL: string): FeedEntry[] {
             externalId: article.slug ? `${site}/${section}/${article.slug}` : url,
             title: article.title,
             url,
+            pdfURL: null,
             authors: "",
             summary: article.summary,
             content: "",

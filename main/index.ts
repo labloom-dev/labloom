@@ -49,7 +49,7 @@ function createWindow(): void {
         ...(process.platform !== "darwin" ? { titleBarOverlay: {
             color: "#fffdf7",
             symbolColor: "#302c25",
-            height: 36
+            height: 32
         }} : {}),
         width: 1280,
         height: 860,
@@ -106,7 +106,7 @@ function createWindow(): void {
             event.preventDefault();
             return;
         }
-        if (input.type !== "keyDown") return;
+        if (input.type !== "keyDown" || input.isComposing) return;
 
         if (input.code === "F12") {
             event.preventDefault();

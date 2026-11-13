@@ -51,7 +51,7 @@ function versionThree(): { root: string; id: string; } {
 }
 
 function entry(externalId: string): FeedEntry {
-    return { externalId, title: "Research", url: "https://example.org/article", authors: "Author", summary: "Summary", content: "", fullContent: false, publishedAt: Date.parse(timestamp) };
+    return { externalId, title: "Research", url: "https://example.org/article", pdfURL: null, authors: "Author", summary: "Summary", content: "", fullContent: false, publishedAt: Date.parse(timestamp) };
 }
 
 test("Drizzle round-trips JSON, nullable columns, and STRICT ANY values on the workspace connection", t => {

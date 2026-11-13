@@ -116,6 +116,7 @@ export const feedItems = sqliteTable("feed_items", {
     externalId: text("external_id"),
     title: text("title").notNull(),
     url: text("url"),
+    pdfURL: text("pdf_url"),
     normalizedUrl: text("normalized_url"),
     fingerprint: text("content_fingerprint"),
     authors: text("authors").notNull(),

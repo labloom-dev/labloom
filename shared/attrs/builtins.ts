@@ -4,10 +4,10 @@ const option = (id: string, name: string): { id: string; name: string } => ({ id
 export const builtinAttrs = {
     deleted: { type: "boolean", metadata: {} },
     independent: { type: "boolean", metadata: { name: "独立保留" } },
-    created_at: { type: "datetime", metadata: { name: "创建时间", readonly: true } },
-    modified_at: { type: "datetime", metadata: { name: "修改时间", readonly: true } },
+    created_at: { type: "minute", metadata: { name: "创建时间", readonly: true } },
+    modified_at: { type: "minute", metadata: { name: "修改时间", readonly: true } },
     recycle_reason: { type: "select", metadata: { name: "回收原因", hidden: true, readonly: true, options: [option("manual_delete", "手动删除"), option("unreachable", "失去保留关系")] } },
-    recycled_at: { type: "datetime", metadata: { name: "回收时间", hidden: true, readonly: true } },
+    recycled_at: { type: "minute", metadata: { name: "回收时间", hidden: true, readonly: true } },
     pinned: { type: "boolean", metadata: { name: "固定到侧栏" } },
     tags: { type: "multiselect", metadata: { name: "标签", options: [] } },
     links: { type: "page-links", metadata: { name: "关联页面" } },
@@ -24,10 +24,10 @@ export const builtinAttrs = {
     annotation_anchor: { type: "string", metadata: { name: "原文锚点", hidden: true, readonly: true } },
     task_status: { type: "select", metadata: { name: "状态", options: [option("todo", "未开始"), option("doing", "进行中"), option("done", "已完成")] } },
     priority: { type: "select", metadata: { name: "优先级", options: [option("low", "低"), option("normal", "普通"), option("high", "高")] } },
-    schedule_date: { type: "date", metadata: { name: "日期" } },
-    schedule_start: { type: "datetime", metadata: { name: "开始时间" } },
-    schedule_end: { type: "datetime", metadata: { name: "结束时间" } },
-    reminder_at: { type: "datetime", metadata: { name: "提醒时间" } }
+    schedule_date: { type: "day", metadata: { name: "日期" } },
+    schedule_start: { type: "minute", metadata: { name: "开始时间" } },
+    schedule_end: { type: "minute", metadata: { name: "结束时间" } },
+    reminder_at: { type: "minute", metadata: { name: "提醒时间" } }
 } satisfies Record<string, Omit<AttributeDefinition, "id">>;
 
 export type BuiltinAttrId = keyof typeof builtinAttrs;

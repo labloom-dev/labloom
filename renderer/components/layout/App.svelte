@@ -1,7 +1,7 @@
 {#if startup?.status === "ready"}
     <NavBar />
     <div class="container">
-        <Sidebar workspace={startup.workspace} />
+        <Sidebar />
         <Main />
     </div>
     <Dialogs />
@@ -21,6 +21,7 @@
 
 
 <script lang="ts">
+    import { globalShortcut } from "./commands";
     import { onMount, untrack } from "svelte";
     import type { StartupState, WorkspaceAction } from "../../../shared/types/startup";
     import "../../styles/colors.css";
@@ -91,6 +92,8 @@
 
     onMount(() => {
         const stopAppearance = initializeAppearance();
+        const keyboard = (event: KeyboardEvent): void => { if (startup?.status === "ready") globalShortcut(event); };
+        window.addEventListener("keydown", keyboard);
         tabLifecycle.close = async id => {
             try {
                 return await closeSession(id);
@@ -126,6 +129,7 @@
         });
         void run(() => window.api.startup.getState());
         return () => {
+            window.removeEventListener("keydown", keyboard);
             stopAppearance(); stopChanges(); stopClose(); tabLifecycle.close = undefined;
             window.removeEventListener("blur", blur);
             window.removeEventListener("focus", focus);

@@ -27,6 +27,8 @@ export type FeedLibrary = {
     /** Creates a paper page inside the caller's transaction and returns its id. */
     createPaper: (paper: FeedPaper) => string;
     paperState: (pageId: string) => Exclude<FeedPaperState, "none">;
+    hasPDF?: (pageId: string) => boolean;
+    importPDF?: (pageId: string, url: string) => Promise<void>;
     /** Called after the transaction commits, so open views can show the new page. */
     announce: (pageId: string) => void;
 };
@@ -50,6 +52,8 @@ export class FeedService {
     /** Called whenever saved sources or items change, including during background refreshes. */
     onChanged?: () => void;
     private pending = new Map<string, Promise<void>>();
+    private pdfDownloads = new Map<string, Promise<void>>();
+    private pdfFailures = new Set<string>();
     private active = 0;
     private readonly waiting: (() => void)[] = [];
 
@@ -139,7 +143,10 @@ export class FeedService {
             content: row.content,
             fullContent: row.fullContent,
             readingPosition: row.readingPosition,
-            paperState: this.paperState(row.paperId)
+            paperState: this.paperState(row.paperId),
+            pdfURL: row.pdfURL,
+            pdfStatus: this.pdfDownloads.has(id) ? "downloading" : row.paperId && this.library?.hasPDF?.(row.paperId) ? "saved"
+                : this.pdfFailures.has(id) ? "failed" : "idle"
         };
     }
 
@@ -298,7 +305,30 @@ export class FeedService {
         });
         library.announce(pageId);
         this.onChanged?.();
+        if (item.pdfURL && library.importPDF) void this.fetchPDF(id);
         return pageId;
+    }
+
+    /** Reuses the same attempt across windows; errors belong to the item, never to paper creation. */
+    fetchPDF(id: string): Promise<void> {
+        const pending = this.pdfDownloads.get(id);
+        if (pending) return pending;
+        const item = this.item(id), library = this.library;
+        if (!item.paperId || this.paperState(item.paperId) !== "saved") throw new Error("请先将条目加入文献库。");
+        if (!item.pdfURL || !library?.importPDF) throw new Error("此条目没有可获取的 PDF。");
+        if (library.hasPDF?.(item.paperId)) return Promise.resolve();
+        const pageId = item.paperId, url = feedURL(item.pdfURL);
+        this.pdfFailures.delete(id);
+        // Defer the network work until the caller's paper transaction and IPC reply are complete.
+        const attempt = Promise.resolve().then(() => library.importPDF!(pageId, url)).catch(() => {
+            this.pdfFailures.add(id);
+        }).finally(() => {
+            this.pdfDownloads.delete(id);
+            this.onChanged?.();
+        });
+        this.pdfDownloads.set(id, attempt);
+        this.onChanged?.();
+        return attempt;
     }
 
     itemURL(id: string): string {
@@ -466,6 +496,7 @@ export class FeedService {
                 externalId: saved.externalId ?? entry.externalId,
                 title: entry.title || saved.title,
                 url: entry.url ?? saved.url,
+                pdfURL: entry.pdfURL ?? saved.pdfURL,
                 normalizedUrl: normalizedUrl ?? saved.normalizedUrl,
                 fingerprint,
                 authors: entry.authors || saved.authors,

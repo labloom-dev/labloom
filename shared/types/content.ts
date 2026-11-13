@@ -47,7 +47,7 @@ export type Position = { pageId: string; containerId: string; index: number; blo
 export type Placement = { position: Position; action: "insert" | "remove" | "clone" | "duplicate" | "move-up" | "move-down"; blockId?: string; tabId: string };
 export type BlockDeletion = { pageId: string; tabId: string; blockId: string };
 export type Changed = { pages: string[]; blocks: string[]; backlinks?: string[]; highlightPages?: string[] };
-export type KnowledgeChange = Changed & { sourceTab: string; kinds?: Record<string, PageKind>; summaryPages?: string[]; definition?: string; notices?: boolean };
+export type KnowledgeChange = Changed & { sourceTab: string; kinds?: Record<string, PageKind>; summaryPages?: string[]; definition?: string; notices?: boolean; purged?: string[] };
 export type NamedPage = { id: string; title: string };
 export type ChangePreview = {
     token: string; recycled: NamedPage[]; direct: NamedPage[];

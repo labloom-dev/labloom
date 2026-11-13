@@ -5,7 +5,7 @@ import { test, type TestContext } from "node:test";
 import { createWorkspace, openWorkspace } from "../main/storage/workspace";
 import { KnowledgeService } from "../main/knowledge/service";
 import { ReminderService } from "../main/knowledge/reminders";
-import { wallToSeconds, secondsToWall, scheduleDay } from "../shared/content/time";
+import { dayToSeconds, wallToSeconds, secondsToWall, scheduleDay } from "../shared/content/time";
 import { AppStorage } from "../main/storage/app";
 
 function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { knowledge: KnowledgeService; reminders: ReminderService } {
@@ -57,7 +57,7 @@ test("changing the app timezone regroups timed tasks and events without reschedu
     const storage = new AppStorage(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "schedule-prefs-")));
     storage.load();
     const at = wallToSeconds("2026-11-08T01:12", "Asia/Shanghai");
-    const values = { schedule_date: "2026-11-08", schedule_start: at };
+    const values = { schedule_date: dayToSeconds("2026-11-08"), schedule_start: at };
     const task = knowledge.create("task", "A", { ...values, reminder_at: at });
     const event = knowledge.create("event", "B", values);
     const pending = database.prepare("SELECT id,scheduled_at,state FROM reminder_schedules WHERE page_id=?");
@@ -70,7 +70,7 @@ test("changing the app timezone regroups timed tasks and events without reschedu
         storage.saveAppearance({ ...storage.getAppearance(), timeZone });
         const zone = storage.getAppearance().timeZone;
         for (const page of [task, event]) assert.equal(scheduleDay(knowledge.get(page.id).attributes, zone), day);
-        assert.equal(scheduleDay({ schedule_date: "2026-11-08" }, zone), "2026-11-08");
+        assert.equal(scheduleDay({ schedule_date: dayToSeconds("2026-11-08") }, zone), "2026-11-08");
         assert.deepEqual(pending.get(task.id), original);
         assert.deepEqual(reminders.due(at * 1000 - 1), []);
     }

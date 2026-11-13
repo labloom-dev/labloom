@@ -1,8 +1,9 @@
-import { nowSeconds } from "../../shared/content/time";
+import { isTimeType, nowSeconds, resolveTimeZone } from "../../shared/content/time";
+import { convertValue } from "../../shared/attrs/convert";
 import { createHash } from "node:crypto";
 import { eq, inArray, placeholder, sql } from "drizzle-orm";
 import { builtinAttrs, builtinAttrsByPageKind, isBuiltin } from "../../shared/attrs/builtins";
-import { decodeValue, defaultValue, encodeValue, validUUID, validateDefinition, validateValue } from "../../shared/attrs/values";
+import { decodeValue, defaultValue, encodeValue, validUUID, validateDefinition } from "../../shared/attrs/values";
 import { type AttributeDefinition, type AttributeImpact, type AttributeValue } from "../../shared/types/attributes";
 import { type PageKind } from "../../shared/types/content";
 import { type WorkspaceDatabase } from "../storage/database";
@@ -16,7 +17,7 @@ export function fingerprint(value: unknown): string {
 
 export class AttributeService {
     private readonly byId;
-    constructor(readonly db: WorkspaceDatabase) {
+    constructor(readonly db: WorkspaceDatabase, private readonly timeZone: () => string = () => "system") {
         this.byId = db.select().from(attrs).where(eq(attrs.id, placeholder("id"))).prepare();
     }
 
@@ -58,7 +59,7 @@ export class AttributeService {
             if (isBuiltin(id) && !allowed?.includes(id)) throw new Error("此页面类型不支持该内置属性。");
             if (!internal && (definition.metadata.readonly || id === "deleted")) throw new Error("此属性由相应业务操作维护。");
             const encoded = encodeValue(definition, value);
-            const stored = definition.type === "datetime" ? sql`CAST(${encoded} AS INTEGER)` : encoded;
+            const stored = isTimeType(definition.type) ? sql`CAST(${encoded} AS INTEGER)` : encoded;
             this.db.insert(pageAttrs).values({ pageId, attrId: id, value: stored }).onConflictDoUpdate({ target: [pageAttrs.pageId, pageAttrs.attrId], set: { value: stored } }).run();
         }
     }
@@ -83,15 +84,11 @@ export class AttributeService {
         else if (!id.startsWith("custom:") || !validUUID(id.slice(7))) throw new Error("自定义属性必须使用 custom:UUID 标识。");
         const before = this.db.select().from(attrs).where(eq(attrs.id, id)).get();
         const rows = this.db.select().from(pageAttrs).where(eq(pageAttrs.attrId, id)).all();
+        const zone = resolveTimeZone(this.timeZone());
         const affected = rows.filter(row => {
-            if (!input || before?.type !== input.type) return true;
-            try {
-                decodeValue(input, row.value);
-                return false;
-            }
-            catch {
-                return true;
-            }
+            if (!input) return true;
+            const value = this.convertStored(before as AttributeDefinition, input, row.value, zone);
+            return before?.type !== input.type || encodeValue(input, value) !== row.value;
         });
         const titles = new Map((affected.length ? this.db.select({ id: pages.id, title: blocks.content }).from(pages).innerJoin(blocks, eq(pages.titleBlockId, blocks.id)).where(inArray(pages.id, affected.map(row => row.pageId))).all() : []).map(row => {
             let title = row.title ?? "";
@@ -102,7 +99,16 @@ export class AttributeService {
             catch { /* Legacy title text remains readable. */ }
             return [row.id, title || "未命名"];
         }));
-        return { token: fingerprint({ id, input, before: before ?? null, rows }), pages: affected.map(row => ({ id: row.pageId, title: titles.get(row.pageId) ?? "未命名" })) };
+        return { token: fingerprint({ id, input, before: before ?? null, rows, zone }), pages: affected.map(row => ({ id: row.pageId, title: titles.get(row.pageId) ?? "未命名" })) };
+    }
+
+    private convertStored(before: AttributeDefinition, target: AttributeDefinition, stored: unknown, zone: string): AttributeValue {
+        try {
+            return convertValue(before, target, decodeValue(before, stored), zone);
+        }
+        catch {
+            return defaultValue(target.type);
+        }
     }
 
     applyDefinition(id: string, input: AttributeDefinition | null, token?: string): AttributeImpact | null {
@@ -117,18 +123,8 @@ export class AttributeService {
             }
             else {
                 this.db.insert(attrs).values(input).onConflictDoUpdate({ target: attrs.id, set: { type: input.type, metadata: input.metadata } }).run();
-                for (const row of rows) {
-                    let value: AttributeValue;
-                    try {
-                        value = decodeValue(before!, row.value);
-                        if (input.type === "multiselect" && Array.isArray(value)) value = value.filter(id => input.metadata.options?.some(option => option.id === id));
-                        validateValue(input, value);
-                    }
-                    catch {
-                        value = defaultValue(input.type);
-                    }
-                    this.write(row.pageId, { [id]: value }, true);
-                }
+                const zone = resolveTimeZone(this.timeZone());
+                for (const row of rows) this.write(row.pageId, { [id]: this.convertStored(before!, input, row.value, zone) }, true);
             }
             for (const page of impact.pages) this.write(page.id, { modified_at: nowSeconds() }, true);
             return null;
