@@ -1,18 +1,18 @@
 <section class="workspace-page calendar">
     <header class="page-heading">
         <div>
-            <span class="eyebrow">MAKE ROOM FOR WHAT MATTERS</span>
+
             <h1>研究日历</h1>
             <p>给重要的想法，留出专注的时间。</p>
         </div>
         <div class="actions">
             <ListHistory {tabId} bind:history />
-            <button class="button" onclick={() => createPage("event", { schedule_date: selected })}>新建日程</button>
-            <button class="button primary" onclick={() => createPage("task", { schedule_date: selected })}>新建任务</button>
+            <button class="button" onclick={() => createPage("event", { schedule_date: dayToSeconds(selected) })}>新建日程</button>
+            <button class="button primary" onclick={() => createPage("task", { schedule_date: dayToSeconds(selected) })}>新建任务</button>
         </div>
     </header>
     {#if error}
-        <div class="notice error">{error}</div>
+        <div class="notice error">{message(error)}</div>
     {/if}
     <div class="calendar-layout">
         <section class="paper-card month-card">
@@ -34,7 +34,7 @@
                     <button class="day" class:selected={selected === day.key} class:outside={day.date.getUTCMonth() !== month.getUTCMonth()} class:today={day.key === today} onclick={() => selectedDay = day.key}>
                         <strong>{day.date.getUTCDate()}</strong>
                         {#each (byDay[day.key] ?? []).slice(0, 3) as page (page.id)}
-                            <span class:done={page.attributes.task_status === "done"}>{page.title || "未命名"}</span>
+                            <ContextActions items={calendarMenu(page)}><span class:done={page.attributes.task_status === "done"}>{page.title || "未命名"}</span></ContextActions>
                         {/each}
                         {#if (byDay[day.key]?.length ?? 0) > 3}
                             <small>更多…</small>
@@ -49,7 +49,7 @@
                 <p>正在读取日程…</p>
             {/if}
             {#each byDay[selected] ?? [] as page (page.id)}
-                <div class="agenda-item">
+                <ContextActions items={calendarMenu(page)}><div class="agenda-item">
                     <button class="page-link" onclick={() => openPage(page.id)}>
                         <small>{kindNames[page.kind]}</small>
                         <strong>{page.title || "未命名"}</strong>
@@ -58,7 +58,7 @@
                     {#if page.kind === "task"}
                         <button class="text-button" onclick={() => toggle(page.id)}>{page.attributes.task_status === "done" ? "重新打开" : "完成任务"}</button>
                     {/if}
-                </div>
+                </div></ContextActions>
             {:else}
                 <div class="empty-state">
                     <Icon name="calendar" size={32} />
@@ -67,21 +67,21 @@
             {/each}
             <h3>未安排日期</h3>
             {#each (byDay[""] ?? []).slice(0, 20) as page (page.id)}
-                <button class="unscheduled" onclick={() => openPage(page.id)}>{page.title || "未命名"}</button>
+                <ContextActions items={calendarMenu(page)}><button class="unscheduled" onclick={() => openPage(page.id)}>{page.title || "未命名"}</button></ContextActions>
             {/each}
         </section>
     </div>
     <section class="paper-card notices">
         <h2>提醒</h2>
-        <p>应用运行时会检查到期提醒；关闭期间错过的提醒会在下次运行时补发。</p>
-        {#each notices as notice (notice.id)}
-            <button class:unread={!notice.isRead} onclick={() => read(notice)}>
-                <span>{notice.title}</span>
-                <small>{displayMilliseconds(notice.createdAt)}</small>
-                <span>{notice.isRead ? "已读" : "未读"}</span>
+        <p>在任意时间属性上点铃铛设置提醒。应用关闭期间到期的提醒会在下次运行时补发。</p>
+        {#each notices as notice (`${notice.pageId}:${notice.attrId}:${notice.leadSeconds}`)}
+            <button class:unread={!notice.seen} onclick={() => read(notice)}>
+                <span>{notice.title} · {notice.attrName}</span>
+                <small>{displayMilliseconds(notice.firedAt * 1000)}</small>
+                <span>{notice.seen ? "已读" : "未读"}</span>
             </button>
         {:else}
-            <p>还没有提醒记录。可在任务或日程的属性中设置提醒时间。</p>
+            <p>还没有提醒记录。在任意时间属性上点铃铛设置提醒。</p>
         {/each}
     </section>
 </section>
@@ -95,7 +95,7 @@
     .weekdays span { padding: 8px; text-align: center; color: var(--c-muted); font-size: 11px; }
     .day { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; min-height: 96px; min-width: 0; padding: 9px; border: 1px solid var(--c-line); text-align: left; }
     .day strong { font-size: 12px; }
-    .day span { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; padding: 3px; border-radius: 4px; background: var(--c-sage); }
+    .day span { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-min); padding: 3px; border-radius: 4px; background: var(--c-sage); }
     .outside { opacity: .45; }
     .selected { background: var(--c-gold-light); outline: 2px solid var(--c-accent); outline-offset: -2px; }
     .today strong { color: var(--c-accent); text-decoration: underline; }
@@ -113,16 +113,20 @@
     @container (max-width: 900px) { .calendar-layout { grid-template-columns: 1fr; } .day { min-height: 75px; padding: 6px; } }
 </style>
 <script lang="ts">
+    import { failure, message, type ErrorValue } from "../../i18n.svelte";
+    import { LabloomError } from "../../../shared/failure";
+    import ContextActions from "../utils/ContextActions.svelte";
+    import { pageMenu } from "./page-menu";
     import { onMount } from "svelte";
     import { type PageSummary } from "../../../shared/types/content";
     import { type Notice, type HistoryState } from "../../../shared/types/knowledge";
     import ListHistory from "./ListHistory.svelte";
-    import { nowSeconds, scheduleDay, secondsToWall } from "../../../shared/content/time";
+    import { dayToSeconds, nowSeconds, scheduleDay, secondsToWall } from "../../../shared/content/time";
     import { display } from "../../../shared/attrs/format";
     import { builtinAttrs } from "../../../shared/attrs/builtins";
     import { createPage, openPage } from "../layout/navigation";
     import { currentTimeZone, displayMilliseconds } from "../layout/preferences.svelte";
-    import { message, confirmed, perform, registerList, writeFromTab } from "./state.svelte";
+    import { confirmed, perform, registerList, writeFromTab } from "./state.svelte";
     import { kindNames } from "./labels";
     import Icon from "../utils/Icon.svelte";
     let { tabId }: { tabId: string } = $props();
@@ -131,7 +135,7 @@
     let now = $state(nowSeconds()), viewedMonth = $state<Date>(), selectedDay = $state<string>();
     const today = $derived(secondsToWall(now, zone).slice(0, 10));
     const month = $derived(viewedMonth ?? new Date(today + "T00:00:00Z")), selected = $derived(selectedDay ?? today);
-    let scheduled = $state<PageSummary[]>([]), notices = $state<Notice[]>([]), pending = $state(false), error = $state("");
+    let scheduled = $state<PageSummary[]>([]), notices = $state<Notice[]>([]), pending = $state(false), error = $state<ErrorValue>("");
     const byDay = $derived(Object.groupBy(scheduled, page => scheduleDay(page.attributes, zone)));
     const days = $derived.by(() => {
         const first = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth(), 1)), offset = (first.getUTCDay() + 6) % 7;
@@ -183,18 +187,23 @@
             error = "";
         }
         catch (problem) {
-            error = message(problem);
+            error = failure(problem);
             throw problem;
         }
         finally {
             pending = false;
         }
     }
+    function calendarMenu(page: PageSummary): { label: string; run: () => void }[] {
+        const items = pageMenu(page, tabId).filter(item => !["取消固定", "固定到侧栏"].includes(item.label)).map(item => ({ label: item.label, run: item.run }));
+        if (page.kind === "task") items.push({ label: page.attributes.task_status === "done" ? "取消完成" : "完成任务", run: () => toggle(page.id) });
+        return items;
+    }
     function toggle(id: string): void {
         void perform(async () => {
             await writeFromTab(tabId, async () => {
                 const { page } = await window.api.knowledge.readObjects(id, [id]);
-                if (!page) throw new Error("找不到这项任务。");
+                if (!page) throw new LabloomError({ kind: "page-missing" });
                 await confirmed(token => window.api.knowledge.commitEdit({ pageId: id, tabId, batch: 0, blocks: [], attributes: { task_status: page.attributes.task_status === "done" ? "todo" : "done" } }, token));
             });
         });
@@ -202,7 +211,7 @@
     function read(notice: Notice): void {
         void perform(async () => {
             await writeFromTab(tabId, async () => {
-                await window.api.knowledge.readNotice(notice.id, tabId);
+                await window.api.knowledge.readNotice(notice.pageId, notice.attrId, notice.leadSeconds, tabId);
                 openPage(notice.pageId);
             });
         });

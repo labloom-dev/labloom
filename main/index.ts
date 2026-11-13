@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow } from "electron";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import icon from "../resources/labloom-2x-trs.png?asset";
-import { appChannels } from "../shared/ipc";
+import { knowledgeChanged, appChannels } from "../shared/ipc";
 import { on } from "./ipc";
 import { captureConsole, LogDirectory } from "./logging";
 import { AppStorage, developmentDataPath } from "./storage/app";
@@ -10,6 +10,7 @@ import { Startup } from "./startup/startup";
 import { registerStartupIPCs } from "./startup/ipc";
 import { registerFeedIPCs } from "./feed/ipc";
 import { registerAppearanceIPCs } from "./appearance/ipc";
+import { configureScheduler } from "./knowledge/scheduler";
 import { registerKnowledgeIPCs } from "./knowledge/ipc";
 
 
@@ -49,7 +50,7 @@ function createWindow(): void {
         ...(process.platform !== "darwin" ? { titleBarOverlay: {
             color: "#fffdf7",
             symbolColor: "#302c25",
-            height: 36
+            height: 32
         }} : {}),
         width: 1280,
         height: 860,
@@ -73,8 +74,15 @@ function createWindow(): void {
     });
     contents.on("render-process-gone", (_event, details) => applicationLog?.record("Renderer exited", details));
     registerStartupIPCs(mainWindow, startup);
-    registerAppearanceIPCs(mainWindow, storage);
-    registerFeedIPCs(mainWindow, startup, registerKnowledgeIPCs(mainWindow, startup, storage));
+    const library = registerKnowledgeIPCs(mainWindow, startup, storage);
+    const feed = registerFeedIPCs(mainWindow, startup, library);
+    registerAppearanceIPCs(mainWindow, storage, () => {
+        if (startup.state.status === "ready") {
+            library.getTimers().recalculateAll();
+            for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(knowledgeChanged, { sourceTab: "", pages: [], blocks: [], notices: true });
+        }
+    });
+    configureScheduler(startup, library.getTimers, id => feed().refresh(id));
     on(contents, appChannels.openDevTools, () => contents.openDevTools({ mode: "detach" }));
 
     mainWindow.once("ready-to-show", () => {
@@ -106,7 +114,7 @@ function createWindow(): void {
             event.preventDefault();
             return;
         }
-        if (input.type !== "keyDown") return;
+        if (input.type !== "keyDown" || input.isComposing) return;
 
         if (input.code === "F12") {
             event.preventDefault();

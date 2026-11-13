@@ -9,6 +9,7 @@ export type AppAPI = {
     appearance: {
         get(): Promise<Appearance>;
         save(value: Appearance): Promise<Appearance>;
+        onChanged(listener: (value: Appearance) => void): () => void;
     };
     feed: FeedAPI;
     knowledge: KnowledgeAPI;

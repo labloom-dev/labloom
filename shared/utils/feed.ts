@@ -1,13 +1,14 @@
+import { LabloomError } from "../failure";
 export function feedURL(value: string, base?: string): string {
     let url: URL;
     try {
         url = new URL(value, base);
     }
     catch {
-        throw new Error("请输入有效的 HTTP 或 HTTPS 地址。");
+        throw new LabloomError({ kind: "url-invalid" });
     }
     if (!value.trim() || !["http:", "https:"].includes(url.protocol) || url.username || url.password) {
-        throw new Error("仅支持不含用户名和密码的 HTTP 或 HTTPS 地址。");
+        throw new LabloomError({ kind: "url-unsafe" });
     }
     url.hash = "";
     return url.href;
@@ -16,11 +17,11 @@ export function feedURL(value: string, base?: string): string {
 export function arxivURL(categories: string, keyword: string): string {
     const fields = [...new Set(categories.trim().split(/[\s,+]+/).filter(Boolean))];
     if (fields.some(field => !/^[a-z][a-z-]*(\.[A-Za-z]{2})?$/.test(field))) {
-        throw new Error("领域格式不正确，例如 cs.AI、cs.LG、stat.ML；多个领域用逗号分隔。");
+        throw new LabloomError({ kind: "arxiv-invalid-category" });
     }
     const phrase = keyword.trim().replace(/\s+/g, " ");
-    if (!fields.length && !phrase) throw new Error("请填写至少一个领域或关键词。");
-    if (phrase.length > 200 || /["\\]/.test(phrase)) throw new Error("关键词不能超过 200 字符，或包含双引号、反斜杠。");
+    if (!fields.length && !phrase) throw new LabloomError({ kind: "arxiv-empty-query" });
+    if (phrase.length > 200 || /["\\]/.test(phrase)) throw new LabloomError({ kind: "arxiv-invalid-keyword" });
     if (!phrase) return `https://rss.arxiv.org/atom/${fields.join("+")}`;
 
     const query: string[] = [];

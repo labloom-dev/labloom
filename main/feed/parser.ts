@@ -3,9 +3,12 @@ import Parser from "rss-parser";
 import type { FeedEntry } from "../../shared/types/feed";
 import { feedURL } from "../../shared/utils/feed";
 import { anthropicSection, parseAnthropic } from "./anthropic";
+import { LabloomError, diagnostic, type FailureInfo } from "../../shared/failure";
 
 type ExtraItem = {
     id?: string;
+    links?: { $?: { type?: string; href?: string } }[];
+    enclosures?: { $?: { type?: string; url?: string } }[];
     author?: string;
     atomAuthors?: { name?: string[]; }[];
     creators?: string[];
@@ -35,9 +38,9 @@ export type FeedResult = {
 };
 
 /** A failed fetch. Only retryable failures are attempted again before the next interval. */
-export class FeedError extends Error {
-    constructor(message: string, readonly retryable: boolean, readonly retryAfter?: number, cause?: unknown) {
-        super(message, cause === undefined ? undefined : { cause });
+export class FeedError extends LabloomError {
+    constructor(failure: FailureInfo, readonly retryable: boolean, readonly retryAfter?: number, cause?: unknown) {
+        super(failure, cause === undefined ? undefined : { cause });
     }
 }
 
@@ -47,7 +50,9 @@ const parser = new Parser<{ title?: string }, ExtraItem>({
         item: [
             ["author", "atomAuthors", { keepArray: true }],
             ["dc:creator", "creators", { keepArray: true }],
-            ["summary", "abstract", summaryOptions]
+            ["summary", "abstract", summaryOptions],
+            ["link", "links", { keepArray: true }],
+            ["enclosure", "enclosures", { keepArray: true }]
         ]
     }
 });
@@ -86,6 +91,22 @@ function link(value: unknown, base: string): string | null {
     }
 }
 
+function pdfURL(article: string | null, attachments: { type?: unknown; url?: unknown }[], base: string): string | null {
+    if (article) {
+        const address = new URL(article);
+        const id = /^\/abs\/((?:\d{4}\.\d{4,5}|[a-z-]+(?:\.[A-Z]{2})?\/\d{7})(?:v\d+)?)\/?$/i.exec(address.pathname)?.[1];
+        if ((address.hostname === "arxiv.org" || address.hostname === "www.arxiv.org" || address.hostname === "export.arxiv.org") && id) {
+            return `https://arxiv.org/pdf/${id}`;
+        }
+    }
+    for (const attachment of attachments) {
+        if (typeof attachment.type !== "string" || attachment.type.trim().toLowerCase() !== "application/pdf") continue;
+        const address = link(attachment.url, base);
+        if (address) return address;
+    }
+    return null;
+}
+
 function time(value: unknown): number | null {
     const parsed = typeof value === "string" ? Date.parse(value) : NaN;
     return Number.isFinite(parsed) ? parsed : null;
@@ -111,19 +132,19 @@ export async function parseFeed(xml: string, sourceURL: string): Promise<{ title
     const start = documentStart(xml);
     // Feeds are data; reject a document type, which could define external entities. One can only be declared
     // before the root element; the same text inside an article (a post that is a whole HTML page) is content.
-    if (/<!DOCTYPE/i.test(start.prolog)) throw new FeedError("订阅内容包含不支持的 XML 声明。", false);
+    if (/<!DOCTYPE/i.test(start.prolog)) throw new FeedError({ kind: "feed-xml-declaration" }, false);
     let feed: Awaited<ReturnType<typeof parser.parseString>>;
     try {
         feed = await parser.parseString(xml);
     }
     catch {
-        throw new FeedError("内容不是有效的 RSS 或 Atom 订阅。", false);
+        throw new FeedError({ kind: "feed-invalid-xml" }, false);
     }
     // Atom separates the article (content) from its excerpt (summary); RSS uses content:encoded and description.
     const atom = start.root === "feed";
     const entries = feed.items.map(item => {
         if (item.id?.startsWith("http://arxiv.org/api/errors") || item.id?.startsWith("https://arxiv.org/api/errors")) {
-            throw new FeedError(item.summary || "arXiv 查询失败，请检查领域和关键词。", false);
+            throw new FeedError({ kind: "feed-arxiv-query", diagnostic: item.summary }, false);
         }
         const authors = item.atomAuthors?.flatMap(author => author.name ?? []).join(", ")
             || item.creators?.join(", ") || item.creator || item.author || "";
@@ -132,10 +153,14 @@ export async function parseFeed(xml: string, sourceURL: string): Promise<{ title
         const excerpt = atom ? typeof item.abstract === "string" ? item.abstract : "" : item.content ?? "";
         const markup = body || excerpt;
         const summary = (atom && item.abstractSnippet) || item.contentSnippet || plainText(markup);
+        const url = link(item.link, sourceURL);
+        const attachments = atom ? (item.links ?? []).map(value => ({ type: value.$?.type, url: value.$?.href }))
+            : (item.enclosures ?? []).map(value => ({ type: value.$?.type, url: value.$?.url }));
         return {
             externalId: item.guid || item.id || null,
             title: title(item.title, summary),
-            url: link(item.link, sourceURL),
+            url,
+            pdfURL: pdfURL(url, attachments, sourceURL),
             authors: clean(authors),
             summary,
             // Plain text needs no second copy; the summary already holds it.
@@ -153,11 +178,11 @@ export function parseJSONFeed(json: string, sourceURL: string): { title: string;
         data = JSON.parse(json);
     }
     catch {
-        throw new FeedError("内容不是有效的 JSON Feed。", false);
+        throw new FeedError({ kind: "feed-invalid-json" }, false);
     }
     const feed = data as { version?: unknown; title?: unknown; items?: unknown };
     if (!feed || typeof feed.version !== "string" || !feed.version.startsWith("https://jsonfeed.org/version/") || !Array.isArray(feed.items)) {
-        throw new FeedError("内容不是受支持的订阅格式。", false);
+        throw new FeedError({ kind: "feed-unsupported-format" }, false);
     }
     const entries = (feed.items as Record<string, unknown>[]).filter(item => item && typeof item === "object").map(item => {
         const html = typeof item.content_html === "string" ? item.content_html : "";
@@ -165,10 +190,13 @@ export function parseJSONFeed(json: string, sourceURL: string): { title: string;
         const summary = typeof item.summary === "string" && item.summary.trim() ? item.summary.trim() : text.trim() || plainText(html);
         const people = Array.isArray(item.authors) ? item.authors : item.author ? [item.author] : [];
         const id = typeof item.id === "string" || typeof item.id === "number" ? String(item.id) : "";
+        const url = link(item.url, sourceURL) ?? link(item.external_url, sourceURL);
+        const attachments = Array.isArray(item.attachments) ? item.attachments.map(value => ({ type: value?.mime_type, url: value?.url })) : [];
         return {
             externalId: id || null,
             title: title(item.title, summary),
-            url: link(item.url, sourceURL) ?? link(item.external_url, sourceURL),
+            url,
+            pdfURL: pdfURL(url, attachments, sourceURL),
             authors: people.map(person => clean((person as { name?: unknown })?.name)).filter(Boolean).join(", "),
             summary,
             content: html,
@@ -223,20 +251,20 @@ function requestError(error: unknown): FeedError {
     const cause = (error as { cause?: { code?: string; message?: string } })?.cause;
     const detail = [(error as Error)?.name, (error as Error)?.message, cause?.code, cause?.message].filter(Boolean).join(" ");
     // The cause is kept for the log; the message is what the reader sees.
-    if (/Timeout|TIMED_?OUT|AbortError/i.test(detail)) return new FeedError("来源响应超时，请稍后重试。", true, undefined, error);
+    if (/Timeout|TIMED_?OUT|AbortError/i.test(detail)) return new FeedError({ kind: "feed-timeout", diagnostic: diagnostic(error) }, true, undefined, error);
     // A wrong certificate does not fix itself between retries; other TLS failures are often transient.
-    if (/CERT|SELF_SIGNED|UNABLE_TO_VERIFY/i.test(detail)) return new FeedError("来源的安全证书无效，无法建立连接。", false, undefined, error);
-    return new FeedError("无法连接到来源，请检查网络或地址。", true, undefined, error);
+    if (/CERT|SELF_SIGNED|UNABLE_TO_VERIFY/i.test(detail)) return new FeedError({ kind: "feed-certificate", diagnostic: diagnostic(error) }, false, undefined, error);
+    return new FeedError({ kind: "feed-network", diagnostic: diagnostic(error) }, true, undefined, error);
 }
 
 function statusError(response: Response): FeedError {
     const { status } = response;
     const wait = retryAfter(response.headers.get("retry-after"));
-    if (status === 429) return new FeedError("来源请求过于频繁，请稍后重试。", true, wait);
-    if (status === 401 || status === 403 || status === 407) return new FeedError(`来源拒绝访问（HTTP ${status}），可能需要登录或不允许订阅。`, false);
-    if (status === 404 || status === 410) return new FeedError(`订阅地址不存在（HTTP ${status}），请检查地址。`, false);
-    if (status === 408 || status === 425 || status >= 500) return new FeedError(`来源暂时不可用（HTTP ${status}），请稍后重试。`, true, wait);
-    return new FeedError(`来源返回 HTTP ${status}，请检查地址或稍后重试。`, false);
+    if (status === 429) return new FeedError({ kind: "feed-rate-limited" }, true, wait);
+    if (status === 401 || status === 403 || status === 407) return new FeedError({ kind: "feed-denied", status }, false);
+    if (status === 404 || status === 410) return new FeedError({ kind: "feed-address-missing", status }, false);
+    if (status === 408 || status === 425 || status >= 500) return new FeedError({ kind: "feed-unavailable", status }, true, wait);
+    return new FeedError({ kind: "feed-http", status }, false);
 }
 
 async function download(request: FeedRequest, fetcher: Fetcher): Promise<FeedResult> {
@@ -264,7 +292,7 @@ async function download(request: FeedRequest, fetcher: Fetcher): Promise<FeedRes
         await response.body?.cancel();
         throw statusError(response);
     }
-    if (!response.body) throw new FeedError("来源没有返回订阅内容。", true);
+    if (!response.body) throw new FeedError({ kind: "feed-empty" }, true);
     const reader = response.body.getReader();
     const chunks: Uint8Array[] = [];
     let size = 0;
@@ -273,7 +301,7 @@ async function download(request: FeedRequest, fetcher: Fetcher): Promise<FeedRes
             const { done, value } = await reader.read();
             if (done) break;
             size += value.length;
-            if (size > maxBytes) throw new FeedError("订阅内容超过 10 MB，请缩小订阅范围。", false);
+            if (size > maxBytes) throw new FeedError({ kind: "feed-too-large" }, false);
             chunks.push(value);
         }
     }
@@ -291,9 +319,9 @@ async function download(request: FeedRequest, fetcher: Fetcher): Promise<FeedRes
     const opening = body.slice(0, 1024).trimStart();
     if (/json/i.test(type ?? "") || opening.startsWith("{")) return { ...validators, ...parseJSONFeed(body, base) };
     if (/^<!doctype\s+html|^<html[\s>]/i.test(opening) || (/text\/html/i.test(type ?? "") && !/<(rss|feed|rdf:RDF)[\s>]/i.test(opening))) {
-        if (!request.discover) throw new FeedError("这个地址返回的是网页，不是订阅内容。", false);
+        if (!request.discover) throw new FeedError({ kind: "feed-webpage" }, false);
         const [address] = discoverFeeds(body, base);
-        if (!address) throw new FeedError("这个网页没有提供 RSS 或 Atom 订阅地址，请填写订阅地址。", false);
+        if (!address) throw new FeedError({ kind: "feed-no-discovery" }, false);
         return download({ url: address }, fetcher);
     }
     return { ...validators, ...await parseFeed(body, base) };

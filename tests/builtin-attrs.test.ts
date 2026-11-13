@@ -1,193 +1,143 @@
+import { hasFailure } from "./failures";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, mkdtempSync, readdirSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
-import Database from "better-sqlite3";
-import { builtinAttrs, builtinAttrsByPageKind } from "../shared/attrs/builtins";
+import { builtinAttrs, builtinAttrsByPageKind, editableBuiltinMetadata, type BuiltinAttrId } from "../shared/attrs/builtins";
+import { defaultMetadata, defaultValue, encodeValue } from "../shared/attrs/values";
+import { type AttributeDefinition, type AttributeType } from "../shared/types/attributes";
+import { type PageKind } from "../shared/types/content";
+import { KnowledgeService } from "../main/knowledge/service";
 import { createWorkspace, openWorkspace } from "../main/storage/workspace";
-import { workspaceFormatVersion } from "../main/storage/schema";
-import { runMigrations } from "../main/storage/migrations/runner";
-import { v1 } from "../main/storage/migrations/v1";
-import { v2 } from "../main/storage/migrations/v2";
-import { defaultValue, encodeValue } from "../shared/attrs/values";
-import { WorkspaceUpgradeError } from "../main/storage/upgrade";
 
-const testRoot = process.env.LABLOOM_TEST_ROOT;
-if (!testRoot) throw new Error("Run these tests with node tests/run-workspace.mjs.");
-const oldTimestamp = "2001-02-03T04:05:06.789Z";
-
-function directory(): string {
-    return mkdtempSync(join(testRoot!, "builtin-attrs-"));
-}
-
-function track(t: TestContext, database: Database.Database): Database.Database {
+function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { service: KnowledgeService } {
+    const workspace = createWorkspace(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "builtin-attrs-")));
     t.after(() => {
-        if (database.open) database.close();
+        if (workspace.database.open) workspace.database.close();
     });
-    return database;
+    return { ...workspace, service: new KnowledgeService(workspace.db) };
 }
 
-function fresh(t: TestContext): { database: Database.Database; root: string; } {
-    const workspace = createWorkspace(directory());
-    return { database: track(t, workspace.database), root: workspace.info.path };
+function definition(type: AttributeType = "string"): AttributeDefinition {
+    return { id: "custom:" + randomUUID(), type, name: "A", metadata: defaultMetadata(type) };
 }
 
-function page(database: Database.Database, kind: string): string {
-    const id = randomUUID();
-    const title = randomUUID();
-    database.prepare("INSERT INTO blocks (id, type) VALUES (?, 'title')").run(title);
-    database.prepare("INSERT INTO pages (id, kind, title_block_id) VALUES (?, ?, ?)").run(id, kind, title);
-    return id;
-}
-
-function versionTwo<T>(setup: (database: Database.Database) => T): { root: string; id: string; data: T; } {
-    const root = directory();
-    const id = randomUUID();
-    mkdirSync(join(root, "attachments"));
-    const database = new Database(join(root, "workspace.sqlite"));
-    try {
-        database.pragma("application_id = 0x4c424c4d");
-        database.pragma("foreign_keys = ON");
-        runMigrations(database, [v1, v2]);
-        database.prepare("INSERT INTO workspace_meta (id, name, created_at, last_modified_at) VALUES (?, 'Version 2', ?, ?)")
-            .run(id, oldTimestamp, oldTimestamp);
-        const data = setup(database);
-        database.prepare("UPDATE workspace_meta SET last_modified_at = ?").run(oldTimestamp);
-        return { root, id, data };
-    }
-    finally {
-        database.close();
-    }
-}
-
-test("registered builtins are seeded, with an empty value for each supported page kind", t => {
-    const { database } = fresh(t);
-    const definitions = database.prepare("SELECT id, type, metadata FROM attrs ORDER BY id").all();
-    assert.deepEqual(definitions, Object.entries(builtinAttrs).sort(([a], [b]) => a.localeCompare(b)).map(([id, definition]) => ({
-        id, type: definition.type, metadata: JSON.stringify(definition.metadata)
+test("builtin rows keep only editable metadata while complete definitions come from code", t => {
+    const { database, service } = fixture(t);
+    const rows = database.prepare("SELECT id,type,name,metadata FROM attrs_meta ORDER BY id").all();
+    assert.deepEqual(rows, Object.entries(builtinAttrs).sort(([a], [b]) => a.localeCompare(b)).map(([id, value]) => ({
+        id, type: value.type, name: null, metadata: JSON.stringify(editableBuiltinMetadata(id as BuiltinAttrId) ? value.metadata : {})
     })));
-    for (const [kind, attrs] of Object.entries(builtinAttrsByPageKind)) {
-        const id = page(database, kind);
-        assert.deepEqual(database.prepare("SELECT attr_id, value FROM page_attrs WHERE page_id = ? ORDER BY attr_id").all(id),
-            [...attrs].sort().map(attrId => {
-                const def = { id: attrId, ...builtinAttrs[attrId] };
-                return { attr_id: attrId, value: encodeValue(def, defaultValue(def.type)) };
-            }));
+    for (const [id, base] of Object.entries(builtinAttrs)) {
+        const resolved = service.attributes.definition(id);
+        assert.equal(resolved.name, base.name);
+        assert.deepEqual(resolved.metadata, base.metadata);
+        assert.equal(!!resolved.hidden, "hidden" in base && base.hidden);
+        assert.equal(!!resolved.readonly, "readonly" in base && base.readonly);
     }
-    assert.equal(database.pragma("user_version", { simple: true }), workspaceFormatVersion);
-    assert.deepEqual(database.prepare("SELECT user_version AS labloom_format_version FROM pragma_user_version").get(), {
-        labloom_format_version: workspaceFormatVersion
-    });
+    assert.deepEqual(database.prepare("SELECT name FROM sqlite_schema WHERE type='view' OR name IN ('edit_tabs','undo_nodes','undo_objects')").all(), []);
+    assert.equal(database.prepare("SELECT count(*) FROM pragma_table_info('link_refs') WHERE name='retains'").pluck().get(), 0);
 });
 
-test("builtin definitions keep their identity and type while metadata remains editable", t => {
-    const { database, root } = fresh(t);
-    assert.throws(() => database.exec("DELETE FROM attrs WHERE id = 'deleted'"), /builtin attributes cannot be deleted/);
-    assert.throws(() => database.exec("UPDATE attrs SET id = 'custom:renamed' WHERE id = 'deleted'"), /cannot be changed/);
-    assert.throws(() => database.exec("UPDATE attrs SET type = 'string' WHERE id = 'deleted'"), /cannot be changed/);
-    assert.throws(() => database.exec("INSERT OR REPLACE INTO attrs (id, type) VALUES ('deleted', 'number')"), /must have type boolean/);
-    database.exec("INSERT INTO attrs (id, type) VALUES ('custom:text', 'string')");
-    assert.throws(() => database.exec("UPDATE OR REPLACE attrs SET id = 'deleted' WHERE id = 'custom:text'"), /cannot be changed/);
-    const metadata = JSON.stringify({ name: "Custom deleted metadata" });
-    database.prepare("UPDATE attrs SET metadata = ? WHERE id = 'deleted'").run(metadata);
-    const before = database.prepare("SELECT last_modified_at FROM workspace_meta").get();
-    database.close();
-    const reopened = track(t, openWorkspace(root).database);
-    assert.deepEqual(reopened.prepare("SELECT type, metadata FROM attrs WHERE id = 'deleted'").get(), { type: "boolean", metadata });
-    assert.deepEqual(reopened.prepare("SELECT last_modified_at FROM workspace_meta").get(), before);
-});
-
-test("boolean storage accepts only zero and one, and deleted cannot be detached or moved", t => {
-    const { database } = fresh(t);
-    const id = page(database, "editable");
-    const other = page(database, "paper");
-    const update = database.prepare("UPDATE page_attrs SET value = ? WHERE page_id = ? AND attr_id = 'deleted'");
-    for (const value of [0, 1]) {
-        update.run(value, id);
-        assert.deepEqual(database.prepare("SELECT value FROM page_attrs WHERE page_id = ? AND attr_id = 'deleted'").get(id), { value });
+test("creating every page kind fills all its builtin attributes through the service", t => {
+    const { database, service } = fixture(t), parent = service.create("paper", "A");
+    for (const [kind, ids] of Object.entries(builtinAttrsByPageKind)) {
+        const page = service.create(kind as PageKind, "B", {}, kind === "annotation" ? parent.id : undefined);
+        assert.deepEqual(Object.keys(page.attributes).sort(), [...ids].sort());
+        for (const id of ids) {
+            if (["created_at", "modified_at"].includes(id)) {
+                assert.ok(Number.isSafeInteger(page.attributes[id]));
+                continue;
+            }
+            const expected = id === "independent" ? kind !== "annotation" : id === "task_status" ? "todo" : id === "priority" ? "normal" : id === "feed_status" ? "enabled" : id === "feed_refresh" ? { every: 60, unit: "minute" } : defaultValue(builtinAttrs[id].type);
+            assert.deepEqual(page.attributes[id], expected);
+            const stored = database.prepare("SELECT value FROM page_attrs WHERE page_id=? AND attr_id=?").pluck().get(page.id, id);
+            assert.deepEqual(stored, encodeValue(service.attributes.definition(id), expected));
+        }
     }
-    for (const value of [null, 2, -1, 0.5, "true", "1", "[]"]) {
-        assert.throws(() => update.run(value, id), /must be 0 or 1/);
-    }
-    assert.throws(() => database.prepare("DELETE FROM page_attrs WHERE page_id = ? AND attr_id = 'deleted'").run(id), /cannot remove a builtin attribute/);
-    database.exec("INSERT INTO attrs (id, type) VALUES ('custom:test', 'boolean')");
-    assert.throws(() => database.prepare("UPDATE page_attrs SET attr_id = 'custom:test' WHERE page_id = ? AND attr_id = 'deleted'").run(id), /cannot remove a builtin attribute/);
-    assert.throws(() => database.prepare("UPDATE page_attrs SET page_id = ? WHERE page_id = ? AND attr_id = 'deleted'").run(other, id), /cannot remove a builtin attribute/);
-    update.run(1, id);
-    database.prepare("UPDATE pages SET kind = 'paper' WHERE id = ?").run(id);
-    assert.deepEqual(database.prepare("SELECT attr_id, value FROM page_attrs WHERE page_id = ? AND attr_id = 'deleted'").all(id), [{ attr_id: "deleted", value: 1 }]);
-});
-
-test("ordinary attributes can be attached, removed, and retyped, and page deletion cleans up its values", t => {
-    const { database } = fresh(t);
-    const id = page(database, "editable");
-    database.exec("INSERT INTO attrs (id, type) VALUES ('custom:test', 'string')");
-    database.prepare("INSERT INTO page_attrs VALUES (?, 'custom:test', '')").run(id);
-    database.exec("UPDATE attrs SET type = 'number' WHERE id = 'custom:test'");
-    database.prepare("DELETE FROM page_attrs WHERE page_id = ? AND attr_id = 'custom:test'").run(id);
-    database.exec("DELETE FROM attrs WHERE id = 'custom:test'");
-    database.prepare("DELETE FROM pages WHERE id = ?").run(id);
-    assert.deepEqual(database.prepare("SELECT * FROM page_attrs WHERE page_id = ?").all(id), []);
-    assert.ok(database.prepare("SELECT id FROM attrs WHERE id = 'deleted'").get());
+    const page = service.create();
+    service.attributes.changePageKind(page.id, "task");
+    assert.ok(builtinAttrsByPageKind.task.every(id => Object.hasOwn(service.get(page.id).attributes, id)));
     assert.deepEqual(database.pragma("foreign_key_check"), []);
 });
 
-test("version 2 gains registered attributes without changing modification time", t => {
-    const fixture = versionTwo(database => [page(database, "editable"), page(database, "paper")]);
-    const database = track(t, openWorkspace(fixture.root, fixture.id).database);
-    assert.equal(database.pragma("user_version", { simple: true }), workspaceFormatVersion);
-    assert.equal(database.prepare("SELECT count(*) FROM attrs").pluck().get(), Object.keys(builtinAttrs).length);
-    for (const id of fixture.data) {
-        assert.deepEqual(database.prepare("SELECT attr_id, value FROM page_attrs WHERE page_id = ? AND attr_id = 'deleted'").all(id), [{ attr_id: "deleted", value: 0 }]);
+test("direct writes, edits and creation share builtin permissions and canonical value validation", t => {
+    const { service } = fixture(t), page = service.create();
+    const custom = definition();
+    service.setDefinition(custom.id, custom, "manager");
+    const boolean = definition("boolean");
+    service.setDefinition(boolean.id, boolean, "manager");
+    for (const values of [{ pinned: 2 }, { [boolean.id]: 2 }, { [custom.id]: null }]) {
+        assert.throws(() => service.attributes.write(page.id, values));
+        assert.throws(() => service.commitEdit({ pageId: page.id, tabId: "edit", batch: 1, blocks: [], attributes: values }));
+        assert.throws(() => service.create("editable", "B", values));
     }
-    assert.deepEqual(database.prepare("SELECT last_modified_at FROM workspace_meta").get(), { last_modified_at: Date.parse(oldTimestamp) });
-    const paths = readdirSync(join(fixture.root, "backups"));
-    assert.equal(paths.length, 1);
-    const backup = track(t, new Database(join(fixture.root, "backups", paths[0]), { readonly: true, fileMustExist: true }));
-    assert.equal(backup.pragma("user_version", { simple: true }), 2);
-    assert.deepEqual(backup.prepare("SELECT * FROM attrs").all(), []);
-    assert.equal(backup.prepare("SELECT count(*) FROM pages").pluck().get(), 2);
-    const schema = "SELECT type, name, tbl_name, sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY type, name";
-    assert.deepEqual(database.prepare(schema).all(), fresh(t).database.prepare(schema).all());
+    assert.equal(service.get(page.id).attributes.pinned, false);
+    assert.throws(() => service.attributes.detach(page.id, ["tags"]), hasFailure("attribute-invalid-detach"));
+    assert.throws(() => service.commitEdit({ pageId: page.id, tabId: "edit", batch: 1, blocks: [], detach: ["tags"] }), hasFailure("attribute-invalid-detach"));
+    assert.throws(() => service.attributes.write(page.id, { created_at: 0 }), hasFailure("attribute-readonly"));
+    assert.throws(() => service.attributes.write(page.id, { task_status: "todo" }), hasFailure("attribute-unsupported-builtin"));
 });
 
-test("version 2 retains existing builtin metadata and values, including deleted pages", t => {
-    const metadata = JSON.stringify({ name: "Keep this metadata" });
-    const fixture = versionTwo(database => {
-        database.prepare("INSERT INTO attrs (id, type, metadata) VALUES ('deleted', 'boolean', ?)").run(metadata);
-        const ids = [page(database, "editable"), page(database, "paper")];
-        database.prepare("INSERT INTO page_attrs VALUES (?, 'deleted', 1)").run(ids[0]);
-        database.prepare("INSERT INTO page_attrs VALUES (?, 'deleted', NULL)").run(ids[1]);
-        return ids;
-    });
-    const database = track(t, openWorkspace(fixture.root, fixture.id).database);
-    assert.deepEqual(database.prepare("SELECT metadata FROM attrs WHERE id = 'deleted'").get(), { metadata });
-    assert.deepEqual(database.prepare("SELECT value FROM page_attrs WHERE page_id = ? AND attr_id = 'deleted'").get(fixture.data[0]), { value: 1 });
-    assert.deepEqual(database.prepare("SELECT value FROM page_attrs WHERE page_id = ? AND attr_id = 'deleted'").get(fixture.data[1]), { value: 0 });
-    assert.deepEqual(database.prepare("SELECT last_modified_at FROM workspace_meta").get(), { last_modified_at: Date.parse(oldTimestamp) });
+test("builtin identity, names, permissions and fixed metadata cannot be edited", t => {
+    const { service } = fixture(t), base = service.attributes.definition("task_status");
+    for (const value of [null, { ...base, type: "string" as const }, { ...base, id: "other" }, { ...base, name: "Changed" }, { ...base, hidden: true },
+        { ...base, metadata: { options: [{ id: "x", name: "X" }] } }]) {
+        assert.throws(() => service.setDefinition(base.id, value, "manager"));
+    }
+    assert.deepEqual(service.attributes.definition(base.id), base);
 });
 
-test("conflicting builtin definitions or invalid old values abort the upgrade without overwriting data", t => {
-    for (const type of ["string", "boolean"]) {
-        const fixture = versionTwo(database => {
-            database.prepare("INSERT INTO attrs (id, type) VALUES ('deleted', ?)").run(type);
-            const id = page(database, "editable");
-            database.prepare("INSERT INTO page_attrs VALUES (?, 'deleted', 'keep this invalid value')").run(id);
-            return id;
-        });
-        assert.throws(() => openWorkspace(fixture.root, fixture.id), error => {
-            assert.ok(error instanceof WorkspaceUpgradeError);
-            assert.equal(error.failure.stage, "migration");
-            assert.equal(error.failure.fromVersion, 2);
-            assert.equal(error.failure.toVersion, workspaceFormatVersion);
-            assert.match(error.failure.error.message, type === "string" ? /incompatible type/ : /value is invalid/);
-            return true;
-        });
-        const database = track(t, new Database(join(fixture.root, "workspace.sqlite"), { readonly: true, fileMustExist: true }));
-        assert.equal(database.pragma("user_version", { simple: true }), 2);
-        assert.deepEqual(database.prepare("SELECT type FROM attrs WHERE id = 'deleted'").get(), { type });
-        assert.deepEqual(database.prepare("SELECT value FROM page_attrs WHERE page_id = ?").get(fixture.data), { value: "keep this invalid value" });
-        assert.equal(database.prepare("SELECT count(*) FROM sqlite_master WHERE type = 'trigger' AND name = 'builtin_attrs_delete'").pluck().get(), 0);
+test("metadata has a type-specific shape and retyping normalizes metadata before converting values", t => {
+    const { service, database } = fixture(t), select = definition("select");
+    for (const value of [
+        { ...select, metadata: { options: [{ id: "a", name: "A" }, { id: "a", name: "B" }] } },
+        { ...definition(), metadata: { options: [] } },
+        { ...select, metadata: { options: [], name: "Wrong location" } },
+        { ...select, metadata: { options: [{ id: "a", name: "A", extra: 1 }] } }
+    ]) assert.throws(() => service.setDefinition(value.id, value, "manager"), hasFailure("attribute-invalid-metadata"));
+    select.metadata.options = [{ id: "a", name: "A" }, { id: "b", name: "B" }];
+    service.setDefinition(select.id, select, "manager");
+    service.setDefinition(select.id, { ...select, type: "multiselect", metadata: {} }, "manager");
+    assert.deepEqual(service.attributes.definition(select.id).metadata, select.metadata);
+    service.setDefinition(select.id, { ...select, type: "string" }, "manager");
+    assert.deepEqual(service.attributes.definition(select.id).metadata, {});
+    assert.deepEqual(database.prepare("SELECT name,metadata FROM attrs_meta WHERE id=?").get(select.id), { name: "A", metadata: "{}" });
+});
+
+test("editable tag options persist, rename searchable values and never store the builtin name", t => {
+    const { service, database, info } = fixture(t), page = service.create("editable", "A"), tags = service.attributes.definition("tags");
+    tags.metadata.options = [{ id: "paper", name: "论文" }];
+    service.setDefinition("tags", tags, "manager");
+    service.commitEdit({ pageId: page.id, tabId: "edit", batch: 1, blocks: [], attributes: { tags: ["paper"] } });
+    assert.equal(service.list({ keyword: "论文" }).total, 1);
+    tags.metadata.options[0].name = "研究";
+    service.setDefinition("tags", tags, "manager");
+    assert.equal(service.list({ keyword: "论文" }).total, 0);
+    assert.equal(service.list({ keyword: "研究" }).total, 1);
+    database.close();
+    const reopened = openWorkspace(info.path);
+    t.after(() => reopened.database.close());
+    const restored = new KnowledgeService(reopened.db);
+    assert.deepEqual(restored.attributes.definition("tags").metadata.options, [{ id: "paper", name: "研究" }]);
+    assert.deepEqual(restored.get(page.id).attributes.tags, ["paper"]);
+    assert.equal(reopened.database.prepare("SELECT name FROM attrs_meta WHERE id='tags'").pluck().get(), null);
+});
+
+test("opening validates builtin names, types, fixed metadata and editable metadata without repairing rows", t => {
+    for (const sql of [
+        "DELETE FROM attrs_meta WHERE id='deleted'",
+        "UPDATE attrs_meta SET type='string' WHERE id='deleted'",
+        "UPDATE attrs_meta SET name='Changed' WHERE id='tags'",
+        "UPDATE attrs_meta SET metadata='{\"options\":[]}' WHERE id='task_status'",
+        "UPDATE attrs_meta SET metadata='{}' WHERE id='tags'"
+    ]) {
+        const { database, info } = fixture(t);
+        database.exec(sql);
+        database.close();
+        const before = readFileSync(join(info.path, "workspace.sqlite"));
+        assert.throws(() => openWorkspace(info.path));
+        assert.deepEqual(readFileSync(join(info.path, "workspace.sqlite")), before);
     }
 });

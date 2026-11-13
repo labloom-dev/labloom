@@ -77,7 +77,7 @@ function workspaceScale(): void {
                 replace.run(JSON.stringify([sharedId, ...group.children.slice(1)]), group.id);
             }
         })();
-        const uses = sql.prepare("SELECT count(*) FROM block_uses WHERE block_id = ?").pluck();
+        const uses = sql.prepare("SELECT count(*) FROM sync_refs WHERE block_id = ?").pluck();
         measure("A | confirm delete at ten positions", 100, round => {
             const first = groups[round * 10];
             assert.equal(uses.get(first.children[0]), 10);
@@ -141,7 +141,7 @@ function probes(): void {
         sql.prepare("UPDATE pages SET children = ? WHERE id = ?").run(JSON.stringify([a.children[0]]), b.id);
         service.rebuildLinks();
         confirmed(prepareDeletion(service, a.id), 0)();
-        console.log("Probe | remaining positions after deleting a synced block:", sql.prepare("SELECT count(*) FROM block_uses WHERE block_id = ?").pluck().get(a.children[0]));
+        console.log("Probe | remaining positions after deleting a synced block:", sql.prepare("SELECT count(*) FROM sync_refs WHERE block_id = ?").pluck().get(a.children[0]));
         for (const keyword of ["tags", "true", "2026", "modified"]) console.log("Probe | search", keyword, "matched", service.list({ keyword }).total, "of 2 pages");
     }
     finally {

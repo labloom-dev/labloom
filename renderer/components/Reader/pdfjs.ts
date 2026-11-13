@@ -14,6 +14,7 @@ import { EventBus, FindState, PDFFindController, PDFLinkService, PDFViewer } fro
 import viewerCss from "pdfjs-dist/legacy/web/pdf_viewer.css?inline";
 import workerUrl from "pdfjs-dist/legacy/build/pdf.worker.mjs?url";
 import { scalePresets, type ReaderError, type ReaderRotation, type ReaderScalePreset, type ReaderViewState } from "./defs";
+import { LabloomError, diagnostic } from "../../../shared/failure";
 
 export { FindState, PasswordResponses, type PDFDocumentProxy };
 
@@ -131,7 +132,7 @@ export async function hasText(pdfDocument: PDFDocumentProxy): Promise<boolean> {
 
 export function toReaderError(error: unknown): ReaderError {
     if (error instanceof InvalidPDFException) {
-        return { kind: "invalid", message: "无法打开：文件已损坏或不是有效的 PDF。" };
+        return { kind: "pdf-invalid", diagnostic: diagnostic(error) };
     }
-    return { kind: "unknown", message: `无法打开 PDF：${error instanceof Error ? error.message : String(error)}` };
+    return error instanceof LabloomError ? error.failure : { kind: "pdf-unavailable", diagnostic: diagnostic(error) };
 }

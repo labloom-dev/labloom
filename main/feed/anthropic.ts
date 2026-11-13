@@ -1,3 +1,4 @@
+import { LabloomError } from "../../shared/failure";
 import type { FeedEntry } from "../../shared/types/feed";
 import { feedURL } from "../../shared/utils/feed";
 
@@ -24,7 +25,7 @@ type Article = {
 
 export function parseAnthropic(html: string, sourceURL: string): FeedEntry[] {
     const section = anthropicSection(sourceURL);
-    if (!section) throw new Error("仅支持 Anthropic 的 News 和 Engineering 列表页。");
+    if (!section) throw new LabloomError({ kind: "feed-anthropic-section" });
 
     // Read the public page data as JSON without evaluating any page scripts.
     const chunks = [...html.matchAll(/self\.__next_f\.push\(\[1,("(?:\\.|[^"\\])*")\]\)/g)];
@@ -85,6 +86,7 @@ export function parseAnthropic(html: string, sourceURL: string): FeedEntry[] {
             externalId: article.slug ? `${site}/${section}/${article.slug}` : url,
             title: article.title,
             url,
+            pdfURL: null,
             authors: "",
             summary: article.summary,
             content: "",
@@ -92,6 +94,6 @@ export function parseAnthropic(html: string, sourceURL: string): FeedEntry[] {
             publishedAt: Number.isFinite(published) ? published : null
         });
     }
-    if (!entries.length) throw new Error("未找到 Anthropic 文章，页面结构可能已变化，请稍后重试。");
+    if (!entries.length) throw new LabloomError({ kind: "feed-anthropic-empty" });
     return entries;
 }

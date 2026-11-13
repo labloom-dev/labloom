@@ -1,7 +1,7 @@
 <section class="workspace-page">
     <div class="paper-card about">
         <img src={icon} alt="Labloom 标志" />
-        <span class="eyebrow">A HOME FOR YOUR CURIOSITY</span>
+
         <h1>知织 <span>Labloom</span></h1>
         <p class="tagline">Where ideas take root.</p>
         <p>追踪研究动态，阅读论文，记录想法。<br />把散落的知识，编织成自己的世界。</p>
@@ -65,7 +65,7 @@
         margin-top: 16px;
     }
     .version {
-        font-size: 10px;
+        font-size: var(--font-min);
     }
 </style>
 

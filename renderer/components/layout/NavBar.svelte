@@ -1,115 +1,26 @@
 <header class="titlebar">
-    <button class="brand" onclick={() => openDestination("overview")} aria-label="知织首页">
-        <span class="brand-mark"><img src={icon} alt="" /></span>
-        <span class="wordmark">labloom<span>知织，让灵感生长</span></span>
-    </button>
-    <GSLauncher />
-    <div class="header-actions">
-        <span class="local-badge"><span></span> 本地工作区</span>
-        <Menu />
-    </div>
+    <!-- Codicon layout-sidebar-left, Microsoft, CC BY 4.0: https://github.com/microsoft/vscode-codicons/blob/main/LICENSE; path unchanged. -->
+    <button class="panel-toggle" class:active={!shell.collapsed} aria-pressed={!shell.collapsed} aria-label={commands.sidebar.label} title={`${commands.sidebar.label} (${commands.sidebar.shortcut})`} onclick={() => runCommand("sidebar")}><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M12.5 1C13.881 1 15 2.119 15 3.5V12.5C15 13.881 13.881 15 12.5 15H3.5C2.119 15 1 13.881 1 12.5V3.5C1 2.119 2.119 1 3.5 1H12.5ZM12.5 14C13.328 14 14 13.328 14 12.5V3.5C14 2.672 13.328 2 12.5 2H7V14H12.5Z" /></svg></button>
+    <button class="brand" onclick={() => openDestination("overview")} aria-label="知织首页"><img src={icon} alt="" /></button>
+    <Menu />
+    <div class="search"><GSLauncher /></div>
 </header>
-
-
 <style>
-    .titlebar {
-        -webkit-app-region: drag;
-        display: grid;
-        grid-template-columns: 214px minmax(160px, 440px) minmax(120px, 1fr);
-        align-items: center;
-        gap: 24px;
-        height: max(74px, env(titlebar-area-height, 36px));
-        flex-shrink: 0;
-        padding: 0 max(18px, calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))) 0 max(22px, env(titlebar-area-x, 0px));
-        border-bottom: 1.5px solid var(--c-ink);
-        background: var(--c-navbar-background);
-    }
-    .titlebar :global(button) {
-        -webkit-app-region: no-drag;
-    }
-    .brand {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        text-align: left;
-    }
-    .brand-mark {
-        display: grid;
-        place-items: center;
-        width: 40px;
-        height: 44px;
-        border: 1.5px solid var(--c-ink);
-        border-radius: 12px;
-        background: var(--c-gold-light);
-        transform: rotate(-6deg);
-    }
-    img {
-        width: 30px;
-        height: 34px;
-        object-fit: contain;
-        -webkit-user-drag: none;
-    }
-    .wordmark {
-        font-size: 26px;
-        line-height: 1.05;
-        font-weight: 900;
-        letter-spacing: -.8px;
-    }
-    .wordmark span {
-        display: block;
-        margin-top: 5px;
-        color: var(--c-muted);
-        font-size: 9px;
-        font-weight: 600;
-        letter-spacing: 1px;
-    }
-    .header-actions {
-        display: flex;
-        align-items: center;
-        justify-content: flex-end;
-        gap: 18px;
-    }
-    .local-badge {
-        display: flex;
-        align-items: center;
-        gap: 7px;
-        color: var(--c-muted);
-        font-size: 10px;
-        white-space: nowrap;
-    }
-    .local-badge span {
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
-        background: #738d63;
-        box-shadow: 0 0 0 3px var(--c-sage);
-    }
-    @media (max-width: 900px) {
-        .titlebar {
-            grid-template-columns: 168px minmax(120px, 1fr) auto;
-            gap: 14px;
-        }
-        .local-badge {
-            display: none;
-        }
-    }
-    @media (max-width: 600px) {
-        .titlebar {
-            grid-template-columns: 40px minmax(100px, 1fr) auto;
-            height: 66px;
-            padding-left: max(12px, env(titlebar-area-x, 0px));
-            gap: 12px;
-        }
-        .wordmark {
-            display: none;
-        }
-    }
+    .titlebar { -webkit-app-region: drag; position: relative; display: flex; align-items: center; height: env(titlebar-area-height, var(--titlebar-height)); min-height: var(--titlebar-height); flex-shrink: 0; padding-left: max(8px, env(titlebar-area-x, 0px)); padding-right: max(8px, calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))); border-bottom: var(--border-width) solid var(--c-line); background: var(--c-navbar-background); }
+    .titlebar :global(button), .search { -webkit-app-region: no-drag; }
+    .brand { display: grid; place-items: center; width: var(--activity-width); height: var(--button-height); flex-shrink: 0; }
+    .panel-toggle { display: grid; place-items: center; width: var(--button-height); height: var(--button-height); flex-shrink: 0; border-radius: var(--control-radius); color: var(--c-muted); }
+    .panel-toggle.active { color: var(--c-ink); background: var(--c-gold-light); }
+    .panel-toggle:hover { background: var(--c-cream); }
+    img { width: var(--logo-size); height: var(--logo-size); object-fit: contain; -webkit-user-drag: none; }
+    .search { position: absolute; left: 50%; transform: translateX(-50%); width: min(var(--search-width), calc(100% - 620px)); min-width: 120px; }
+    @media (max-width: 850px) { .search { position: static; transform: none; flex: 1; width: auto; margin-inline: 8px; } }
 </style>
-
-
 <script lang="ts">
     import icon from "../../assets/icon.png";
     import GSLauncher from "../globalSearch/GSLauncher.svelte";
     import Menu from "./Menu.svelte";
     import { openDestination } from "./navigation";
+    import { commands, runCommand } from "./commands";
+    import { shell } from "./shell.svelte";
 </script>

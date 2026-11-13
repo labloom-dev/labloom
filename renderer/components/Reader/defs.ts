@@ -1,3 +1,5 @@
+import { type FailureInfo } from "../../../shared/failure";
+
 export type ReaderSource = {
     kind: "data";
     data: Uint8Array;
@@ -19,12 +21,7 @@ export type ReaderViewState = {
     top: number;
 };
 
-export type ReaderErrorKind = "invalid" | "password-cancelled" | "unknown";
-
-export type ReaderError = {
-    kind: ReaderErrorKind;
-    message: string;
-};
+export type ReaderError = FailureInfo;
 
 export type ReaderFindStatus =
     | { kind: "idle" }

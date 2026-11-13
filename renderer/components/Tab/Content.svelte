@@ -3,6 +3,8 @@
         <PageView {tab} />
     {:else if tab.type === "library" || tab.type === "papers"}
         <Library tabId={tab.id} initialView={tab.type === "papers" ? "papers" : "all"} />
+    {:else if tab.type === "attributes"}
+        <AttributeManagement tabId={tab.id} />
     {:else if tab.type === "calendar"}
         <Calendar tabId={tab.id} />
     {:else if tab.type === "overview"}
@@ -20,6 +22,7 @@
 
 
 <script lang="ts">
+    import AttributeManagement from "../Knowledge/AttributeManagement.svelte";
     import About from "../tabs/About.svelte";
     import Overview from "../tabs/Overview.svelte";
     import Settings from "../tabs/Settings.svelte";

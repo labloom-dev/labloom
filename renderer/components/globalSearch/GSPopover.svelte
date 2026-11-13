@@ -6,7 +6,7 @@
     <input placeholder="搜索页面标题、正文和属性…" autocomplete="off" spellcheck="false" bind:value={keyword} onkeydown={onkeydown} />
 </div>
 <div class="search-results">
-    {#if error}<p class="error">{error}</p>{:else if pending}<p>正在搜索…</p>{:else}{#each pages as page, index (page.id)}<button class:active={index === selected} onclick={() => choose(page.id)}><strong>{page.title || "未命名"}</strong><span>{page.excerpt || "还没有正文"}</span></button>{:else}<p>{keyword.trim() ? "没有找到匹配的页面" : "输入关键词，搜索知识库"}</p>{/each}{/if}
+    {#if error}<p class="error">{message(error)}</p>{:else if pending}<p>正在搜索…</p>{:else}{#each pages as page, index (page.id)}<button class:active={index === selected} onclick={() => choose(page.id)}><strong>{page.title || "未命名"}</strong><span>{page.excerpt || "还没有正文"}</span></button>{:else}<p>{keyword.trim() ? "没有找到匹配的页面" : "输入关键词，搜索知识库"}</p>{/each}{/if}
 </div>
 <footer>
     <span><kbd>Esc</kbd> 关闭</span>
@@ -65,13 +65,14 @@
 
 
 <script lang="ts">
+    import { failure, message, type ErrorValue } from "../../i18n.svelte";
     import search from "../../assets/carbon--search.svg?raw";
     import { type PageSummary } from "../../../shared/types/content";
     import { openPage } from "../layout/navigation";
     import { currentTimeZone } from "../layout/preferences.svelte";
-    import { message } from "../Knowledge/state.svelte";
+
     let { onclose }: { onclose: () => void } = $props();
-    let keyword = $state(""), pending = $state(false), error = $state(""), selected = $state(0), pages = $state<PageSummary[]>([]);
+    let keyword = $state(""), pending = $state(false), error = $state<ErrorValue>(""), selected = $state(0), pages = $state<PageSummary[]>([]);
     $effect(() => {
         currentTimeZone();
         const query = keyword.trim(); let active = true; selected = 0; pending = !!query; const timer = setTimeout(() => {
@@ -83,7 +84,7 @@
                 }
             }, problem => {
                 if (active) {
-                    error = message(problem); pending = false;
+                    error = failure(problem); pending = false;
                 }
             });
         }, 180); return () => {

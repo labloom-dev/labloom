@@ -1,6 +1,6 @@
 <section class="workspace-page overview">
     <header class="page-heading">
-        <div><span class="eyebrow">MY LITTLE KNOWLEDGE GARDEN</span><h1>我的花园 <span class="heading-spark"><Icon name="flower" size={30} /></span></h1><p>收集好奇，连接想法。今天也让知识长大一点。</p></div>
+        <div><h1>我的花园 <span class="heading-spark"><Icon name="flower" size={30} /></span></h1><p>收集好奇，连接想法。今天也让知识长大一点。</p></div>
         <span class="date"><Icon name="calendar" size={16} />{date}</span>
     </header>
 
@@ -14,7 +14,7 @@
         <div class="hero-art"><span class="art-label">a little idea, a little bloom</span><Bloom /><span class="art-caption">GROW AT YOUR OWN PACE</span></div>
     </div>
 
-    {#if error}<div class="notice error" role="alert">{error} <button class="text-button" onclick={load}>重新加载</button></div>{/if}
+    {#if error}<div class="notice error" role="alert">{message(error)} <button class="text-button" onclick={load}>{t("dialog.retry")}</button></div>{/if}
     <div class="stats" aria-busy={pending}>
         {#each stats as stat (stat.label)}
             <button class="stat-card" onclick={() => openDestination(stat.destination)}>
@@ -31,7 +31,7 @@
             {#if pending}
                 <div class="empty-state" role="status"><strong>正在整理你的来信…</strong><p>读取已保存在工作区的订阅内容。</p></div>
             {:else if error}
-                <div class="empty-state"><Icon name="feed" size={30} /><strong>暂时没能读到订阅</strong><p>已有内容仍保留在工作区，可以重试加载。</p><button class="button" onclick={load}>重新加载</button></div>
+                <div class="empty-state"><Icon name="feed" size={30} /><strong>暂时没能读到订阅</strong><p>已有内容仍保留在工作区，可以重试加载。</p><button class="button" onclick={load}>{t("dialog.retry")}</button></div>
             {:else if feedState?.items.length}
                 <div class="latest-list">
                     {#each feedState.items.slice(0, 3) as item (item.id)}
@@ -81,7 +81,7 @@
         border-radius: 8px;
         background: var(--c-paper);
         color: var(--c-muted);
-        font-size: 10px;
+        font-size: var(--font-min);
     }
     .welcome-card {
         position: relative;
@@ -105,7 +105,7 @@
         border: 1px solid #cfb77f;
         border-radius: 6px;
         color: var(--c-accent);
-        font-size: 10px;
+        font-size: var(--font-min);
         transform: rotate(-2deg);
     }
     .welcome-label span {
@@ -215,7 +215,7 @@
     .stat-copy > span {
         display: block;
         color: var(--c-muted);
-        font-size: 10px;
+        font-size: var(--font-min);
     }
     .stat-copy strong {
         display: block;
@@ -226,7 +226,7 @@
     }
     .stat-copy small {
         color: var(--c-muted);
-        font-size: 10px;
+        font-size: var(--font-min);
         font-weight: 500;
     }
     .stat-caption {
@@ -236,7 +236,7 @@
         padding-top: 10px;
         border-top: 1px dashed var(--c-line);
         color: var(--c-muted);
-        font-size: 10px;
+        font-size: var(--font-min);
     }
     .dashboard-grid {
         display: grid;
@@ -343,7 +343,7 @@
         display: block;
         margin-top: 6px;
         color: var(--c-muted);
-        font-size: 10px;
+        font-size: var(--font-min);
     }
     .little-note {
         display: flex;
@@ -361,7 +361,7 @@
     .little-note p {
         margin: 0;
         color: var(--c-muted);
-        font-size: 10px;
+        font-size: var(--font-min);
         line-height: 1.8;
     }
     .little-note strong {
@@ -388,7 +388,7 @@
         justify-content: space-between;
         gap: 10px;
         color: var(--c-muted);
-        font-size: 9px;
+        font-size: var(--font-min);
     }
     .source-label {
         overflow: hidden;
@@ -412,7 +412,7 @@
         -webkit-line-clamp: 1;
         line-clamp: 1;
         color: var(--c-muted);
-        font-size: 10px;
+        font-size: var(--font-min);
     }
     .page-footer {
         display: flex;
@@ -420,7 +420,7 @@
         gap: 10px;
         padding-top: 27px;
         color: var(--c-muted);
-        font-size: 9px;
+        font-size: var(--font-min);
     }
     @container (max-width: 760px) {
         .hero-art {
@@ -437,7 +437,7 @@
             gap: 10px;
         }
         .stat-caption {
-            font-size: 9px;
+            font-size: var(--font-min);
         }
     }
     @container (max-width: 540px) {
@@ -467,6 +467,7 @@
 
 
 <script lang="ts">
+    import { message, t, failure, type ErrorValue } from "../../i18n.svelte";
     import { onMount } from "svelte";
     import { type FeedState } from "../../../shared/types/feed";
     import Bloom from "../utils/Bloom.svelte";
@@ -483,7 +484,7 @@
     let counts = $state<{ pages: number; papers: number; tasks: number } | null>(null);
     let recent = $state<PageSummary[]>([]);
     let pending = $state(true);
-    let error = $state("");
+    let error = $state<ErrorValue>("");
     let now = $state(Date.now());
     const date = $derived(new Date(now).toLocaleDateString("zh-CN", { timeZone: currentTimeZone(), month: "long", day: "numeric", weekday: "long" }));
     let loading = false;
@@ -506,7 +507,7 @@
             }
         }
         catch (cause) {
-            if (active) error = cause instanceof Error ? cause.message : "暂时无法读取订阅内容。";
+            if (active) error = failure(cause);
         }
         finally {
             loading = false;

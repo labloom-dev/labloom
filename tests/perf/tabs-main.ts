@@ -1,3 +1,4 @@
+import { writeFileSync } from "node:fs";
 import { app, BrowserWindow } from "electron";
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
@@ -95,7 +96,9 @@ async function run(large: boolean): Promise<boolean> {
         await window.loadURL(process.env.LABLOOM_BENCH_URL!);
         window.webContents.debugger.attach();
         await window.webContents.debugger.sendCommand("Emulation.setFocusEmulationEnabled", { enabled: true });
+        if (process.env.LABLOOM_TAB_PROFILE) { await window.webContents.debugger.sendCommand("Profiler.enable"); await window.webContents.debugger.sendCommand("Profiler.start"); }
         const results = await window.webContents.executeJavaScript(`(${measure.toString()})()`);
+        if (process.env.LABLOOM_TAB_PROFILE) { const result = await window.webContents.debugger.sendCommand("Profiler.stop"); writeFileSync(join(process.cwd(), ".local", "compact-qa-1112", "tabs-profile.json"), JSON.stringify(result.profile)); }
         console.log(large ? "B" : "A", JSON.stringify(results));
         return results.clean.p95 <= 50 && results.changed.p95 <= 300;
     }

@@ -12,7 +12,7 @@ const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const local = join(root, ".local");
 mkdirSync(local, { recursive: true });
 const dir = mkdtempSync(join(local, "tab-benchmark-"));
-const server = await createServer({ root: join(root, "renderer"), configFile: false, cacheDir: join(dir, "vite"),
+const server = await createServer({ root: process.env.LABLOOM_RENDERER_ROOT ?? join(root, "renderer"), configFile: false, cacheDir: join(dir, "vite"),
     plugins: [svelte({ configFile: join(root, "configs/svelte.config.js") })],
     server: { host: "127.0.0.1", port: 0, hmr: false, watch: null, fs: { allow: [root] } } });
 try {
@@ -21,7 +21,7 @@ try {
     await server.listen();
     const env = { ...process.env, LABLOOM_TEST_ROOT: dir, LABLOOM_BENCH_URL: server.resolvedUrls.local[0] };
     delete env.ELECTRON_RUN_AS_NODE;
-    for (const scale of ["A", "B"]) {
+    for (const scale of process.env.LABLOOM_TAB_SCALE ? [process.env.LABLOOM_TAB_SCALE] : ["A", "B"]) {
         const run = spawn(createRequire(import.meta.url)("electron"), [join(dir, "main.cjs"), scale], { cwd: root, env, stdio: "inherit", windowsHide: true });
         const code = await new Promise((resolve, reject) => {
             run.once("error", reject);

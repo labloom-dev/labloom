@@ -10,7 +10,7 @@
     </header>
     <input type="search" placeholder="搜索页面…" bind:value={keyword} />
     {#if error}
-        <p class="error">{error}</p>
+        <p class="error">{message(error)}</p>
     {/if}
     {#if chosen}
         <button class="text-button" onclick={() => chosen = null}>← 返回页面列表</button>
@@ -42,12 +42,13 @@
     small { margin-left: 12px; color: var(--c-muted); }
 </style>
 <script lang="ts">
+    import { failure, message, type ErrorValue } from "../../i18n.svelte";
     import { type ContentBlock, type PageSummary, type PageRecord, type Target } from "../../../shared/types/content";
     import { blockText } from "../../../shared/content/blocks";
     import { blockKindNames } from "../../../shared/content/block-labels";
-    import { knowledgeState, message } from "./state.svelte";
+    import { knowledgeState } from "./state.svelte";
     let { mode = "reference", onselect, onclose }: { mode?: "reference" | "sync"; onselect: (target: Target, label: string) => void; onclose: () => void } = $props();
-    let keyword = $state(""), error = $state("");
+    let keyword = $state(""), error = $state<ErrorValue>("");
     let pages = $state<PageSummary[]>([]), chosen = $state.raw<PageRecord | null>(null);
     let referenceLabels = $state<Record<string, string>>({});
     const orderedBlocks = $derived.by(() => {
@@ -66,7 +67,7 @@
     });
     function label(block: ContentBlock): string {
         if (block.type === "blocked_reference") return referenceLabels[block.id] || "引用目标缺失";
-        return blockText(block) || (block.type === "source" ? "原文片段" : "空块");
+        return blockText(block) || "空块";
     }
     $effect(() => {
         void knowledgeState.change.seq;
@@ -76,7 +77,7 @@
             void window.api.knowledge.list({ keyword: query, limit: 50 }).then(result => {
                 if (active) pages = result.items;
             }, problem => {
-                if (active) error = message(problem);
+                if (active) error = failure(problem);
             });
         }, 150);
         return () => {
@@ -93,7 +94,7 @@
             const labels = await Promise.all(Object.values(page.blocks).filter(block => block.type === "blocked_reference" && block.payload.target).map(async block => {
                 try {
                     const resolved = await window.api.knowledge.resolve(block.payload.target!);
-                    return [block.id, resolved.title || "未命名目标"];
+                    return [block.id, resolved ? resolved.title || "未命名目标" : "引用目标缺失"];
                 }
                 catch {
                     return [block.id, "引用目标缺失"];
@@ -102,7 +103,7 @@
             if (chosen === page) referenceLabels = Object.fromEntries(labels);
         }
         catch (problem) {
-            error = message(problem);
+            error = failure(problem);
         }
     }
 </script>

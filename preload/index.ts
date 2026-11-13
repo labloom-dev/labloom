@@ -1,10 +1,11 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { AppAPI } from "../shared/app";
+import type { BridgeAPI } from "../shared/failure";
 import { appChannels, appearanceChannels, feedChanged, feedChannels, startupChannels } from "../shared/ipc";
 import { knowledgeChannels, knowledgeChanged, saveBeforeClose, saveBeforeCloseReply } from "../shared/ipc";
 
 // The renderer only gets this typed bridge, never ipcRenderer itself.
-const api: AppAPI = {
+const api: BridgeAPI<AppAPI> = {
     openDevTools: () => ipcRenderer.send(appChannels.openDevTools),
     knowledge: {
         list: (...args) => ipcRenderer.invoke(knowledgeChannels.list, ...args),
@@ -18,6 +19,8 @@ const api: AppAPI = {
         place: (...args) => ipcRenderer.invoke(knowledgeChannels.place, ...args),
         trash: (...args) => ipcRenderer.invoke(knowledgeChannels.trash, ...args),
         restore: (...args) => ipcRenderer.invoke(knowledgeChannels.restore, ...args),
+        purge: (...args) => ipcRenderer.invoke(knowledgeChannels.purge, ...args),
+        emptyTrash: (...args) => ipcRenderer.invoke(knowledgeChannels.emptyTrash, ...args),
         definitions: (...args) => ipcRenderer.invoke(knowledgeChannels.definitions, ...args),
         define: (...args) => ipcRenderer.invoke(knowledgeChannels.define, ...args),
         backlinks: (...args) => ipcRenderer.invoke(knowledgeChannels.backlinks, ...args),
@@ -28,15 +31,19 @@ const api: AppAPI = {
         loadTabs: (...args) => ipcRenderer.invoke(knowledgeChannels.loadTabs, ...args),
         saveTabs: (...args) => ipcRenderer.invoke(knowledgeChannels.saveTabs, ...args),
         importPDF: (...args) => ipcRenderer.invoke(knowledgeChannels.importPDF, ...args),
+        importFiles: (...args) => ipcRenderer.invoke(knowledgeChannels.importFiles, ...args),
+        files: (...args) => ipcRenderer.invoke(knowledgeChannels.files, ...args),
+        openFile: (...args) => ipcRenderer.invoke(knowledgeChannels.openFile, ...args),
         resources: (...args) => ipcRenderer.invoke(knowledgeChannels.resources, ...args),
         readFile: (...args) => ipcRenderer.invoke(knowledgeChannels.readFile, ...args),
-        getAnchor: (...args) => ipcRenderer.invoke(knowledgeChannels.getAnchor, ...args),
+        getAnnotation: (...args) => ipcRenderer.invoke(knowledgeChannels.getAnnotation, ...args),
         unlockPDF: (...args) => ipcRenderer.invoke(knowledgeChannels.unlockPDF, ...args),
-        changeHighlight: (...args) => ipcRenderer.invoke(knowledgeChannels.changeHighlight, ...args),
+        changeAnnotation: (...args) => ipcRenderer.invoke(knowledgeChannels.changeAnnotation, ...args),
         position: (...args) => ipcRenderer.invoke(knowledgeChannels.position, ...args),
-        highlight: (...args) => ipcRenderer.invoke(knowledgeChannels.highlight, ...args),
-        removeHighlight: (...args) => ipcRenderer.invoke(knowledgeChannels.removeHighlight, ...args),
+        deleteAnnotation: (...args) => ipcRenderer.invoke(knowledgeChannels.deleteAnnotation, ...args),
         annotate: (...args) => ipcRenderer.invoke(knowledgeChannels.annotate, ...args),
+        timers: (...args) => ipcRenderer.invoke(knowledgeChannels.timers, ...args),
+        setTimer: (...args) => ipcRenderer.invoke(knowledgeChannels.setTimer, ...args),
         notices: (...args) => ipcRenderer.invoke(knowledgeChannels.notices, ...args),
         readNotice: (...args) => ipcRenderer.invoke(knowledgeChannels.readNotice, ...args),
         onChanged: listener => {
@@ -54,7 +61,12 @@ const api: AppAPI = {
     },
     appearance: {
         get: () => ipcRenderer.invoke(appearanceChannels.get),
-        save: value => ipcRenderer.invoke(appearanceChannels.save, value)
+        save: value => ipcRenderer.invoke(appearanceChannels.save, value),
+        onChanged: listener => {
+            const handler = (_event: unknown, value: Parameters<typeof listener>[0]): void => listener(value);
+            ipcRenderer.on(appearanceChannels.changed, handler);
+            return () => ipcRenderer.removeListener(appearanceChannels.changed, handler);
+        }
     },
     feed: {
         getState: query => ipcRenderer.invoke(feedChannels.getState, query),
@@ -67,6 +79,7 @@ const api: AppAPI = {
         setPosition: (id, progress) => ipcRenderer.invoke(feedChannels.setPosition, id, progress),
         setKeywords: keywords => ipcRenderer.invoke(feedChannels.setKeywords, keywords),
         importItem: (id, replace) => ipcRenderer.invoke(feedChannels.importItem, id, replace),
+        fetchPDF: id => ipcRenderer.invoke(feedChannels.fetchPDF, id),
         openItem: id => ipcRenderer.invoke(feedChannels.openItem, id),
         onChanged: listener => {
             const handler = (): void => listener();
@@ -81,4 +94,4 @@ const api: AppAPI = {
     }
 };
 
-contextBridge.exposeInMainWorld("api", api);
+contextBridge.exposeInMainWorld("bridge", api);
