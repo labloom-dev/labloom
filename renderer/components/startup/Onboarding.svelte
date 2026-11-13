@@ -1,47 +1,48 @@
 <header class="titlebar">
     <img src={icon} alt="" />
-    <span>知织，Labloom</span>
+    <span>{t("startup.brand")}</span>
 </header>
 
 <main class="onboarding">
     <div class="welcome">
 
         <div class="welcome-art"><Bloom /></div>
-        <h1>{state ? "让知识，从这里生长。" : "正在打开工作区"}</h1>
-        <p class="intro">欢迎来到知织。选一块属于你的空间，种下第一颗灵感。</p>
+        <h1>{t(state ? "startup.welcome" : "startup.opening")}</h1>
+        <p class="intro">{t("startup.intro")}</p>
 
         {#if state?.status === "needs-workspace"}
             {#if state.notice}
-                <p class="message notice" role="status">{state.notice}</p>
+                <p class="message notice" role="status">{t("startup.configBackup", { path: state.notice.path })}</p>
             {/if}
             {#if state.error}
                 <div class="message error" role="alert">
-                    <strong>暂时无法进入工作区</strong>
-                    <p>{state.error}</p>
-                    {#if state.lastWorkspace}
-                        <p class="path">{state.lastWorkspace.path}</p>
+                    <strong>{t("startup.failed")}</strong>
+                    <p>{message(state.error)}</p>
+                    {#if state.error.diagnostic}<details><summary>{t("dialog.details")}</summary><p>{state.error.diagnostic}</p></details>{/if}
+                    {#if state.attemptedPath || state.lastWorkspace}
+                        <p class="path">{state.attemptedPath ?? state.lastWorkspace?.path}</p>
                     {/if}
-                    <button class="retry" disabled={pending} onclick={onretry}>重试</button>
+                    <button class="retry" disabled={pending} onclick={onretry}>{t("startup.retry")}</button>
                 </div>
             {/if}
             <div class="actions">
                 <button class="choice primary" disabled={pending || !state.canChoose} onclick={() => onchoose("create")}>
                     <span class="symbol">＋</span>
-                    <strong>创建工作区</strong>
-                    <span>选择一个空文件夹，开始新的研究。</span>
+                    <strong>{t("startup.create")}</strong>
+                    <span>{t("startup.createHint")}</span>
                 </button>
                 <button class="choice" disabled={pending || !state.canChoose} onclick={() => onchoose("open")}>
                     <svg class="folder" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                         <path d="M3 7V5a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7Z" />
                         <path d="M3 9h18" />
                     </svg>
-                    <strong>打开已有工作区</strong>
-                    <span>选择之前使用的工作文件夹。</span>
+                    <strong>{t("startup.open")}</strong>
+                    <span>{t("startup.openHint")}</span>
                 </button>
             </div>
         {/if}
 
-        <p class="status" role="status">{pending ? "正在处理，请稍候…" : "工作区保存在本机，请选择一个便于长期保存的位置。"}</p>
+        <p class="status" role="status">{t(pending ? "startup.pending" : "startup.localHint")}</p>
     </div>
 </main>
 
@@ -205,6 +206,7 @@
     import Bloom from "../utils/Bloom.svelte";
     import icon from "../../assets/icon.png";
     import type { StartupState, WorkspaceAction } from "../../../shared/types/startup";
+    import { message, t } from "../../i18n.svelte";
     type Props = {
         state: StartupState | null;
         pending: boolean;

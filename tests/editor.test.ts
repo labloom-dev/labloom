@@ -56,14 +56,13 @@ test("a tab replays text and editing keys in order against its reread document, 
 test("page conversion preserves nesting, title, atoms, marks and table cells; deltas include only changed records", () => {
     assert.deepEqual([...changedUses(["A", "B", "A"], ["B", "A", "C"])], [["A", -1], ["C", 1]]);
     assert.deepEqual([...changedUses(["A", "B"], ["B", "A"])], []);
-    const parent = block("first"), kid = block("child", "unordered_list"), line = block("", "hr"), table = block("", "table"), ref = block("", "blocked_reference"), source = block("", "source");
+    const parent = block("first"), kid = block("child", "unordered_list"), line = block("", "hr"), table = block("", "table"), ref = block("", "blocked_reference");
     parent.children = [kid.id];
     parent.payload.collapsed = true;
     parent.payload.inline = [{ type: "text", text: "bold", marks: [{ type: "bold" }] }, { type: "hardBreak" }, { type: "inlineReference", attrs: { target: { kind: "block", id: kid.id }, label: "x" } }];
     table.payload.table = blankTable();
     ref.payload.target = { kind: "block", id: kid.id };
-    source.payload.source = { anchorId: randomUUID() };
-    const p = page([parent, kid, line, table, ref, source], [parent.id, line.id, table.id, ref.id, source.id]);
+    const p = page([parent, kid, line, table, ref], [parent.id, line.id, table.id, ref.id]);
     const s = state(p);
     s.doc.check();
     for (const [id, places] of indexDoc(s.doc)) {

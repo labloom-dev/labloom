@@ -4,6 +4,7 @@ import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { KnowledgeService } from "../main/knowledge/service";
+import { rebuildSyncRefs } from "../main/storage/schema";
 import { createWorkspace } from "../main/storage/workspace";
 import { builtinAttrs } from "../shared/attrs/builtins";
 import { payload } from "../shared/content/blocks";
@@ -29,6 +30,7 @@ function reference(target: Target, inline: boolean): ContentBlock {
 function fixture(t: TestContext, graph: Graph): { service: KnowledgeService; sql: ReturnType<typeof createWorkspace>["database"] } {
     const workspace = createWorkspace(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "retention-")));
     const sql = workspace.database;
+    const service = new KnowledgeService(workspace.db);
     t.after(() => sql.close());
     const insertBlock = sql.prepare("INSERT INTO blocks(id, type, content, children) VALUES (?, ?, ?, ?)");
     const insertPage = sql.prepare("INSERT INTO pages(id, kind, title_block_id, children) VALUES (?, 'editable', ?, ?)");
@@ -38,12 +40,12 @@ function fixture(t: TestContext, graph: Graph): { service: KnowledgeService; sql
         for (const item of graph.pages) {
             insertBlock.run(item.titleBlockId, "title", JSON.stringify(payload("title", item.name)), "[]");
             insertPage.run(item.id, item.titleBlockId, JSON.stringify(item.children));
+            service.attributes.initializePage(item.id);
             attr.run(Number(item.attributes.independent), item.id, "independent");
             attr.run(Number(item.attributes.deleted), item.id, "deleted");
             attr.run(JSON.stringify(item.attributes.links), item.id, "links");
         }
     })();
-    const service = new KnowledgeService(workspace.db);
     service.rebuildLinks();
     return { service, sql };
 }
@@ -63,6 +65,13 @@ function checkEdit(service: KnowledgeService, graph: Graph, item: GraphPage, cha
     assert.equal(service.commitEdit(edit, preview?.token).status, "saved");
     for (const p of graph.pages) if (expected.includes(p.id)) p.attributes.deleted = true;
     assert.deepEqual(deleted.all(), graph.pages.filter(p => p.attributes.deleted).map(p => p.id).sort(), description + " commit");
+    const sync = service.sql.prepare("SELECT * FROM sync_refs ORDER BY container_kind,container_id,slot,position");
+    const refs = service.sql.prepare("SELECT * FROM link_refs ORDER BY source_kind,source_id,source_field,target_kind,target_id");
+    const beforeSync = sync.all(), beforeRefs = refs.all();
+    rebuildSyncRefs(service.sql);
+    service.rebuildLinks();
+    assert.deepEqual(sync.all(), beforeSync, description + " sync index drift");
+    assert.deepEqual(refs.all(), beforeRefs, description + " link index drift");
     return expected;
 }
 
@@ -118,24 +127,22 @@ test("automatically recycling the only owner disables its block's outgoing links
     assert.equal(service.get(c.id).attributes.deleted, true);
 });
 
-test("removing the only entry into a cycle of live pages through a block target", t => {
+test("a block link cannot rescue a rootless page cycle or its outgoing page references", t => {
     const { service, sql } = fixture(t, { pages: [], blocks: new Map() });
     const a = service.create("editable", "A"), b = service.create("editable", "B"), c = service.create("editable", "C");
     const paragraph = replaceBody(service, b.id, { kind: "page", id: c.id }, true);
     const entry = replaceBody(service, a.id, { kind: "block", id: paragraph.id }, false);
     changeAttributes(service, c.id, { links: [b.id], independent: false });
-    changeAttributes(service, b.id, { independent: false });
-    for (const p of [a, b, c]) assert.equal(service.get(p.id).attributes.deleted, false);
-    const edit: EditCommit = { pageId: a.id, batch: 1, tabId: "entry", blocks: [], pageChildren: [] };
+    const edit: EditCommit = { pageId: b.id, batch: 1, tabId: "cycle", blocks: [], attributes: { independent: false } };
     const preview = service.commitEdit(edit);
     assert.equal(preview.status, "confirmation");
     assert.deepEqual(preview.preview.recycled.map(p => p.id).sort(), [b.id, c.id].sort());
-    assert.equal(entry.children.length, 0);
-    assert.deepEqual(sql.prepare("SELECT target_kind, target_id FROM link_index WHERE source_id = ?").all(entry.id), [{ target_kind: "block", target_id: paragraph.id }]);
     assert.equal(service.commitEdit(edit, preview.preview.token).status, "saved");
     assert.equal(service.get(b.id).attributes.deleted, true);
     assert.equal(service.get(c.id).attributes.deleted, true);
-    t.diagnostic("All pages started live via public edits. Removed subtree: 0 direct page targets. Recycle preview and confirmed result: B, C.");
+    assert.equal(service.get(a.id).attributes.deleted, false);
+    assert.equal(service.resolve({ kind: "block", id: paragraph.id })?.status, "recycled");
+    assert.deepEqual(sql.prepare("SELECT target_kind,target_id FROM link_refs WHERE source_id=?").all(entry.id), [{ target_kind: "block", target_id: paragraph.id }]);
 });
 
 test("a link to a block with no remaining position cannot retain that block's page target", t => {
@@ -146,7 +153,7 @@ test("a link to a block with no remaining position cannot retain that block's pa
     const graph = { pages: [root, dependent], blocks: new Map([entry, outside].map(b => [b.id, b])) };
     const { service, sql } = fixture(t, graph);
     assert.deepEqual(checkEdit(service, graph, root, { children: [entry.id] }, "remove last position"), [dependent.id]);
-    assert.equal(sql.prepare("SELECT count(*) FROM block_uses WHERE block_id = ?").pluck().get(outside.id), 0);
+    assert.equal(sql.prepare("SELECT count(*) FROM sync_refs WHERE block_id = ?").pluck().get(outside.id), 0);
 });
 
 function random(seed: number): (size: number) => number {

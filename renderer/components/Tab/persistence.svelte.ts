@@ -15,9 +15,10 @@ export async function restoreTabs(): Promise<void> {
             tabIds.push(tab.id);
         }
         const removedActive = group.tabs.some(tab => record(tab) && tab.type === "reader-test" && tab.id === group.activeTabId);
-        group.tabs = group.tabs.filter(tab => !record(tab) || tab.type !== "reader-test");
-        if (removedActive) group.activeTabId = group.tabs[0]?.id ?? null;
-        if (group.activeTabId !== null && !group.tabs.some(tab => tab.id === group.activeTabId)) return;
+        const tabs = group.tabs.filter(tab => !record(tab) || tab.type !== "reader-test");
+        group.tabs = tabs;
+        if (removedActive) group.activeTabId = tabs[0]?.id ?? null;
+        if (group.activeTabId !== null && !tabs.some(tab => tab.id === group.activeTabId)) return;
     }
     const leaves: string[] = [];
     function validLayout(node: unknown, depth = 0): boolean {

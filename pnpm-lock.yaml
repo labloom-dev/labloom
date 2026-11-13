@@ -52,6 +52,9 @@ importers:
       drizzle-orm:
         specifier: ^0.45.4
         version: 0.45.4(@types/better-sqlite3@9.6.0)(better-sqlite3@13.0.3)
+      i18next:
+        specifier: 26.4.2
+        version: 26.4.2(typescript@5.9.3)
       pdfjs-dist:
         specifier: 6.3.289
         version: 6.3.289(patch_hash=502b06d62ff997d3c86b4548eca4284e1dda58cd351ca913db137b6d34aed500)
@@ -2131,6 +2134,14 @@ packages:
   https-proxy-agent@7.0.6:
     resolution: {integrity: sha512-vK9P5/iUfdl95AI+JVyUuIcVtd4ofvtrOr3HNtM2yxC9bnMbEdp3x01OhQNnjb8IJYi38VlTE3mBXwcfvywuSw==}
     engines: {node: '>= 14'}
+
+  i18next@26.4.2:
+    resolution: {integrity: sha512-RX+R0VLg13IbvRuJSxnqykUFS9vQZTl8wYpWPCIUDWVrSGjsQywB5Y+pjzrkboxGAuYfJZVH1InFTdgBdxq6ug==}
+    peerDependencies:
+      typescript: ^5 || ^6 || ^7
+    peerDependenciesMeta:
+      typescript:
+        optional: true
 
   ignore@5.3.2:
     resolution: {integrity: sha512-hsBTNUqQTDwkWtcdYI2i06Y/nUBEsNEDJKjWdigLvegy8kDuJAS8uRlpkkcQpyEXL0Z/pjDy5HBmMjRCJ2gq+g==}
@@ -5104,6 +5115,10 @@ snapshots:
       debug: 4.4.3(supports-color@7.2.0)
     transitivePeerDependencies:
       - supports-color
+
+  i18next@26.4.2(typescript@5.9.3):
+    optionalDependencies:
+      typescript: 5.9.3
 
   ignore@5.3.2: {}
 

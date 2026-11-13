@@ -1,10 +1,15 @@
 <div class="attribute-input">
-    {#if definition.metadata.readonly || disabled}
+    {#if definition.type === "file" || definition.type === "files"}
+        <FileInput {definition} {value} {session} disabled={disabled || !!definition.readonly} {onchange} />
+    {:else if definition.readonly || disabled}
         {#if definition.type === "page-link" && typeof value === "string"}
             <button class="text-button" onclick={() => openPage(value as string)}>打开关联页面</button>
         {:else}
             <span class="readonly">{empty ? "未填写" : display(definition, value, { zone })}</span>
         {/if}
+    {:else if definition.type === "recurrence"}
+        {#if value === null}<button class="text-button" onclick={() => onchange({ every: 60, unit: "minute" })}>设置自动刷新</button>
+        {:else}<label class="recurrence">每<input aria-label="刷新间隔（分钟）" type="number" min="15" max="1440" value={recurrenceMinutes(value) ?? 60} onchange={event => onchange({ every: event.currentTarget.valueAsNumber, unit: "minute" })} />分钟</label>{/if}
     {:else if definition.type === "boolean"}
         <select value={String(value)} onchange={event => onchange(event.currentTarget.value === "true")}>
             <option value="true">是</option>
@@ -40,7 +45,7 @@
         {#if picker}
             <TargetPicker onclose={() => picker = false} onselect={target => {
                 if (target.kind !== "page") {
-                    error = "页面链接属性只能选择页面。"; return;
+                    error = { kind: "attribute-page-required" }; return;
                 } onchange(definition.type === "page-link" ? target.id : [...new Set([...(Array.isArray(value) ? value : []), target.id])]); picker = false;
             }} />
         {/if}
@@ -78,7 +83,7 @@
         <textarea rows={definition.id === "paper_abstract" ? 4 : 1} value={String(value)} onchange={event => onchange(event.currentTarget.value)}></textarea>
     {/if}
     {#if error}
-        <small class="error">{error}</small>
+        <small class="error">{message(error)}</small>
     {/if}
 </div>
 <style>
@@ -87,6 +92,7 @@
     textarea { resize: vertical; min-height: var(--button-height); }
     .attribute-input:focus-within small, small.error { display: block; position: absolute; top: 100%; left: 0; z-index: 45; background: var(--c-paper); padding: 3px; font-size: var(--font-min); }
     .readonly { display: block; overflow: hidden; text-overflow: ellipsis; color: var(--c-muted); overflow-wrap: anywhere; white-space: nowrap; }
+    .recurrence { display: flex; align-items: center; gap: 3px; }
     .hour-input { display: flex; gap: 8px; }
     .hour-input select { width: 78px; flex-shrink: 0; }
     .options, .links { display: flex; flex-wrap: wrap; gap: 8px 12px; }
@@ -95,18 +101,22 @@
     .error { color: var(--c-reader-error-text); }
 </style>
 <script lang="ts">
+    import { failure, message, type ErrorValue } from "../../i18n.svelte";
+    import { recurrenceMinutes } from "../../../shared/content/timers";
     import { type AttributeDefinition, type AttributeValue } from "../../../shared/types/attributes";
     import { dayToSeconds, monthToSeconds, secondsToDay, secondsToMonth, secondsToYear, wallToSeconds, secondsToWall, yearToSeconds } from "../../../shared/content/time";
     import { display } from "../../../shared/attrs/format";
     import { emptyValue, isEmpty } from "../../../shared/attrs/values";
     import { currentTimeZone } from "../layout/preferences.svelte";
     import { openPage } from "../layout/navigation";
-    import { message } from "./state.svelte";
+    import FileInput from "./FileInput.svelte";
+    import { type PageSession } from "./state.svelte";
+
     import TargetPicker from "./TargetPicker.svelte";
-    let { definition, value, disabled = false, onchange }: { definition: AttributeDefinition; value: AttributeValue; disabled?: boolean; onchange: (value: AttributeValue) => void } = $props();
+    let { definition, value, disabled = false, session, onchange }: { definition: AttributeDefinition; value: AttributeValue; disabled?: boolean; session?: PageSession; onchange: (value: AttributeValue) => void } = $props();
     const zone = $derived(currentTimeZone());
     const empty = $derived(isEmpty(definition.type, value));
-    let picker = $state(false), error = $state("");
+    let picker = $state(false), error = $state<ErrorValue>("");
     let hourDay = $state(""), hour = $state("00");
     $effect(() => {
         const wall = definition.type === "hour" && !empty ? secondsToWall(value as number, zone) : "";
@@ -122,7 +132,7 @@
             error = "";
         }
         catch (problem) {
-            error = message(problem);
+            error = failure(problem);
         }
     }
 </script>

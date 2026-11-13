@@ -1,11 +1,11 @@
 import { type AttributeDefinition, type AttributeImpact, type AttributeValue } from "./attributes";
 import { type Backlink, type CommitResult, type BlockDeletion, type ChangePreview, type EditCommit, type KnowledgeChange, type Placement, type ResolvedTarget, type PageKind, type PageList, type PageQuery, type PageRecord, type PageObjects, type Target } from "./content";
-import { type Anchor, type AnchorInput, type PaperImport, type PaperResources, type ReadingPosition } from "./papers";
+import { type PaperAnnotation, type AnnotationInput, type Attachment, type PaperImport, type PaperResources, type ReadingPosition } from "./papers";
 
 export type PurgeResult = { status: "confirmation"; token: string; pages: { id: string; title: string }[]; links: number } | { status: "deleted"; pages: string[]; blocks: string[] };
 
 export type HistoryState = { canUndo: boolean; redo: { id: string; time: number }[] };
-export type Notice = { id: string; pageId: string; title: string; createdAt: number; isRead: boolean };
+export type Notice = { pageId: string; attrId: string; leadSeconds: number; title: string; attrName: string; firedAt: number; seen: boolean };
 export type KnowledgeAPI = {
     list(query?: PageQuery): Promise<PageList>;
     listUpdates(query: PageQuery, unchanged: string[]): Promise<PageList & { order: string[] }>;
@@ -30,17 +30,21 @@ export type KnowledgeAPI = {
     loadTabs(): Promise<unknown>;
     saveTabs(value: unknown): Promise<void>;
     importPDF(pageId?: string, tabId?: string): Promise<PaperImport | null>;
+    importFiles(pageId: string, attributeId: string, tabId: string): Promise<Attachment[] | null>;
+    files(ids?: string[]): Promise<Attachment[]>;
+    openFile(fileId: string): Promise<void>;
     resources(pageId: string): Promise<PaperResources>;
     readFile(fileId: string): Promise<Uint8Array>;
-    getAnchor(id: string): Promise<Anchor>;
+    getAnnotation(id: string): Promise<PaperAnnotation>;
     unlockPDF(fileId: string, password: string): Promise<void>;
-    changeHighlight(id: string, color: string, tabId?: string): Promise<void>;
+    changeAnnotation(id: string, color: string, tabId?: string): Promise<void>;
     position(pageId: string, fileId: string, value: ReadingPosition, tabId?: string): Promise<void>;
-    highlight(pageId: string, anchor: AnchorInput, color: string, tabId?: string): Promise<void>;
-    removeHighlight(id: string, tabId: string, confirmation?: string): Promise<CommitResult>;
-    annotate(pageId: string, anchor: AnchorInput | string, tabId?: string, color?: string): Promise<string>;
+    deleteAnnotation(id: string, tabId: string, confirmation?: string): Promise<CommitResult>;
+    annotate(pageId: string, anchor: AnnotationInput | string, tabId?: string, color?: string): Promise<string>;
     notices(): Promise<Notice[]>;
-    readNotice(id: string, tabId: string): Promise<void>;
+    readNotice(pageId: string, attrId: string, leadSeconds: number, tabId: string): Promise<void>;
+    timers(pageId: string): Promise<Record<string, number[]>>;
+    setTimer(pageId: string, attrId: string, leadSeconds: number, enabled: boolean, tabId: string): Promise<void>;
     onChanged(listener: (change: KnowledgeChange) => void): () => void;
     onCloseRequested(listener: () => Promise<boolean>): () => void;
 };

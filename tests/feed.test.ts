@@ -1,3 +1,4 @@
+import { hasFailure } from "./failures";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -5,16 +6,16 @@ import { createServer } from "node:http";
 import { join } from "node:path";
 import { test } from "node:test";
 import Database from "better-sqlite3";
+import { type FeedResult } from "../main/feed/parser";
 import { FeedService, type FeedLibrary } from "../main/feed/service";
 import { PaperService } from "../main/knowledge/papers";
 import { KnowledgeService } from "../main/knowledge/service";
 import { createWorkspaceDatabase } from "../main/storage/database";
-import { generatedMigrations } from "../main/storage/migrations/generated";
-import { runMigrations } from "../main/storage/migrations/runner";
-import { v1 } from "../main/storage/migrations/v1";
-import { v2 } from "../main/storage/migrations/v2";
-import { v3 } from "../main/storage/migrations/v3";
-import { v4 } from "../main/storage/migrations/v4";
+import { initializeBuiltinAttrs } from "../main/storage/builtin-attrs";
+import { createWorkspaceSchema } from "../main/storage/schema";
+import { PurgeService } from "../main/knowledge/purge";
+import { EditHistory } from "../main/knowledge/history";
+import { payload } from "../shared/content/blocks";
 import { createWorkspace } from "../main/storage/workspace";
 import { importFeedPDF } from "../main/feed/pdf";
 import { knownCoordinatePdf } from "./fixtures/pdf-text";
@@ -24,60 +25,36 @@ function entry(values: Partial<FeedEntry>): FeedEntry {
     return { externalId: null, title: "Untitled", url: null, pdfURL: null, authors: "", summary: "", content: "", fullContent: false, publishedAt: null, ...values };
 }
 
-test("upgrading to subscription status keeps sources, items and read state, and stops deleting history with a source", async t => {
-    const database = new Database(":memory:");
-    t.after(() => database.close());
-    database.pragma("foreign_keys = ON");
-    const migrations = [v1, v2, v3, v4, ...generatedMigrations];
-    runMigrations(database, migrations.filter(migration => migration.to <= 14));
-    const refreshed = Date.UTC(2026, 10, 1), published = Date.UTC(2026, 9, 7);
-    database.prepare("INSERT INTO feed_sources (id, name, url, last_refreshed, last_added, error) VALUES ('source', 'Saved feed', 'https://example.org/feed', ?, 2, 'Network unavailable')").run(refreshed);
-    database.prepare("INSERT INTO feed_sources (id, name, url) VALUES ('never', 'Never fetched', 'https://example.org/never')").run();
-    const insert = database.prepare("INSERT INTO feed_items (id, source_id, external_id, title, url, authors, summary, published_at, is_read) VALUES (?, 'source', ?, ?, ?, 'Author', 'Summary', ?, ?)");
-    insert.run("read", "guid-1", "Read article", "https://example.org/1?utm_source=rss", published, 1);
-    insert.run("unread", "guid-2", "Unread article", null, null, 0);
-
-    runMigrations(database, migrations);
-    assert.deepEqual(database.pragma("foreign_key_check"), []);
-    assert.deepEqual(database.prepare("SELECT * FROM feed_sources ORDER BY id DESC").all(), [{
-        id: "source", name: "Saved feed", url: "https://example.org/feed", subscription_status: "enabled", auto_refresh: 1, interval_minutes: 60,
-        last_refreshed: refreshed, last_added: 2, error: "Network unavailable", last_checked: refreshed, next_refresh: null, failures: 0, etag: null, last_modified: null
-    }, {
-        id: "never", name: "Never fetched", url: "https://example.org/never", subscription_status: "enabled", auto_refresh: 1, interval_minutes: 60,
-        last_refreshed: null, last_added: 0, error: null, last_checked: null, next_refresh: null, failures: 0, etag: null, last_modified: null
-    }]);
-    assert.deepEqual(database.prepare("SELECT * FROM feed_items WHERE id = 'read'").get(), {
-        id: "read", source_id: "source", external_id: "guid-1", title: "Read article", url: "https://example.org/1?utm_source=rss", normalized_url: null,
-        content_fingerprint: null, authors: "Author", summary: "Summary", raw_content: "", has_full_content: 0, published_at: published,
-        pdf_url: null, origin_snapshot: null, is_read: 1, reading_position: null, paper_id: null
-    });
-    // A source can no longer take its items with it, and its settings are validated.
-    assert.throws(() => database.exec("DELETE FROM feed_sources WHERE id = 'source'"), /FOREIGN KEY/);
-    assert.throws(() => database.exec("UPDATE feed_sources SET interval_minutes = 5"), /feed_sources_interval/);
-    assert.throws(() => database.exec("UPDATE feed_sources SET subscription_status = 'deleted'"), /feed_sources_status/);
-    assert.equal(database.prepare("SELECT count(*) FROM feed_items").pluck().get(), 2);
-
-    // Sources that existed before the upgrade are due at once, and their items are recognised and completed.
+test("feed pages own settings and timers while refresh preserves item state and timestamp units", async t => {
+    const database = new Database(":memory:"); t.after(() => database.close()); database.pragma("foreign_keys = ON");
+    createWorkspaceSchema(database); const db = createWorkspaceDatabase(database); initializeBuiltinAttrs(db);
+    database.prepare("INSERT INTO workspace_meta(id,name,created_at,last_modified_at) VALUES ('workspace','A',0,0)").run();
+    const now = Date.UTC(2026, 10, 1), published = Date.UTC(2026, 9, 7), knowledge = new KnowledgeService(db, () => "UTC", () => now);
+    const source = knowledge.create("feed", "Saved feed", { feed_url: "https://example.org/feed", feed_last_refreshed: now / 1000, feed_last_added: 2, feed_error: "Network unavailable" });
+    const never = knowledge.create("feed", "Never fetched", { feed_url: "https://example.org/never" });
+    const insert = database.prepare("INSERT INTO feed_items(id,source_id,external_id,title,url,authors,summary,published_at,is_read) VALUES (?,?,?,?,?,'Author','Summary',?,?)");
+    insert.run("read", source.id, "guid-1", "Read article", "https://example.org/1?utm_source=rss", published, 1);
+    insert.run("unread", source.id, "guid-2", "Unread article", null, null, 0);
+    assert.deepEqual(knowledge.get(source.id).children, []);
+    assert.equal(database.prepare("SELECT count(*) FROM timers").pluck().get(), 2);
     const requested: string[] = [];
-    const service = new FeedService(createWorkspaceDatabase(database), async request => {
+    const service = new FeedService(db, async request => {
         requested.push(request.url);
-        return {
-            entries: request.url.endsWith("/never") ? [] : [
-                entry({ externalId: "guid-1", title: "Read article", url: "https://example.org/1", content: "<p>Body</p>", fullContent: true, publishedAt: published }),
-                entry({ externalId: "guid-3", title: "New article" })
-            ],
-            title: "", url: request.url, etag: "\"v1\"", lastModified: null
-        };
-    });
-    await service.refreshDue();
-    assert.deepEqual(requested.sort(), ["https://example.org/feed", "https://example.org/never"]);
-    const state = service.getState({});
-    assert.deepEqual([state.total, state.unreadCount], [3, 2]);
-    assert.deepEqual(state.sources.map(source => [source.name, source.lastAdded, source.error]), [["Never fetched", 0, null], ["Saved feed", 1, null]]);
-    const saved = service.getItem("read");
-    assert.deepEqual([saved.isRead, saved.content, saved.fullContent], [true, "<p>Body</p>", true]);
-    assert.deepEqual(database.prepare("SELECT normalized_url, etag FROM feed_items JOIN feed_sources ON feed_sources.id = source_id WHERE feed_items.id = 'read'").get(),
-        { normalized_url: "https://example.org/1", etag: "\"v1\"" });
+        return { entries: request.url.endsWith("/never") ? [] : [entry({ externalId: "guid-1", title: "Read article", url: "https://example.org/1", content: "<p>Body</p>", fullContent: true, publishedAt: published }), entry({ externalId: "guid-3", title: "New article" })], title: "", url: request.url, etag: "v1", lastModified: null };
+    }, undefined, () => now);
+    const modified = knowledge.get(source.id).attributes.modified_at;
+    await service.refreshDue(); assert.deepEqual(requested.sort(), [source.attributes.feed_url, never.attributes.feed_url].sort());
+    const state = service.getState({}); assert.deepEqual([state.total, state.unreadCount], [3, 2]);
+    assert.deepEqual(state.sources.map(row => [row.name, row.lastAdded, row.error]), [["Never fetched", 0, null], ["Saved feed", 1, null]]);
+    assert.deepEqual([service.getItem("read").isRead, service.getItem("read").content], [true, "<p>Body</p>"]);
+    assert.equal(knowledge.get(source.id).attributes.feed_etag, "v1");
+    assert.equal(knowledge.get(source.id).attributes.feed_last_refreshed, now / 1000);
+    assert.equal(knowledge.get(source.id).attributes.modified_at, modified);
+    assert.equal(knowledge.list({ kind: "feed" }).total, 2);
+    assert.equal(knowledge.list({ keyword: "Saved feed" }).total, 1);
+    assert.throws(() => knowledge.commitEdit({ pageId: source.id, tabId: "feed", batch: 0, blocks: [], attributes: { feed_refresh: { every: 5, unit: "minute" } } }), hasFailure("feed-invalid-interval"));
+    assert.throws(() => knowledge.commitEdit({ pageId: source.id, tabId: "feed", batch: 0, blocks: [], pageChildren: [source.titleBlockId] }), hasFailure("feed-body-forbidden"));
+    assert.deepEqual(database.pragma("foreign_key_check"), []);
 });
 
 test("a subscription item becomes a paper page in the library and stays linked to it", async t => {
@@ -126,7 +103,7 @@ test("a subscription item becomes a paper page in the library and stays linked t
     const removal = knowledge.trash([pageId], "feed-test");
     if (removal.status === "confirmation") knowledge.trash([pageId], "feed-test", removal.preview.token);
     assert.equal(service.getItem(item.id).paperState, "recycled");
-    assert.throws(() => service.importItem(item.id), /重新入库/);
+    assert.throws(() => service.importItem(item.id), hasFailure("feed-reimport-confirmation"));
     const replacement = service.importItem(item.id, true);
     assert.notEqual(replacement, pageId);
     assert.deepEqual([service.getItem(item.id).paperState, knowledge.get(replacement).title], ["saved", "Language models"]);
@@ -137,7 +114,7 @@ test("a subscription item becomes a paper page in the library and stays linked t
     assert.equal(service.getItem(item.id).paperState, "missing");
 });
 
-test("a downloaded PDF attaches to the committed reference and reuses identical stored bytes without merging pages", async t => {
+test("a downloaded PDF attaches to its committed paper as independent bytes, and refetching creates another attachment", async t => {
     const workspace = createWorkspace(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "feed-pdf-")));
     t.after(() => {
  if (workspace.database.open) workspace.database.close();
@@ -182,11 +159,75 @@ test("a downloaded PDF attaches to the committed reference and reuses identical 
     const originalFiles = (await papers.resources(existingPage)).files;
     const downloadedFiles = (await papers.resources(pageId)).files;
     assert.equal(downloadedFiles.length, 1);
-    assert.equal(downloadedFiles[0].id, originalFiles[0].id);
+    assert.notEqual(downloadedFiles[0].id, originalFiles[0].id);
     assert.deepEqual(Buffer.from(papers.read(downloadedFiles[0].id)), Buffer.from(data));
-    assert.equal(workspace.database.prepare("SELECT count(*) FROM attachments").pluck().get(), 1);
+    assert.equal(workspace.database.prepare("SELECT count(*) FROM attachments").pluck().get(), 2);
     assert.equal(knowledge.list({ kind: "paper" }).total, 2);
     assert.equal(service.getItem(item.id).paperId, pageId);
     await service.fetchPDF(item.id);
     assert.equal(requests, 1);
+    assert.deepEqual(knowledge.get(pageId).attributes.paper_files, [downloadedFiles[0].id]);
+    assert.equal(knowledge.commitEdit({ pageId, tabId: "remove-feed-pdf", batch: 0, blocks: [], attributes: { paper_files: [] } }).status, "saved");
+    assert.equal(papers.hasPDF(pageId), false);
+    assert.notEqual(service.getItem(item.id).pdfStatus, "saved");
+    await service.fetchPDF(item.id);
+    assert.equal(requests, 2);
+    assert.equal(service.getItem(item.id).pdfStatus, "saved");
+    const replacement = (await papers.resources(pageId)).files[0];
+    assert.notEqual(replacement.id, downloadedFiles[0].id);
+    assert.notEqual(replacement.id, originalFiles[0].id);
+    assert.deepEqual(knowledge.get(pageId).attributes.paper_files, [replacement.id]);
+});
+
+test("feed settings, recycling and restoration maintain a single timer and enforce URL and body constraints", async t => {
+    const ws = createWorkspace(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "feed-page-"))); t.after(() => ws.database.close());
+    const clock = { now: Date.UTC(2026, 10, 13) }, knowledge = new KnowledgeService(ws.db, () => "UTC", () => clock.now), history = new EditHistory(knowledge);
+    const feed = new FeedService(ws.db, async request => ({ title: "", url: request.url, entries: [], etag: null, lastModified: null }), undefined, () => clock.now);
+    const id = await feed.saveSource({ name: "A", url: "https://example.org/feed" });
+    const count = (): unknown => ws.database.prepare("SELECT count(*) FROM timers WHERE page_id=?").pluck().get(id);
+    assert.equal(knowledge.header(id).kind, "feed"); assert.deepEqual(knowledge.get(id).children, []); assert.equal(count(), 1);
+    feed.setSourceStatus(id, "pause"); assert.equal(count(), 0);
+    feed.setSourceStatus(id, "resume"); assert.equal(count(), 1);
+    assert.equal(knowledge.commitEdit({ pageId: id, tabId: "settings", batch: 0, blocks: [], attributes: { feed_refresh: null } }).status, "saved"); assert.equal(count(), 0);
+    assert.equal(history.apply("settings", "undo").status, "saved"); assert.equal(count(), 1);
+    const page = knowledge.get(id), child = { id: randomUUID(), type: "paragraph" as const, payload: payload("paragraph", "Forbidden"), children: [] };
+    assert.throws(() => knowledge.commitEdit({ pageId: id, tabId: "settings", batch: 0, blocks: [child], pageChildren: [child.id] }), hasFailure("feed-body-forbidden"));
+    assert.throws(() => knowledge.commitEdit({ pageId: id, tabId: "settings", batch: 0, blocks: [{ ...page.blocks[page.titleBlockId], children: [child.id] }] }), hasFailure("feed-body-forbidden"));
+    assert.throws(() => knowledge.place({ position: { pageId: id, containerId: id, index: 0, blockId: page.titleBlockId }, action: "insert", tabId: "settings" }), hasFailure("feed-body-forbidden"));
+    const preview = knowledge.trash([id], "trash"); if (preview.status === "confirmation") knowledge.trash([id], "trash", preview.preview.token);
+    assert.equal(count(), 0); assert.equal(feed.getState({}).sources.length, 0);
+    await assert.rejects(feed.saveSource({ name: "B", url: "https://example.org/feed" }), hasFailure("feed-duplicate"));
+    knowledge.restore([id], "restore"); assert.equal(count(), 1);
+    const title = knowledge.get(id).blocks[page.titleBlockId];
+    knowledge.commitEdit({ pageId: id, tabId: "rename", batch: 0, blocks: [{ ...title, payload: payload("title", "B") }] });
+    assert.equal(feed.getState({}).sources[0].name, "B");
+    assert.ok(knowledge.list({ keyword: "B", kind: "feed" }).items.some(page => page.id === id));
+});
+
+test("permanently deleting a source cascades its entries without deleting imported paper pages", async t => {
+    const ws = createWorkspace(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "feed-purge-"))); t.after(() => ws.database.close());
+    const knowledge = new KnowledgeService(ws.db), history = new EditHistory(knowledge), papers = new PaperService(knowledge, ws.info.path);
+    const feed = new FeedService(ws.db, async request => ({ title: "", url: request.url, entries: [entry({ externalId: "A", title: "A" })], etag: null, lastModified: null }), { createPaper: paper => papers.createReference(paper), paperState: id => papers.state(id), announce: () => {} });
+    const source = await feed.saveSource({ name: "A", url: "https://example.org/feed" }), paper = feed.importItem(feed.getState({}).items[0].id);
+    const removal = knowledge.trash([source], "trash"); if (removal.status === "confirmation") knowledge.trash([source], "trash", removal.preview.token);
+    const purge = new PurgeService(knowledge, history, ws.info.path), preview = purge.purge([source], "purge");
+    if (preview.status !== "confirmation") throw new Error("Expected confirmation");
+    assert.equal(purge.purge([source], "purge", preview.token).status, "deleted");
+    assert.equal(ws.database.prepare("SELECT count(*) FROM feed_items").pluck().get(), 0);
+    assert.equal(knowledge.get(paper).kind, "paper"); assert.equal(papers.state(paper), "saved");
+    assert.deepEqual(ws.database.pragma("foreign_key_check"), []);
+});
+
+test("separate services over the same workspace share one in-flight source request", async t => {
+    const ws = createWorkspace(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "feed-windows-"))); t.after(() => ws.database.close());
+    const clock = { now: Date.UTC(2026, 10, 13) }; let slow = false, calls = 0, release!: () => void;
+    const load = async (request: { url: string }): Promise<FeedResult> => {
+ calls++; if (slow) await new Promise<void>(resolve => release = resolve); return { title: "", url: request.url, entries: [], etag: null, lastModified: null };
+};
+    const first = new FeedService(ws.db, load, undefined, () => clock.now), id = await first.saveSource({ name: "A", url: "https://example.org/feed" }), second = new FeedService(ws.db, load, undefined, () => clock.now);
+    slow = true; clock.now += 3600000;
+    const a = first.refreshDue(); await Promise.resolve(); const b = second.refresh(id);
+    assert.equal(calls, 2); release(); await Promise.all([a, b]);
+    assert.equal(calls, 2); assert.equal(second.getState({}).sources[0].refreshing, false);
+    assert.equal(ws.database.prepare("SELECT due_at FROM timers WHERE page_id=?").pluck().get(id), Math.floor(clock.now / 1000) + 3600);
 });

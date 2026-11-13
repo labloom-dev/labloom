@@ -34,14 +34,15 @@
     import Sidebar from "./Sidebar.svelte";
     import Main from "./Main.svelte";
     import Onboarding from "../startup/Onboarding.svelte";
-    import { logUpgradeFailure } from "../startup/log-upgrade-failure";
     import { initializeAppearance } from "./preferences.svelte";
     import Dialogs from "../Knowledge/Dialogs.svelte";
-    import { closeSession, knowledgeState, message, receiveChange, saveAll } from "../Knowledge/state.svelte";
+    import { closeSession, knowledgeState, receiveChange, saveAll } from "../Knowledge/state.svelte";
     import { tabState } from "../Tab/state.svelte";
     import { tabLifecycle } from "../Tab/lifecycle";
     import { persistTabs, restoreTabs } from "../Tab/persistence.svelte";
     import { visits } from "../Tab/activity.svelte";
+    import { toFailureInfo } from "../../../shared/failure";
+    import { failure } from "../../i18n.svelte";
 
     let startup = $state<StartupState | null>(null);
     let pending = $state(true);
@@ -67,14 +68,13 @@
             const next = await action();
             if (next.status === "ready" && startup?.status !== "ready") await restoreTabs();
             startup = next;
-            logUpgradeFailure(startup);
         }
         catch (error) {
             startup = {
                 status: "needs-workspace",
                 lastWorkspace: startup?.status === "needs-workspace" ? startup.lastWorkspace : null,
                 canChoose: false,
-                error: error instanceof Error ? error.message : "无法连接应用，请重试。"
+                error: toFailureInfo(error)
             };
         }
         finally {
@@ -99,7 +99,7 @@
                 return await closeSession(id);
             }
             catch (error) {
-                knowledgeState.error = message(error); return false;
+                knowledgeState.error = failure(error); return false;
             }
         };
         const stopChanges = window.api.knowledge.onChanged(receiveChange);
@@ -118,13 +118,13 @@
         const stopClose = window.api.knowledge.onCloseRequested(async () => {
             if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
             if (!await saveAll()) {
-                knowledgeState.error = "还有页面未保存，已取消关闭。请处理页面错误后再关闭。"; return false;
+                knowledgeState.error = { kind: "workspace-close-unsaved" }; return false;
             }
             try {
                 await persistTabs(); return true;
             }
             catch (error) {
-                knowledgeState.error = message(error); return false;
+                knowledgeState.error = failure(error); return false;
             }
         });
         void run(() => window.api.startup.getState());
@@ -139,7 +139,7 @@
         const snapshot = JSON.stringify(tabState);
         if (startup?.status !== "ready") return;
         const timer = setTimeout(() => {
-            void window.api.knowledge.saveTabs(JSON.parse(snapshot)).catch(error => knowledgeState.error = message(error));
+            void window.api.knowledge.saveTabs(JSON.parse(snapshot)).catch(error => knowledgeState.error = failure(error));
         }, 300);
         return () => clearTimeout(timer);
     });

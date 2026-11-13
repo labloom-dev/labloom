@@ -1,7 +1,7 @@
 <section class="page-view">
     <header class="page-toolbar">
         {#if current.state.backlinks.length}<Popover.Root><Popover.Trigger>{current.state.backlinks.length} 个反向链接</Popover.Trigger><Popover.Portal><Popover.Content class="compact-menu" collisionPadding={6}>{#each current.state.backlinks as link (link.sourceId)}<button class="compact-item" onclick={event => openPage(link.sourceId, { otherGroup: event.ctrlKey })}>{link.title}{link.deleted ? "（已回收）" : ""}</button>{/each}</Popover.Content></Popover.Portal></Popover.Root>{/if}
-        {#if current.state.error && !gone}<span class="failed" title={current.state.error}>保存失败：{current.state.error}</span>{/if}
+        {#if current.state.error && !gone}<span class="failed" title={message(current.state.error)}>{message(current.state.error)}</span>{/if}
         <div class="spacer"></div><button class:active={showProperties} onclick={() => showProperties = !showProperties}>属性</button>
         {#if page && !gone}<button disabled={syncing} onclick={trash}>{page.attributes.deleted ? "恢复页面" : "移入回收站"}</button>{/if}
     </header>
@@ -10,17 +10,12 @@
         {#if page.attributes.deleted}
             <div class="recycled">此页面已在回收站中，恢复后可继续编辑。</div>
         {/if}
-        {#if page.kind === "annotation" && typeof page.attributes.annotation_paper === "string"}
-            <div class="origin">
-                <button onclick={() => openPage(String(page!.attributes.annotation_paper), { anchorId: String(page!.attributes.annotation_anchor) })}>↗ 返回原文位置</button>
-            </div>
-        {/if}
         <div class="page-body">
             <div class="main-content">
                 {#if page.kind === "paper"}
-                    <div inert={syncing}><PaperPanel {page} session={current} tabId={tab.id} anchorId={tab.anchorId} /></div>
+                    <div inert={syncing}><PaperPanel {page} session={current} tabId={tab.id} /></div>
                 {/if}
-                <Editor session={current} tabId={tab.id} anchorId={tab.anchorId} />
+                {#if page.kind === "feed"}<FeedView sourcePageId={page.id} />{:else}<Editor session={current} tabId={tab.id} anchorId={tab.anchorId} />{/if}
 
             </div>
             {#if showProperties}
@@ -30,7 +25,7 @@
             {/if}
         </div>
     {:else if !current.state.loading}
-        <div class="empty-state">页面暂时无法读取。</div>
+        <div class="empty-state">{t("failure.page-unavailable")}</div>
     {/if}
 </section>
 <style>
@@ -43,10 +38,11 @@
     .page-body { display: flex; min-width: 0; flex: 1; }
     .main-content { min-width: 0; flex: 1; }
     aside { width: 310px; flex-shrink: 0; border-left: var(--border-width) solid var(--c-line); }
-    .recycled, .origin { padding: 8px 26px; color: var(--c-muted); font-size: var(--font-secondary); background: var(--c-cream); }
+    .recycled { padding: 8px 26px; color: var(--c-muted); font-size: var(--font-secondary); background: var(--c-cream); }
     @container (max-width: 850px) { .page-body { flex-direction: column; } aside { width: 100%; border-left: 0; border-top: var(--border-width) solid var(--c-line); } }
 </style>
 <script lang="ts">
+    import { message, t } from "../../i18n.svelte";
     import { Popover } from "bits-ui";
     import { dirtyPages } from "../Tab/dirty.svelte";
     import { untrack } from "svelte";
@@ -54,6 +50,7 @@
     import { blockText } from "../../../shared/content/blocks";
     import { session, perform, knowledgeState } from "./state.svelte";
     import { readingTabs } from "../Tab/activity.svelte";
+    import FeedView from "../Feed/FeedView.svelte";
     import { openPage } from "../layout/navigation";
     import { updateTab } from "../Tab/api";
     import Editor from "../Editor/Editor.svelte";

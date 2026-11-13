@@ -1,4 +1,5 @@
 import type { Changed, KnowledgeChange } from "../../../shared/types/content";
+import { LabloomError } from "../../../shared/failure";
 
 // A list query can gain new members. A document only depends on its own page and displayed blocks.
 export type TabChange = Changed & Pick<KnowledgeChange, "kinds" | "summaryPages" | "definition" | "notices">;
@@ -101,7 +102,7 @@ export class TabVisits {
             for (const departure of prior) {
                 if (!await departure.done) {
                     const source = this.views.get(departure.id);
-                    if (source && !await source.view.flush()) throw new Error("还有更改未能保存，输入已保留。");
+                    if (source && !await source.view.flush()) throw new LabloomError({ kind: "page-unsaved" });
                     this.departures.delete(departure);
                 }
             }

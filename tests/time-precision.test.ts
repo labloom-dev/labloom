@@ -3,12 +3,8 @@ import { randomUUID } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
-import Database from "better-sqlite3";
 import { KnowledgeService } from "../main/knowledge/service";
 import { EditHistory } from "../main/knowledge/history";
-import { createWorkspaceDatabase } from "../main/storage/database";
-import { runMigrations } from "../main/storage/migrations/runner";
-import { migrateWorkspaceSchema, workspaceMigrations } from "../main/storage/schema";
 import { createWorkspace, openWorkspace } from "../main/storage/workspace";
 import { builtinAttrs } from "../shared/attrs/builtins";
 import { convertValue } from "../shared/attrs/convert";
@@ -17,7 +13,7 @@ import { defaultValue, encodeValue, validateDefinition, validateValue } from "..
 import { dayToSeconds, monthToSeconds, scheduleDay, secondsToDay, secondsToMonth, secondsToWall, secondsToYear, timeToSeconds, timeTypes, wallToSeconds, yearToSeconds } from "../shared/content/time";
 import { type AttributeDefinition, type AttributeType, type AttributeValue } from "../shared/types/attributes";
 
-const definition = (type: AttributeType, id = "custom:" + randomUUID()): AttributeDefinition => ({ id, type, metadata: {} });
+const definition = (type: AttributeType, id = "custom:" + randomUUID()): AttributeDefinition => ({ name: "属性", id, type, metadata: {} });
 const zone = "Asia/Shanghai";
 const instant = Date.UTC(2026, 10, 7, 17, 12, 56) / 1000;
 
@@ -124,7 +120,7 @@ test("all precisions persist as SQLite integers and rejected writes roll back at
         assert.equal(service.get(page.id).attributes[def.id], null);
     }
     for (const type of ["date", "datetime"]) assert.throws(() => service.setDefinition("custom:" + randomUUID(), { ...definition("day"), type } as AttributeDefinition, "test"));
-    for (const id of ["created_at", "modified_at", "recycled_at", "schedule_start", "schedule_end", "reminder_at"] as const) assert.equal(service.attributes.definition(id).type, "minute");
+    for (const id of ["created_at", "modified_at", "recycled_at", "schedule_start", "schedule_end", "feed_last_checked"] as const) assert.equal(service.attributes.definition(id).type, "minute");
     assert.equal(service.attributes.definition("schedule_date").type, "day");
     assert.equal(service.attributes.definition("paper_year").type, "string");
     assert.equal(builtinAttrs.paper_year.type, "string");
@@ -176,39 +172,4 @@ test("calendar search and grouping stay on the same day after changing zones and
     assert.equal(next.get(event.id).attributes.schedule_date, day);
     assert.equal(next.list({ keyword: "2026-11-11" }).total, 2);
     assert.equal(scheduleDay(next.get(event.id).attributes, "America/New_York"), "2026-11-11");
-});
-
-test("upgrading development dates clears incompatible values and undo trees while keeping instant seconds", t => {
-    const db = new Database(":memory:");
-    t.after(() => db.close());
-    runMigrations(db, workspaceMigrations.filter(m => m.to <= 16));
-    const page = randomUUID(), title = randomUUID(), date = "custom:" + randomUUID();
-    db.prepare("INSERT INTO blocks(id,type) VALUES (?,'title')").run(title);
-    db.prepare("INSERT INTO pages(id,kind,title_block_id) VALUES (?,'event',?)").run(page, title);
-    db.prepare("INSERT INTO attrs(id,type) VALUES (?,'date')").run(date);
-    db.prepare("INSERT INTO page_attrs VALUES (?,?,'2026-11-11')").run(page, date);
-    db.prepare("UPDATE page_attrs SET value='2026-11-11' WHERE page_id=? AND attr_id='schedule_date'").run(page);
-    db.prepare("UPDATE page_attrs SET value=? WHERE page_id=? AND attr_id='schedule_start'").run(instant, page);
-    const node = db.prepare("INSERT INTO undo_nodes(id,tab_id,page_id,before_state,after_state,created_at) VALUES (?,?,?,?,?,0)");
-    const key = "page:" + page;
-    for (const [tab, before] of Object.entries({
-        sparse: { values: { [date]: { value: "2026-11-11" } } },
-        legacy: { attrs: [{ attrId: "schedule_date", value: "2026-11-11" }] },
-        valid: { values: { schedule_start: { value: instant } } }
-    })) {
-        db.prepare("INSERT INTO edit_tabs(id,cursor) VALUES (?,?)").run(tab, tab);
-        node.run(tab, tab, page, JSON.stringify({ [key]: before }), "{}");
-        db.prepare("INSERT INTO undo_objects VALUES (?,?)").run(tab, key);
-    }
-    migrateWorkspaceSchema(db);
-    const service = new KnowledgeService(createWorkspaceDatabase(db));
-    assert.equal(service.attributes.definition(date).type, "day");
-    assert.equal(service.get(page).attributes[date], null);
-    assert.equal(service.get(page).attributes.schedule_date, null);
-    assert.equal(service.get(page).attributes.schedule_start, instant);
-    assert.deepEqual(db.prepare("SELECT id FROM undo_nodes").pluck().all(), ["valid"]);
-    assert.deepEqual(db.prepare("SELECT node_id FROM undo_objects").pluck().all(), ["valid"]);
-    assert.deepEqual(db.prepare("SELECT cursor FROM edit_tabs WHERE cursor IS NOT NULL").pluck().all(), ["valid"]);
-    assert.deepEqual(db.prepare("SELECT type FROM attrs WHERE type IN ('date','datetime')").all(), []);
-    assert.deepEqual(db.pragma("foreign_key_check"), []);
 });

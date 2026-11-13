@@ -1,13 +1,15 @@
+import { LabloomError } from "../../shared/failure";
 import { randomUUID } from "node:crypto";
 import { closeSync, mkdirSync, openSync, readdirSync, realpathSync, rmdirSync, statSync, unlinkSync } from "node:fs";
 import { basename, join } from "node:path";
 import Database from "better-sqlite3";
 import type { Workspace } from "../../shared/types/startup";
-import { createWorkspaceSchema, workspaceFormatVersion } from "./schema";
-import { upgradeWorkspace } from "./upgrade";
-import { validateBuiltinAttrs } from "./builtin-attrs";
+import { createWorkspaceSchema, validateWorkspaceSchema } from "./schema";
+import { initializeBuiltinAttrs, validateBuiltinAttrs } from "./builtin-attrs";
 import { createWorkspaceDatabase, type WorkspaceDatabase } from "./database";
+import { withFileCleanup } from "./files";
 import { workspaceMeta } from "./tables";
+import { diagnostic, toFailureInfo } from "../../shared/failure";
 
 const applicationId = 0x4c424c4d;
 
@@ -18,15 +20,22 @@ export type OpenWorkspace = {
 };
 
 function directoryPath(path: string): string {
-    const resolved = realpathSync(path);
-    if (!statSync(resolved).isDirectory()) throw new Error("Select a workspace folder.");
-    return resolved;
+    try {
+        const resolved = realpathSync(path);
+        if (!statSync(resolved).isDirectory()) throw new LabloomError({ kind: "workspace-folder-required" });
+        return resolved;
+    }
+    catch (error) {
+        const code = (error as NodeJS.ErrnoException)?.code;
+        if (code === "ENOENT" || code === "ENOTDIR") throw new LabloomError({ kind: "workspace-folder-missing", path, diagnostic: diagnostic(error) }, { cause: error });
+        throw new LabloomError(toFailureInfo(error), { cause: error });
+    }
 }
 
 export function createWorkspace(path: string): OpenWorkspace {
     const root = directoryPath(path);
     if (readdirSync(root).length !== 0) {
-        throw new Error("Creating a workspace requires an empty folder. To use an existing workspace, open it instead.");
+        throw new LabloomError({ kind: "workspace-folder-not-empty" });
     }
 
     const databasePath = join(root, "workspace.sqlite");
@@ -37,9 +46,7 @@ export function createWorkspace(path: string): OpenWorkspace {
     let createdAttachments = false;
     try {
         database = new Database(databasePath, { fileMustExist: true });
-        // The complete history can rebuild tables. Validate references before
-        // committing, then enable FK enforcement for normal workspace writes.
-        database.pragma("foreign_keys = OFF");
+        database.pragma("foreign_keys = ON");
         const db = createWorkspaceDatabase(database);
         mkdirSync(attachmentsPath);
         createdAttachments = true;
@@ -47,14 +54,14 @@ export function createWorkspace(path: string): OpenWorkspace {
         database.transaction(() => {
             database!.pragma(`application_id = ${applicationId}`);
             createWorkspaceSchema(database!);
+            initializeBuiltinAttrs(db);
             validateBuiltinAttrs(db);
             const now = Date.now();
             db.insert(workspaceMeta).values({ id: info.id, name: info.name, createdAt: now, lastModifiedAt: now }).run();
             if ((database!.pragma("foreign_key_check") as unknown[]).length) {
-                throw new Error("The new workspace failed its foreign key check.");
+                throw new LabloomError({ kind: "workspace-foreign-key-check" });
             }
         })();
-        database.pragma("foreign_keys = ON");
         return { info, database, db };
     }
     catch (error) {
@@ -68,38 +75,57 @@ export function createWorkspace(path: string): OpenWorkspace {
 
 export function openWorkspace(path: string, expectedId?: string): OpenWorkspace {
     const root = directoryPath(path);
-    const database = new Database(join(root, "workspace.sqlite"), { fileMustExist: true });
+    const databasePath = join(root, "workspace.sqlite");
     try {
-        if (database.pragma("application_id", { simple: true }) !== applicationId) {
-            throw new Error("This folder is not a valid Labloom workspace.");
-        }
-        const version = database.pragma("user_version", { simple: true }) as number;
-        if (!Number.isInteger(version) || version < 1 || version > workspaceFormatVersion) {
-            throw new Error("This workspace format is incompatible with this version of Labloom. Open it with a compatible version.");
-        }
-        if (database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'page_details'").get()) {
-            throw new Error("此工作区来自旧 knowledge-garden 原型，其版本号与通用属性模型不兼容。请使用原版本读取并迁移数据；本次未修改工作区。");
-        }
+        if (!statSync(databasePath).isFile()) throw new LabloomError({ kind: "workspace-not-workspace", path: root });
+    }
+    catch (error) {
+        if ((error as NodeJS.ErrnoException)?.code === "ENOENT") throw new LabloomError({ kind: "workspace-not-workspace", path: root });
+        throw new LabloomError(toFailureInfo(error), { cause: error });
+    }
+    // Reject incompatible workspaces before opening a writable connection.
+    const reader = new Database(databasePath, { readonly: true, fileMustExist: true });
+    try {
+        validateWorkspace(reader, root, expectedId);
+    }
+    finally {
+        reader.close();
+    }
+    const database = new Database(databasePath, { fileMustExist: true });
+    try {
+        const info = validateWorkspace(database, root, expectedId);
         const db = createWorkspaceDatabase(database);
-        const rows = db.select({ id: workspaceMeta.id, name: workspaceMeta.name }).from(workspaceMeta).all();
-        const row = rows[0];
-        if (rows.length !== 1 || typeof row.id !== "string" || !/^[0-9a-f-]{36}$/i.test(row.id)
-            || typeof row.name !== "string" || row.name.length === 0) {
-            throw new Error("The workspace metadata is corrupted. The workspace cannot be opened.");
-        }
-        if (expectedId && row.id !== expectedId) {
-            throw new Error("The workspace at this location has changed. Select it again to open it.");
-        }
-        if (!statSync(join(root, "attachments")).isDirectory()) {
-            throw new Error("The workspace attachments folder is unavailable.");
-        }
         database.pragma("foreign_keys = ON");
-        if (version < workspaceFormatVersion) upgradeWorkspace(database, root, version);
-        validateBuiltinAttrs(db);
-        return { info: { id: row.id, name: row.name, path: root }, database, db };
+        withFileCleanup(db, root, cleanup => cleanup());
+        return { info, database, db };
     }
     catch (error) {
         database.close();
         throw error;
     }
+}
+
+function validateWorkspace(database: Database.Database, root: string, expectedId?: string): Workspace {
+    if (database.pragma("application_id", { simple: true }) !== applicationId) {
+        throw new LabloomError({ kind: "workspace-not-workspace", path: root });
+    }
+    validateWorkspaceSchema(database);
+    const db = createWorkspaceDatabase(database);
+    const rows = db.select({ id: workspaceMeta.id, name: workspaceMeta.name }).from(workspaceMeta).all();
+    const row = rows[0];
+    if (rows.length !== 1 || typeof row.id !== "string" || !/^[0-9a-f-]{36}$/i.test(row.id)
+        || typeof row.name !== "string" || row.name.length === 0) {
+        throw new LabloomError({ kind: "workspace-corrupt" });
+    }
+    if (expectedId && row.id !== expectedId) {
+        throw new LabloomError({ kind: "workspace-changed" });
+    }
+    try {
+        if (!statSync(join(root, "attachments")).isDirectory()) throw new LabloomError({ kind: "workspace-attachments-unavailable" });
+    }
+    catch (error) {
+        throw new LabloomError({ kind: "workspace-attachments-unavailable", diagnostic: error instanceof LabloomError ? undefined : diagnostic(error) }, { cause: error });
+    }
+    validateBuiltinAttrs(db);
+    return { id: row.id, name: row.name, path: root };
 }

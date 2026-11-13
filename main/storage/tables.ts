@@ -1,11 +1,8 @@
 import { desc, sql } from "drizzle-orm";
-import { check, customType, index, integer, primaryKey, sqliteTable, sqliteView, text, unique } from "drizzle-orm/sqlite-core";
-import { builtinAttrs, builtinAttrsByPageKind } from "../../shared/attrs/builtins";
-import { defaultValue, encodeValue } from "../../shared/attrs/values";
-import { attributeTypes } from "../../shared/types/attributes";
+import { check, customType, foreignKey, index, integer, primaryKey, sqliteTable, text, unique } from "drizzle-orm/sqlite-core";
 import { type BlockKind } from "../../shared/types/Block";
 
-// Runtime mappings of the persisted rows. Versioned SQL migrations also install
+// Runtime mappings of the persisted rows. The generated SQL baseline also installs
 // STRICT table options and triggers; business/IPC models remain independent.
 export const workspaceMeta = sqliteTable("workspace_meta", {
     id: text("id").primaryKey().notNull(),
@@ -35,12 +32,13 @@ export const pages = sqliteTable("pages", {
     check("pages_children_array", sql`json_valid(${table.children}) AND json_type(${table.children}) = 'array'`)
 ]);
 
-export const attrs = sqliteTable("attrs", {
+export const attrsMeta = sqliteTable("attrs_meta", {
     id: text("id").primaryKey().notNull(),
     type: text("type").notNull(),
+    name: text("name"),
     metadata: text("metadata", { mode: "json" }).$type<Record<string, unknown>>().notNull().default({})
 }, table => [
-    check("attrs_metadata_object", sql`json_valid(${table.metadata}) AND json_type(${table.metadata}) = 'object'`)
+    check("attrs_meta_metadata_object", sql`json_valid(${table.metadata}) AND json_type(${table.metadata}) = 'object'`)
 ]);
 
 // SQLite STRICT ANY preserves storage types, including numeric-looking strings.
@@ -49,20 +47,9 @@ const anyValue = customType<{ data: string | number | Buffer; }>({
     dataType: () => "ANY"
 });
 
-// The triggers use the same type defaults and page membership as the application.
-const typeDefaults = attributeTypes.map(type => sql`(${type}, ${encodeValue({ id: type, type, metadata: {} }, defaultValue(type))})`);
-export const attributeDefaults = sqliteView("attribute_defaults", {
-    type: text("type"), value: anyValue("value")
-}).as(sql`SELECT column1 AS type, column2 AS value FROM (VALUES ${sql.join(typeDefaults, sql`, `)})`);
-
-const builtinRows = Object.entries(builtinAttrsByPageKind).flatMap(([kind, ids]) => ids.map(id => sql`(${kind}, ${id}, ${builtinAttrs[id].type})`));
-export const builtinPageAttrs = sqliteView("builtin_page_attrs", {
-    kind: text("kind"), attrId: text("attr_id"), type: text("type")
-}).as(sql`SELECT column1 AS kind, column2 AS attr_id, column3 AS type FROM (VALUES ${sql.join(builtinRows, sql`, `)})`);
-
 export const pageAttrs = sqliteTable("page_attrs", {
     pageId: text("page_id").notNull().references(() => pages.id),
-    attrId: text("attr_id").notNull().references(() => attrs.id),
+    attrId: text("attr_id").notNull().references(() => attrsMeta.id),
     value: anyValue("value").default(sql`NULL`)
 }, table => [
     primaryKey({ columns: [table.pageId, table.attrId] }),
@@ -70,7 +57,7 @@ export const pageAttrs = sqliteTable("page_attrs", {
     index("page_attrs_order").on(table.attrId, desc(table.value), table.pageId)
 ]);
 
-export const blockUses = sqliteTable("block_uses", {
+export const syncRefs = sqliteTable("sync_refs", {
     containerKind: text("container_kind", { enum: ["page", "block"] }).notNull(),
     containerId: text("container_id").notNull(),
     slot: text("slot", { enum: ["title", "children"] }).notNull(),
@@ -79,44 +66,20 @@ export const blockUses = sqliteTable("block_uses", {
     blockId: text("block_id").notNull()
 }, table => [
     primaryKey({ columns: [table.containerKind, table.containerId, table.slot, table.position] }),
-    index("block_uses_by_block").on(table.blockId),
-    check("block_uses_container_kind", sql`${table.containerKind} IN ('page', 'block')`),
-    check("block_uses_slot", sql`${table.slot} IN ('title', 'children')`),
-    check("block_uses_position", sql`${table.position} >= 0`),
-    check("block_uses_title", sql`${table.slot} != 'title' OR (${table.containerKind} = 'page' AND ${table.position} = 0)`)
-]);
-
-export const feedSources = sqliteTable("feed_sources", {
-    id: text("id").primaryKey().notNull(),
-    name: text("name").notNull(),
-    url: text("url").notNull().unique(),
-    // Cancelling keeps the source and its items; only enabled sources are fetched.
-    status: text("subscription_status", { enum: ["enabled", "paused", "cancelled"] }).notNull().default("enabled"),
-    autoRefresh: integer("auto_refresh", { mode: "boolean" }).notNull().default(true),
-    intervalMinutes: integer("interval_minutes").notNull().default(60),
-    lastRefreshed: integer("last_refreshed"),
-    lastAdded: integer("last_added").notNull().default(0),
-    error: text("error"),
-    lastChecked: integer("last_checked"),
-    // The earliest time the scheduler may fetch again; NULL means due now.
-    nextRefresh: integer("next_refresh"),
-    failures: integer("failures").notNull().default(0),
-    // HTTP validators, replayed verbatim for conditional requests.
-    etag: text("etag"),
-    lastModified: text("last_modified")
-}, table => [
-    check("feed_sources_status", sql`${table.status} IN ('enabled', 'paused', 'cancelled')`),
-    check("feed_sources_interval", sql`${table.intervalMinutes} BETWEEN 15 AND 1440`)
+    index("sync_refs_by_block").on(table.blockId),
+    check("sync_refs_container_kind", sql`${table.containerKind} IN ('page', 'block')`),
+    check("sync_refs_slot", sql`${table.slot} IN ('title', 'children')`),
+    check("sync_refs_position", sql`${table.position} >= 0`),
+    check("sync_refs_title", sql`${table.slot} != 'title' OR (${table.containerKind} = 'page' AND ${table.position} = 0)`)
 ]);
 
 export const feedItems = sqliteTable("feed_items", {
     id: text("id").primaryKey().notNull(),
-    // No cascade: cancelling a subscription keeps its history.
-    sourceId: text("source_id").notNull().references(() => feedSources.id),
+    // Cancelling retains items; permanent deletion of the source page removes them.
+    sourceId: text("source_id").notNull().references(() => pages.id, { onDelete: "cascade" }),
     externalId: text("external_id"),
     title: text("title").notNull(),
     url: text("url"),
-    pdfURL: text("pdf_url"),
     normalizedUrl: text("normalized_url"),
     fingerprint: text("content_fingerprint"),
     authors: text("authors").notNull(),
@@ -129,7 +92,8 @@ export const feedItems = sqliteTable("feed_items", {
     originSnapshot: text("origin_snapshot", { mode: "json" }).$type<import("../../shared/types/feed").FeedOrigin>(),
     isRead: integer("is_read", { mode: "boolean" }).notNull().default(false),
     readingPosition: text("reading_position", { mode: "json" }).$type<import("../../shared/types/feed").FeedPosition>(),
-    paperId: text("paper_id")
+    paperId: text("paper_id"),
+    pdfURL: text("pdf_url")
 }, table => [
     unique().on(table.sourceId, table.externalId),
     index("feed_items_date").on(desc(table.publishedAt)),
@@ -139,39 +103,15 @@ export const feedItems = sqliteTable("feed_items", {
 ]);
 
 // Only actual references enter this rebuildable index; shared block uses do not.
-export const linkIndex = sqliteTable("link_index", {
+export const linkRefs = sqliteTable("link_refs", {
     sourceKind: text("source_kind", { enum: ["page", "block"] }).notNull(),
     sourceId: text("source_id").notNull(),
     sourceField: text("source_field").notNull(),
-    targetKind: text("target_kind", { enum: ["page", "block"] }).notNull(),
-    targetId: text("target_id").notNull(),
-    retains: integer("retains", { mode: "boolean" }).notNull().default(true)
+    targetKind: text("target_kind", { enum: ["page", "block", "file"] }).notNull(),
+    targetId: text("target_id").notNull()
 }, table => [
     primaryKey({ columns: [table.sourceKind, table.sourceId, table.sourceField, table.targetKind, table.targetId] }),
-    index("link_index_target").on(table.targetKind, table.targetId)
-]);
-
-export const editTabs = sqliteTable("edit_tabs", {
-    id: text("id").primaryKey().notNull(),
-    cursor: text("cursor")
-});
-
-export const undoNodes = sqliteTable("undo_nodes", {
-    id: text("id").primaryKey().notNull(),
-    tabId: text("tab_id").notNull().references(() => editTabs.id),
-    parentId: text("parent_id"),
-    pageId: text("page_id").notNull(),
-    before: text("before_state", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
-    after: text("after_state", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
-    createdAt: integer("created_at").notNull()
-}, table => [index("undo_nodes_tab").on(table.tabId), index("undo_nodes_parent").on(table.parentId)]);
-
-export const undoObjects = sqliteTable("undo_objects", {
-    nodeId: text("node_id").notNull().references(() => undoNodes.id, { onDelete: "cascade" }),
-    objectKey: text("object_key").notNull()
-}, table => [
-    primaryKey({ columns: [table.nodeId, table.objectKey] }),
-    index("undo_objects_key").on(table.objectKey)
+    index("link_refs_target").on(table.targetKind, table.targetId)
 ]);
 
 export const attachments = sqliteTable("attachments", {
@@ -179,41 +119,19 @@ export const attachments = sqliteTable("attachments", {
     storedName: text("stored_name").notNull().unique(),
     originalName: text("original_name").notNull(),
     mediaType: text("media_type").notNull(),
-    size: integer("size").notNull(),
-    sha256: text("sha256").notNull()
+    size: integer("size").notNull()
 });
-export const pageAttachments = sqliteTable("page_attachments", {
-    pageId: text("page_id").notNull().references(() => pages.id),
-    fileId: text("file_id").notNull().references(() => attachments.id),
-    role: text("role").notNull().default("fulltext"),
-    position: integer("position").notNull()
-}, table => [primaryKey({ columns: [table.pageId, table.fileId, table.role] })]);
-export const anchors = sqliteTable("anchors", {
-    id: text("id").primaryKey().notNull(),
-    fileId: text("file_id").notNull().references(() => attachments.id),
-    pageNumber: integer("page_number").notNull(),
-    rectangles: text("rectangles", { mode: "json" }).$type<import("../../shared/types/papers").Rectangle[]>().notNull(),
-    quote: text("quote").notNull(),
-    context: text("context").notNull(),
-    extractorVersion: text("extractor_version").notNull()
-}, table => [index("anchors_file_page").on(table.fileId, table.pageNumber)]);
-export const highlights = sqliteTable("highlights", {
-    id: text("id").primaryKey().notNull(),
-    anchorId: text("anchor_id").notNull().references(() => anchors.id),
-    color: text("color").notNull()
-});
-// Configuration stays in page attributes. These are actual delivery attempts.
-export const reminderSchedules = sqliteTable("reminder_schedules", {
-    id: text("id").primaryKey().notNull(),
+export const timers = sqliteTable("timers", {
     pageId: text("page_id").notNull(),
-    scheduledAt: integer("scheduled_at").notNull(),
-    state: text("state", { enum: ["pending", "fired", "disabled"] }).notNull()
-}, table => [index("reminders_due").on(table.state, table.scheduledAt)]);
-export const notifications = sqliteTable("notifications", {
-    id: text("id").primaryKey().notNull(),
-    scheduleId: text("schedule_id").notNull().unique(),
-    pageId: text("page_id").notNull(),
-    title: text("title").notNull(),
-    createdAt: integer("created_at").notNull(),
-    isRead: integer("is_read", { mode: "boolean" }).notNull().default(false)
-});
+    attrId: text("attr_id").notNull(),
+    leadSeconds: integer("lead_seconds").notNull().default(0),
+    dueAt: integer("due_at"),
+    firedAt: integer("fired_at"),
+    seen: integer("seen", { mode: "boolean" }).notNull().default(false)
+}, table => [
+    primaryKey({ columns: [table.pageId, table.attrId, table.leadSeconds] }),
+    foreignKey({ columns: [table.pageId, table.attrId], foreignColumns: [pageAttrs.pageId, pageAttrs.attrId] }).onDelete("cascade"),
+    index("timers_due").on(table.dueAt),
+    check("timers_lead_seconds", sql`${table.leadSeconds} >= 0`),
+    check("timers_seen", sql`${table.seen} IN (0, 1)`)
+]);

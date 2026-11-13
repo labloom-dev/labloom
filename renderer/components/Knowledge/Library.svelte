@@ -24,8 +24,8 @@
         <summary>按属性筛选</summary>
         <select bind:value={filterId}>
             <option value="">选择属性</option>
-            {#each definitions.filter(item => !item.metadata.hidden && !item.metadata.readonly && item.id !== "deleted") as item (item.id)}
-                <option value={item.id}>{item.metadata.name || item.id}</option>
+            {#each definitions.filter(item => !item.hidden && !item.readonly && item.id !== "deleted") as item (item.id)}
+                <option value={item.id}>{item.name || item.id}</option>
             {/each}
         </select>
         {#if filterDefinition}
@@ -37,10 +37,10 @@
         {#each Object.entries(filters) as [id, value] (id)}
             <button class="filter-chip" onclick={() => {
                 const next = { ...filters }; delete next[id]; filters = next; offset = 0;
-            }}>{definitions.find(item => item.id === id)?.metadata.name}：{attributeText(id, value)} ×</button>
+            }}>{definitions.find(item => item.id === id)?.name}：{attributeText(id, value)} ×</button>
         {/each}
     </details>
-    {#if error}<div class="notice error">{error}<button onclick={() => retry++}>重试</button></div>{/if}
+    {#if error}<div class="notice error">{message(error)}<button onclick={() => retry++}>{t("dialog.retry")}</button></div>{/if}
     {#if info}<p class="info">{info}</p>{/if}
     <div class="list-toolbar"><span>{pending ? "正在读取…" : `${result.total} 个页面`}</span><div class="actions">
         {#if selected.length}<button class="button" disabled={busy} onclick={bulk}>{view === "trash" ? "恢复所选" : "移入回收站"}（{selected.length}）</button>{#if view === "trash"}<button class="button" disabled={busy} onclick={() => permanent()}>永久删除（{selected.length}）</button>{/if}{/if}
@@ -91,13 +91,13 @@
     @container (max-width: 500px) { .updated, .page-tags { display: none; } }
 </style>
 <script lang="ts">
+    import { t, failure, message, type ErrorValue } from "../../i18n.svelte";
     import { registerEditing } from "../layout/commands";
     import { onMount, untrack } from "svelte";
     import { type AttributeDefinition, type AttributeValue } from "../../../shared/types/attributes";
     import { display } from "../../../shared/attrs/format";
     import { defaultValue } from "../../../shared/attrs/values";
     import { currentTimeZone } from "../layout/preferences.svelte";
-    import { builtinAttrs, isBuiltin } from "../../../shared/attrs/builtins";
     import { type PageKind, type PageList, type PageQuery, type PageSummary } from "../../../shared/types/content";
     import Icon from "../utils/Icon.svelte";
     import ContextActions from "../utils/ContextActions.svelte";
@@ -106,7 +106,7 @@
     import AttributeInput from "./AttributeInput.svelte";
     import { kindNames, kindIcons } from "./labels";
     import { createPage, openPage } from "../layout/navigation";
-    import { copyData, message, confirmed, registerList, writeFromTab } from "./state.svelte";
+    import { copyData, confirmed, registerList, writeFromTab } from "./state.svelte";
     import { visits } from "../Tab/activity.svelte";
     let { tabId, initialView = "all" }: { tabId: string; initialView?: string } = $props();
     const views = [{ id: "all", label: "全部页面" }, { id: "papers", label: "文献" }, { id: "pinned", label: "已固定" }, { id: "trash", label: "回收站" }];
@@ -156,13 +156,13 @@
             if (await writeFromTab(tabId, () => purgePages(all ? null : [...selected], tabId))) selected = [];
         }
         catch (problem) {
-            error = message(problem);
+            error = failure(problem);
         }
         finally {
             busy = false;
         }
     }
-    let pending = $state(false), busy = $state(false), error = $state(""), info = $state(""), filterId = $state(""), filters = $state<Record<string, AttributeValue>>({});
+    let pending = $state(false), busy = $state(false), error = $state<ErrorValue>(""), info = $state(""), filterId = $state(""), filters = $state<Record<string, AttributeValue>>({});
     const filterDefinition = $derived(definitions.find(item => item.id === filterId));
     let filterValue = $derived<AttributeValue>(filterDefinition ? defaultValue(filterDefinition.type) : null);
     const query = $derived<PageQuery>({ keyword: applied, kind: view === "papers" ? "paper" : kind, sort, offset, limit: 40, deleted: view === "trash", ...(view === "pinned" ? { pinned: true } : {}), tags: [...tags], attributes: { ...filters } });
@@ -211,28 +211,44 @@
             error = "";
         }
         catch (problem) {
-            error = message(problem);
+            error = failure(problem);
             throw problem;
         }
         finally {
             pending = false;
         }
     }
+    let fileNames = $state<Record<string, string>>({});
+    $effect(() => {
+        const ids = Object.entries(filters).flatMap(([id, value]) => {
+            const type = definitions.find(item => item.id === id)?.type;
+            return type === "file" && typeof value === "string" ? [value] : type === "files" && Array.isArray(value) ? value as string[] : [];
+        });
+        let active = true;
+        void window.api.knowledge.files([...new Set(ids)]).then(files => {
+            if (active) fileNames = Object.fromEntries(files.map(file => [file.id, file.originalName]));
+        }, problem => {
+            if (active) error = failure(problem);
+        });
+        return () => {
+            active = false;
+        };
+    });
     function attributeText(id: string, value: AttributeValue): string {
-        const definition = definitions.find(item => item.id === id) ?? (isBuiltin(id) ? { id, ...builtinAttrs[id] } : undefined);
-        return definition ? display(definition, value, { zone: currentTimeZone() }) : "";
+        const definition = definitions.find(item => item.id === id);
+        return definition ? display(definition, value, { zone: currentTimeZone(), fileName: id => fileNames[id] }) : "";
     }
     async function importPDF(): Promise<void> {
         busy = true;
         try {
             const result = await writeFromTab(tabId, () => window.api.knowledge.importPDF(undefined, tabId));
             if (result) {
-                info = result.reused ? "该文件已在文献库中，已打开原有文献。" : "PDF 已复制到工作区。";
+                info = "PDF 已复制到工作区。";
                 openPage(result.pageId);
             }
         }
         catch (problem) {
-            error = message(problem);
+            error = failure(problem);
         }
         finally {
             busy = false;
@@ -245,7 +261,7 @@
             if (await writeFromTab(tabId, () => confirmed(token => view === "trash" ? window.api.knowledge.restore(ids, tabId) : window.api.knowledge.trash(ids, tabId, token)))) selected = [];
         }
         catch (problem) {
-            error = message(problem);
+            error = failure(problem);
         }
         finally {
             busy = false;

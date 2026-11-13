@@ -1,6 +1,7 @@
 import { mount } from "svelte";
 import type { FeedAPI } from "../../shared/types/feed";
 import FeedView from "../components/Feed/FeedView.svelte";
+import { LabloomError } from "../../shared/failure";
 import "../styles/colors.css";
 import "../styles/layouts.css";
 import "../styles/base.css";
@@ -15,7 +16,7 @@ async function request<T>(method: keyof FeedAPI | "version", ...args: unknown[])
         body: JSON.stringify({ method, args })
     });
     const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "操作失败，请重试。");
+    if (!response.ok) throw new LabloomError(result.error ?? { kind: "unexpected" });
     return result;
 }
 

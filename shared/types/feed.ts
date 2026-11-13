@@ -1,3 +1,5 @@
+import { type FailureInfo } from "../failure";
+
 export type FeedSourceStatus = "enabled" | "paused" | "cancelled";
 export type FeedSourceAction = "pause" | "resume" | "cancel";
 
@@ -22,7 +24,7 @@ export type FeedSource = {
     lastChecked: number | null;
     nextRefresh: number | null;
     lastAdded: number;
-    error: string | null;
+    error: FailureInfo | null;
     unreadCount: number;
     refreshing: boolean;
 };
@@ -67,6 +69,7 @@ export type FeedItemDetail = FeedItem & {
     paperState: FeedPaperState;
     pdfURL: string | null;
     pdfStatus: "idle" | "downloading" | "failed" | "saved";
+    pdfFailure?: FailureInfo | null;
 };
 
 export type FeedQuery = {

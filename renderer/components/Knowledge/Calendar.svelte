@@ -12,7 +12,7 @@
         </div>
     </header>
     {#if error}
-        <div class="notice error">{error}</div>
+        <div class="notice error">{message(error)}</div>
     {/if}
     <div class="calendar-layout">
         <section class="paper-card month-card">
@@ -73,15 +73,15 @@
     </div>
     <section class="paper-card notices">
         <h2>提醒</h2>
-        <p>应用运行时会检查到期提醒；关闭期间错过的提醒会在下次运行时补发。</p>
-        {#each notices as notice (notice.id)}
-            <button class:unread={!notice.isRead} onclick={() => read(notice)}>
-                <span>{notice.title}</span>
-                <small>{displayMilliseconds(notice.createdAt)}</small>
-                <span>{notice.isRead ? "已读" : "未读"}</span>
+        <p>在任意时间属性上点铃铛设置提醒。应用关闭期间到期的提醒会在下次运行时补发。</p>
+        {#each notices as notice (`${notice.pageId}:${notice.attrId}:${notice.leadSeconds}`)}
+            <button class:unread={!notice.seen} onclick={() => read(notice)}>
+                <span>{notice.title} · {notice.attrName}</span>
+                <small>{displayMilliseconds(notice.firedAt * 1000)}</small>
+                <span>{notice.seen ? "已读" : "未读"}</span>
             </button>
         {:else}
-            <p>还没有提醒记录。可在任务或日程的属性中设置提醒时间。</p>
+            <p>还没有提醒记录。在任意时间属性上点铃铛设置提醒。</p>
         {/each}
     </section>
 </section>
@@ -113,6 +113,8 @@
     @container (max-width: 900px) { .calendar-layout { grid-template-columns: 1fr; } .day { min-height: 75px; padding: 6px; } }
 </style>
 <script lang="ts">
+    import { failure, message, type ErrorValue } from "../../i18n.svelte";
+    import { LabloomError } from "../../../shared/failure";
     import ContextActions from "../utils/ContextActions.svelte";
     import { pageMenu } from "./page-menu";
     import { onMount } from "svelte";
@@ -124,7 +126,7 @@
     import { builtinAttrs } from "../../../shared/attrs/builtins";
     import { createPage, openPage } from "../layout/navigation";
     import { currentTimeZone, displayMilliseconds } from "../layout/preferences.svelte";
-    import { message, confirmed, perform, registerList, writeFromTab } from "./state.svelte";
+    import { confirmed, perform, registerList, writeFromTab } from "./state.svelte";
     import { kindNames } from "./labels";
     import Icon from "../utils/Icon.svelte";
     let { tabId }: { tabId: string } = $props();
@@ -133,7 +135,7 @@
     let now = $state(nowSeconds()), viewedMonth = $state<Date>(), selectedDay = $state<string>();
     const today = $derived(secondsToWall(now, zone).slice(0, 10));
     const month = $derived(viewedMonth ?? new Date(today + "T00:00:00Z")), selected = $derived(selectedDay ?? today);
-    let scheduled = $state<PageSummary[]>([]), notices = $state<Notice[]>([]), pending = $state(false), error = $state("");
+    let scheduled = $state<PageSummary[]>([]), notices = $state<Notice[]>([]), pending = $state(false), error = $state<ErrorValue>("");
     const byDay = $derived(Object.groupBy(scheduled, page => scheduleDay(page.attributes, zone)));
     const days = $derived.by(() => {
         const first = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth(), 1)), offset = (first.getUTCDay() + 6) % 7;
@@ -185,7 +187,7 @@
             error = "";
         }
         catch (problem) {
-            error = message(problem);
+            error = failure(problem);
             throw problem;
         }
         finally {
@@ -201,7 +203,7 @@
         void perform(async () => {
             await writeFromTab(tabId, async () => {
                 const { page } = await window.api.knowledge.readObjects(id, [id]);
-                if (!page) throw new Error("找不到这项任务。");
+                if (!page) throw new LabloomError({ kind: "page-missing" });
                 await confirmed(token => window.api.knowledge.commitEdit({ pageId: id, tabId, batch: 0, blocks: [], attributes: { task_status: page.attributes.task_status === "done" ? "todo" : "done" } }, token));
             });
         });
@@ -209,7 +211,7 @@
     function read(notice: Notice): void {
         void perform(async () => {
             await writeFromTab(tabId, async () => {
-                await window.api.knowledge.readNotice(notice.id, tabId);
+                await window.api.knowledge.readNotice(notice.pageId, notice.attrId, notice.leadSeconds, tabId);
                 openPage(notice.pageId);
             });
         });

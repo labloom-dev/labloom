@@ -1,4 +1,6 @@
+import { LabloomError } from "../shared/failure";
 import type { IpcMainEvent, IpcMainInvokeEvent, WebContents } from "electron";
+import { toFailureInfo } from "../shared/failure";
 
 // Handlers live on one window's webContents and only answer its top-level page.
 function fromMainFrame(contents: WebContents, event: IpcMainEvent | IpcMainInvokeEvent): boolean {
@@ -7,9 +9,16 @@ function fromMainFrame(contents: WebContents, event: IpcMainEvent | IpcMainInvok
 
 // Arguments come from the renderer, so they stay unknown until the handler validates them.
 export function handle(contents: WebContents, channel: string, listener: (...args: unknown[]) => unknown): void {
-    contents.ipc.handle(channel, (event, ...args: unknown[]) => {
-        if (!fromMainFrame(contents, event)) throw new Error("Rejected an IPC request from outside the main frame.");
-        return listener(...args);
+    contents.ipc.handle(channel, async (event, ...args: unknown[]) => {
+        try {
+            if (!fromMainFrame(contents, event)) throw new LabloomError({ kind: "ipc-not-main-frame" });
+            return { ok: true, value: await listener(...args) };
+        }
+        catch (error) {
+            const failure = toFailureInfo(error);
+            if (failure.diagnostic) console.error(channel, error);
+            return { ok: false, failure };
+        }
     });
 }
 

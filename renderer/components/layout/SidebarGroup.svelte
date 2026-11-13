@@ -7,7 +7,7 @@
             </ContextActions>
         {/each}
         {#if more}<button class="page more" disabled={pending} onclick={() => void load(false)}>更多…</button>{/if}
-        {#if error}<p class="error">{error}</p>{/if}
+        {#if error}<p class="error">{message(error)}</p>{/if}
     {/if}
 </section>
 <style>
@@ -20,9 +20,10 @@
     p { padding-inline: var(--panel-indent); font-size: var(--font-secondary); }
 </style>
 <script lang="ts">
+    import { failure, message, type ErrorValue } from "../../i18n.svelte";
     import { untrack } from "svelte";
     import type { PageSummary, PageQuery } from "../../../shared/types/content";
-    import { knowledgeState, message } from "../Knowledge/state.svelte";
+    import { knowledgeState } from "../Knowledge/state.svelte";
     import { pageMenu } from "../Knowledge/page-menu";
     import { kindIcons } from "../Knowledge/labels";
     import { openPage } from "./navigation";
@@ -30,7 +31,7 @@
     import Icon from "../utils/Icon.svelte";
     import ContextActions from "../utils/ContextActions.svelte";
     let { title, query, keyword, initiallyOpen = false }: { title: string; query: PageQuery; keyword: string; initiallyOpen?: boolean } = $props();
-    let expanded = $state(untrack(() => initiallyOpen)), rows = $state<PageSummary[]>([]), pending = $state(false), more = $state(false), error = $state("");
+    let expanded = $state(untrack(() => initiallyOpen)), rows = $state<PageSummary[]>([]), pending = $state(false), more = $state(false), error = $state<ErrorValue>("");
     let offset = 0, generation = 0;
     const tabId = (): string => tabState.groups.find(group => group.id === tabState.focusedGroupId)?.activeTabId ?? "";
     $effect(() => {
@@ -107,7 +108,7 @@
             }
         }
         catch (problem) {
-            if (token === generation) error = message(problem);
+            if (token === generation) error = failure(problem);
         }
         finally {
             refreshing = false; if (changedIds.size) void refreshRows();
@@ -131,7 +132,7 @@
             rows = [...rows, ...found]; error = "";
         }
         catch (problem) {
-            if (current === generation) error = message(problem);
+            if (current === generation) error = failure(problem);
         }
         finally {
             if (current === generation) pending = false;

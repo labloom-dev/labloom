@@ -1,3 +1,4 @@
+import { hasFailure } from "./failures";
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, rmdirSync, writeFileSync } from "node:fs";
@@ -24,7 +25,7 @@ test("appearance persists across app restarts and workspace choices without losi
     writeFileSync(storage.configPath, JSON.stringify({ version: 1, lastWorkspace: first, custom: { preserved: true } }));
     storage.load();
     assert.deepEqual(storage.getAppearance(), defaultAppearance);
-    const appearance = { theme: "system", readingSize: 18, motion: false, timeZone: "Asia/Shanghai" } as const;
+    const appearance = { theme: "system", readingSize: 18, motion: false, timeZone: "Asia/Shanghai", language: "en" } as const;
     storage.saveAppearance({ ...appearance, lastWorkspace: null, injected: true });
     storage.remember(second);
     const reopened = new AppStorage(storage.root);
@@ -45,8 +46,8 @@ test("invalid settings cannot overwrite config, and malformed stored appearance 
     storage.load();
     assert.deepEqual(storage.getAppearance(), defaultAppearance);
     for (const value of [null, [], {}, { ...defaultAppearance, theme: "bad" }, { ...defaultAppearance, readingSize: "18" }, { ...defaultAppearance, motion: 1 },
-        ...["", null, "+08:00", "Mars/Base"].map(timeZone => ({ ...defaultAppearance, timeZone }))]) {
-        assert.throws(() => storage.saveAppearance(value), /Invalid appearance/);
+        ...["", null, "+08:00", "Mars/Base"].map(timeZone => ({ ...defaultAppearance, timeZone })), { ...defaultAppearance, language: "fr" }]) {
+        assert.throws(() => storage.saveAppearance(value), hasFailure("preferences-invalid"));
     }
     assert.equal(readFileSync(storage.configPath, "utf8"), contents);
 });
@@ -71,7 +72,7 @@ test("preferences cannot replace an unreadable or newer app configuration", t =>
     const storage = fixture(t);
     const contents = JSON.stringify({ version: 2, lastWorkspace: null, appearance: defaultAppearance });
     writeFileSync(storage.configPath, contents);
-    assert.throws(() => storage.load(), /newer version/);
-    assert.throws(() => storage.saveAppearance(defaultAppearance), /not been loaded/);
+    assert.throws(() => storage.load(), hasFailure("config-newer-version"));
+    assert.throws(() => storage.saveAppearance(defaultAppearance), hasFailure("config-not-loaded"));
     assert.equal(readFileSync(storage.configPath, "utf8"), contents);
 });

@@ -3,7 +3,6 @@ import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import type Database from "better-sqlite3";
 import { EditHistory } from "../../main/knowledge/history";
-import { ReminderService } from "../../main/knowledge/reminders";
 import { KnowledgeService } from "../../main/knowledge/service";
 import { createWorkspace } from "../../main/storage/workspace";
 import { payload } from "../../shared/content/blocks";
@@ -21,8 +20,6 @@ export function fixture(): Fixture {
     const ws = createWorkspace(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "perf-")));
     const service = new KnowledgeService(ws.db);
     new EditHistory(service);
-    const reminders = new ReminderService(service);
-    service.onScheduled = changes => reminders.reconcile(changes);
     const sql = ws.database;
     const block = sql.prepare("INSERT INTO blocks (id, type, content, children) VALUES (?, ?, ?, '[]')");
     const page = sql.prepare("INSERT INTO pages (id, kind, title_block_id, children) VALUES (?, 'editable', ?, ?)");
@@ -37,6 +34,7 @@ export function fixture(): Fixture {
             block.run(child, "paragraph", JSON.stringify(payload("paragraph", match && i === count - 1 ? "quasar" : "An ordinary research note.")));
         }
         page.run(id, titleId, JSON.stringify(children));
+        service.attributes.initializePage(id);
         attr.run(Number(independent), id, "independent");
         attr.run(0, id, "deleted");
         attr.run(now, id, "created_at");

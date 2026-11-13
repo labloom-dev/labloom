@@ -6,7 +6,13 @@ import { defaultValue, isEmpty, validateValue } from "./values";
 // Definition previews and confirmed writes share this conversion and fallback.
 export function convertValue(before: AttributeDefinition, target: AttributeDefinition, value: AttributeValue, zone: string): AttributeValue {
     try {
+        if (before.type !== target.type && (before.type === "recurrence" || target.type === "recurrence")) return defaultValue(target.type);
         if (isEmpty(before.type, value)) return defaultValue(target.type);
+        if (target.type === "file" || target.type === "files") {
+            if (before.type !== "file" && before.type !== "files") return defaultValue(target.type);
+            const ids = Array.isArray(value) ? value : [value];
+            return target.type === "file" ? ids[0] ?? null : ids;
+        }
         let result = value;
         if (isTimeType(target.type)) {
             if (isTimeType(before.type)) {

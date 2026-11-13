@@ -1,7 +1,8 @@
+import { LabloomError } from "../../shared/failure";
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { randomUUID } from "node:crypto";
-import type { Workspace } from "../../shared/types/startup";
+import type { StartupState, Workspace } from "../../shared/types/startup";
 import { defaultAppearance, isAppearance, type Appearance } from "../../shared/types/appearance";
 
 type AppConfig = {
@@ -26,10 +27,12 @@ function isConfig(value: unknown): value is AppConfig {
 }
 
 export function developmentDataPath(projectPath: string, profile = "default"): string {
+    // Internal assertion: LABLOOM_PROFILE is supplied by the development launcher, never by the UI.
     if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(profile)) {
         throw new Error("LABLOOM_PROFILE must contain 1-64 letters, digits, underscores, or hyphens, and start with a letter or digit.");
     }
     if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(profile)) {
+        // Internal assertion: reject invalid developer launch configuration.
         throw new Error("LABLOOM_PROFILE must not be a Windows reserved device name.");
     }
     return join(projectPath, ".local", "profiles", profile);
@@ -46,7 +49,7 @@ export class AppStorage {
         mkdirSync(this.sessionsPath, { recursive: true });
     }
 
-    load(): { lastWorkspace: Workspace | null; notice?: string; } {
+    load(): { lastWorkspace: Workspace | null; notice?: Extract<StartupState, { status: "needs-workspace" }>["notice"]; } {
         this.config = null;
         let source: string;
         try {
@@ -66,40 +69,40 @@ export class AppStorage {
             parsed = null;
         }
         if (isRecord(parsed) && typeof parsed.version === "number" && parsed.version > 1) {
-            throw new Error("This configuration was created by a newer version of Labloom. Update Labloom and try again.");
+            throw new LabloomError({ kind: "config-newer-version" });
         }
         if (!isConfig(parsed)) {
             const backup = join(this.root, `config.invalid-${randomUUID()}.json`);
             renameSync(this.configPath, backup);
             this.config = { version: 1, lastWorkspace: null };
-            return { lastWorkspace: null, notice: `Unable to read the configuration. A backup was saved to ${backup}. Select your workspace again.` };
+            return { lastWorkspace: null, notice: { kind: "config-backup", path: backup } };
         }
         this.config = parsed;
         return { lastWorkspace: parsed.lastWorkspace };
     }
 
     remember(workspace: Workspace): void {
-        if (!this.config) throw new Error("The configuration has not been loaded successfully. Try again.");
+        if (!this.config) throw new LabloomError({ kind: "config-not-loaded" });
         this.write({ ...this.config, lastWorkspace: workspace });
     }
 
     getAppearance(): Appearance {
-        if (!this.config) throw new Error("The configuration has not been loaded successfully. Try again.");
+        if (!this.config) throw new LabloomError({ kind: "config-not-loaded" });
         const stored = this.config.appearance;
-        const fields = isRecord(stored) ? { timeZone: defaultAppearance.timeZone, ...stored } : stored;
+        const fields = isRecord(stored) ? { timeZone: defaultAppearance.timeZone, language: defaultAppearance.language, ...stored } : stored;
         return isAppearance(fields) ? this.appearanceFields(fields) : { ...defaultAppearance };
     }
 
     saveAppearance(value: unknown): Appearance {
-        if (!this.config) throw new Error("The configuration has not been loaded successfully. Try again.");
-        if (!isAppearance(value)) throw new Error("Invalid appearance preferences.");
+        if (!this.config) throw new LabloomError({ kind: "config-not-loaded" });
+        if (!isAppearance(value)) throw new LabloomError({ kind: "preferences-invalid" });
         const appearance = this.appearanceFields(value);
         this.write({ ...this.config, appearance });
         return { ...appearance };
     }
 
     private appearanceFields(value: Appearance): Appearance {
-        return { theme: value.theme, readingSize: value.readingSize, motion: value.motion, timeZone: value.timeZone };
+        return { theme: value.theme, readingSize: value.readingSize, motion: value.motion, timeZone: value.timeZone, language: value.language };
     }
 
     private write(config: AppConfig): void {

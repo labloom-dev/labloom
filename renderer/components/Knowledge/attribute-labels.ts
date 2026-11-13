@@ -1,2 +1,2 @@
 import type { AttributeType } from "../../../shared/types/attributes";
-export const attributeLabels: Record<AttributeType, string> = { string: "文本", number: "数字", boolean: "勾选", minute: "时间（分）", hour: "时间（时）", day: "日期", month: "年月", year: "年份", select: "单选", multiselect: "多选", url: "网址", "page-link": "页面链接", "page-links": "多个页面链接", json: "JSON" };
+export const attributeLabels: Record<AttributeType, string> = { string: "文本", number: "数字", boolean: "勾选", minute: "时间（分）", hour: "时间（时）", day: "日期", month: "年月", year: "年份", select: "单选", multiselect: "多选", url: "网址", "page-link": "页面链接", "page-links": "多个页面链接", file: "文件", files: "多个文件", recurrence: "重复", json: "JSON" };

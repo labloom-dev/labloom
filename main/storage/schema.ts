@@ -1,31 +1,19 @@
 import type Database from "better-sqlite3";
-import { runMigrations } from "./migrations/runner";
-import { v1 } from "./migrations/v1";
-import { v2 } from "./migrations/v2";
-import { v3 } from "./migrations/v3";
-import { v4 } from "./migrations/v4";
-import { generatedMigrations } from "./migrations/generated";
+import { createBaseline } from "./migrations/runner";
+export { baselineVersion as workspaceFormatVersion } from "./migrations/generated";
+export { validateBaseline as validateWorkspaceSchema } from "./migrations/runner";
 
-// Append new migrations; never edit a published version to introduce a new schema.
-export const workspaceMigrations = [v1, v2, v3, v4, ...generatedMigrations] as const;
-export const workspaceFormatVersion = workspaceMigrations[workspaceMigrations.length - 1].to;
-
-export function migrateWorkspaceSchema(database: Database.Database): void {
-    runMigrations(database, workspaceMigrations);
-}
-
-// A fresh database follows the same version history, inside the creation transaction.
 export function createWorkspaceSchema(database: Database.Database): void {
-    migrateWorkspaceSchema(database);
+    createBaseline(database);
 }
 
-const blockUseColumns = "container_kind, container_id, slot, position, block_id";
+const syncRefColumns = "container_kind, container_id, slot, position, block_id";
 
-export function rebuildBlockUses(database: Database.Database): void {
+export function rebuildSyncRefs(database: Database.Database): void {
     database.transaction(() => {
         database.exec(`
-            DELETE FROM block_uses;
-            INSERT INTO block_uses (${blockUseColumns})
+            DELETE FROM sync_refs;
+            INSERT INTO sync_refs (${syncRefColumns})
             SELECT 'page', id, 'title', 0, title_block_id FROM pages
             UNION ALL
             SELECT 'page', pages.id, 'children', children.key, children.value

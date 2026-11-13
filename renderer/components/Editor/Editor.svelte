@@ -15,13 +15,12 @@
                 {/if}
                 {#if menu}
                     <div class="block-menu">
-                        {#if handle.kind !== "source"}
-                            <div class="conversion"><button onmousedown={keep} onkeydown={event => {
-                                if (event.key === "ArrowRight") (event.currentTarget.nextElementSibling?.querySelector("button") as HTMLButtonElement)?.focus();
-                            }}>转换为 ▸</button><div class="conversion-list compact-menu">
-                                {#each kinds as item (item[0])}<button class="compact-item" onmousedown={keep} onclick={() => convert(item[0])}><span class="kind-icon">{kindIcons[item[0]]}</span>{item[1]}<kbd>{conversionShortcuts[item[0]] ?? ""}</kbd></button>{/each}
-                            </div></div>
-                        {/if}
+                    <div class="conversion"><button onmousedown={keep} onkeydown={event => {
+                        if (event.key === "ArrowRight") (event.currentTarget.nextElementSibling?.querySelector("button") as HTMLButtonElement)?.focus();
+                    }}>转换为 ▸</button><div class="conversion-list compact-menu">
+                        {#each kinds as item (item[0])}<button class="compact-item" onmousedown={keep} onclick={() => convert(item[0])}><span class="kind-icon">{kindIcons[item[0]]}</span>{item[1]}<kbd>{conversionShortcuts[item[0]] ?? ""}</kbd></button>{/each}
+                    </div></div>
+
                         {#if handle.kind === "table"}
                             <button onmousedown={keep} onclick={() => act("row")}>添加行</button>
                             <button onmousedown={keep} onclick={() => act("column")}>添加列</button>
@@ -68,7 +67,7 @@
     .editor :global([data-kind=heading_3] > p) { font-size: 18px; font-weight: 700; }
     .editor :global([data-kind=unordered_list] > p), .editor :global([data-kind=ordered_list] > p) { display: list-item; margin-left: 1.5em; }
     .editor :global([data-kind=ordered_list] > p) { list-style: decimal; }
-    .editor :global([data-kind=blockquote]), .editor :global([data-kind=source]) { border-left: 3px solid var(--c-muted); padding-left: 12px; }
+    .editor :global([data-kind=blockquote]) { border-left: 3px solid var(--c-muted); padding-left: 12px; }
     .editor :global([data-kind=callout]), .editor :global([data-kind=code]) { background: var(--c-cream); padding-inline: 12px; border-radius: 4px; }
     .editor :global([data-kind=code] > p) { font-family: "JetBrains Mono",monospace; }
     .editor :global(.sync-block) { outline: 2px solid var(--dc-c-fg-blue, #4878b9); outline-offset: -1px; border-radius: 4px; padding-inline: 6px; }
@@ -92,6 +91,7 @@
     .preview { position: fixed; z-index: 55; inset: auto; margin: 0; width: min(320px, 80vw); pointer-events: none; }
 </style>
 <script lang="ts">
+    import { LabloomError } from "../../../shared/failure";
     import { mount, onMount, unmount, untrack } from "svelte";
     import { Editor, Extension } from "@tiptap/core";
     import History from "@tiptap/extension-history";
@@ -268,7 +268,7 @@
             if (mode === "inline" && saved) tr.setSelection(saved.resolve(tr.doc)).replaceSelectionWith(instance.schema.nodes.inlineReference.create({ target: destination, label }));
             else if (mode === "sync") {
                 const node = existing ?? instance.schema.nodeFromJSON(subtree(destination.id, session.state.page!.blocks)), parent = tr.doc.resolve(loc.pos);
-                for (let d = parent.depth; d > 0; d--) if (indexDoc(node).has(parent.node(d).attrs.blockId) || destination.id === parent.node(d).attrs.blockId) throw new Error("块包含关系不能形成循环。");
+                for (let d = parent.depth; d > 0; d--) if (indexDoc(node).has(parent.node(d).attrs.blockId) || destination.id === parent.node(d).attrs.blockId) throw new LabloomError({ kind: "block-cycle" });
                 tr.insert(pos, node).setMeta(syncInsert, true);
             }
             else tr.insert(pos, instance.schema.nodes.blocked_reference.create({ target: destination }));
@@ -282,9 +282,9 @@
         if (!loc || !instance || kind === kindOf(loc.node)) return;
         void perform(async () => {
             const data = blockData(loc.node);
-            if (data.children.length && !canNest(kind)) throw new Error("请先移出此块的子块。");
-            if (data.type === "table" && loc.node.textContent.trim()) throw new Error("请先移出表格内容。");
-            if (["hr", "table"].includes(kind) && loc.node.textContent.trim()) throw new Error("请先移出块内文字。");
+            if (data.children.length && !canNest(kind)) throw new LabloomError({ kind: "block-move-children" });
+            if (data.type === "table" && loc.node.textContent.trim()) throw new LabloomError({ kind: "block-move-table" });
+            if (["hr", "table"].includes(kind) && loc.node.textContent.trim()) throw new LabloomError({ kind: "block-move-text" });
             const body = { ...payload(kind), inline: data.payload.inline, collapsed: data.payload.collapsed };
             const json = blockJSON({ ...data, type: kind, payload: body }, data.children.map(id => subtree(id, session.state.page!.blocks)));
             instance.view.dispatch(instance.state.tr.replaceWith(loc.pos, loc.pos + loc.node.nodeSize, instance.schema.nodeFromJSON(json)));

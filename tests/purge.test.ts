@@ -1,3 +1,4 @@
+import { hasFailure } from "./failures";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
@@ -33,19 +34,19 @@ function erase(purge: PurgeService, ids: string[] | null, tab = "purger"): strin
     return done.pages;
 }
 test("permanent deletion requires recycle membership, previews without writes, and empties a single-page recycle bin", t => {
-    const { service, purge } = fixture(t), page = service.create("editable", "A");
-    assert.throws(() => purge.purge([page.id], "a"), /回收站/);
+    const { service, history, purge } = fixture(t), page = service.create("editable", "A");
+    assert.throws(() => purge.purge([page.id], "a"), hasFailure("purge-recycled-only"));
     confirm(token => service.trash([page.id], "a", token));
-    const before = service.sql.prepare("SELECT * FROM undo_nodes").all(), preview = purge.purge(null, "a");
+    const before = history.state("a"), preview = purge.purge(null, "a");
     assert.equal(preview.status, "confirmation");
     assert.equal(service.get(page.id).title, "A");
-    assert.deepEqual(service.sql.prepare("SELECT * FROM undo_nodes").all(), before);
+    assert.deepEqual(history.state("a"), before);
     assert.deepEqual(erase(purge, null), [page.id]);
     assert.equal(service.list({ deleted: true }).total, 0);
     assert.equal(service.sql.prepare("SELECT count(*) FROM blocks").pluck().get(), 0);
     assert.deepEqual(erase(purge, null), []);
 });
-test("live synchronized blocks survive while soft references remain deleted and every tab loses affected history", t => {
+test("live synchronized blocks survive while soft references remain deleted and every tab loses its history", t => {
     const { service, history, purge } = fixture(t), a = service.create("editable", "A"), b = service.create("editable", "B"), c = service.create("editable", "C");
     const shared = a.children[0], own = { id: randomUUID(), type: "paragraph" as const, payload: payload("paragraph", "Only A"), children: [] };
     service.commitEdit({ pageId: a.id, tabId: "a", batch: 1, blocks: [own], pageChildren: [shared, own.id] });
@@ -67,9 +68,9 @@ test("live synchronized blocks survive while soft references remain deleted and 
     assert.equal(service.resolve({ kind: "block", id: own.id })?.status, "deleted");
     assert.equal(service.blockRow(own.id), null, "soft references in history do not preserve physical target rows");
     assert.equal(history.state("a").canUndo, false);
-    assert.equal(history.state("b").canUndo, true);
-    assert.equal(history.state("c").canUndo, true);
-    assert.equal(service.sql.prepare("SELECT count(*) FROM undo_objects WHERE object_key=?").pluck().get("page:" + a.id), 0);
+    assert.equal(history.state("b").canUndo, false);
+    assert.equal(history.state("c").canUndo, false);
+    assert.throws(() => history.apply("c", "undo"), hasFailure("history-empty"));
     assert.deepEqual(service.sql.prepare("PRAGMA foreign_key_check").all(), []);
 });
 test("a changed recycle set invalidates a previously confirmed empty-trash scope", t => {
@@ -87,21 +88,21 @@ async function annotated(t: TestContext): Promise<ReturnType<typeof fixture> & {
     const f = fixture(t), path = join(f.info.path, "paper.pdf");
     writeFileSync(path, knownCoordinatePdf());
     const id = f.papers.importFile(path).pageId, file = (await f.papers.resources(id)).files[0];
-    const annotation = await f.papers.annotate(id, { fileId: file.id, pageNumber: 1, rectangles: [{ x: 50, y: 690, width: 70, height: 30 }], quote: "", context: "", extractorVersion: PDF_EXTRACTOR_VERSION });
+    const annotation = await f.papers.annotate(id, { fileId: file.id, pageNumber: 1, rectangles: [{ x: 50, y: 690, width: 70, height: 30 }], quote: "", context: "", extractorVersion: PDF_EXTRACTOR_VERSION }, "annotations");
     const stored = f.database.prepare("SELECT stored_name FROM attachments WHERE id=?").pluck().get(file.id) as string;
     return { ...f, id, annotation, file: join(f.info.path, "attachments", stored), path };
 }
-test("purging a paper cascades to solely retained recycled annotations and removes PDF bytes, anchors, highlights and reminders", async t => {
+test("purging a paper removes its solely retained annotation pages, PDF bytes and timers", async t => {
     const { service, purge, id, annotation, file } = await annotated(t);
+    service.timers.set(id, "created_at", 0, true);
     confirm(token => service.trash([id], "paper", token));
     assert.equal(service.flags(annotation).deleted, true);
     const preview = purge.purge([id], "paper");
     assert.equal(preview.status, "confirmation");
     if (preview.status === "confirmation") assert.deepEqual(new Set(preview.pages.map(page => page.id)), new Set([id, annotation]));
-    service.sql.prepare("INSERT INTO reminder_schedules(id,page_id,scheduled_at,state) VALUES (?,?,1,'pending')").run(randomUUID(), id);
     assert.deepEqual(new Set(erase(purge, [id])), new Set([id, annotation]));
     assert.equal(existsSync(file), false);
-    for (const table of ["attachments", "page_attachments", "anchors", "highlights", "reminder_schedules"]) assert.equal(service.sql.prepare("SELECT count(*) FROM " + table).pluck().get(), 0, table);
+    for (const table of ["attachments", "timers"]) assert.equal(service.sql.prepare("SELECT count(*) FROM " + table).pluck().get(), 0, table);
 });
 test("another live or recycled paper retains an annotation and the immutable attachment it still needs", async t => {
     const { service, purge, id, annotation, file } = await annotated(t);
@@ -116,26 +117,44 @@ test("another live or recycled paper retains an annotation and the immutable att
     assert.deepEqual(new Set(erase(purge, [other.id])), new Set([other.id, annotation]));
     assert.equal(existsSync(file), false);
 });
-test("shared attachments remain until their last paper is purged", async t => {
+test("purging one paper deletes only its independent copy of an identically imported PDF", async t => {
     const { service, purge, papers, info } = fixture(t), path = join(info.path, "shared.pdf");
     writeFileSync(path, knownCoordinatePdf());
-    const a = papers.importFile(path).pageId, b = papers.importFile(path).pageId, stored = service.sql.prepare("SELECT stored_name FROM attachments").pluck().get() as string, file = join(info.path, "attachments", stored);
+    const a = papers.importFile(path).pageId, b = papers.importFile(path).pageId;
+    const first = papers.externalPath((await papers.resources(a)).files[0].id), second = papers.externalPath((await papers.resources(b)).files[0].id);
     confirm(token => service.trash([a, b], "trash", token));
-    erase(purge, [a]); assert.equal(existsSync(file), true);
-    erase(purge, [b]); assert.equal(existsSync(file), false);
+    erase(purge, [a]); assert.equal(existsSync(first), false); assert.equal(existsSync(second), true);
+    erase(purge, [b]); assert.equal(existsSync(second), false);
 });
-test("a deleted plain highlight cannot keep its purged PDF through an obsolete undo node", async t => {
+test("purging an annotation's paper removes its PDF and clears every tab's in-memory history", async t => {
     const { service, history, purge, papers, info } = fixture(t), path = join(info.path, "plain.pdf");
     writeFileSync(path, knownCoordinatePdf());
     const page = papers.importFile(path).pageId, fileId = (await papers.resources(page)).files[0].id;
-    await papers.mark(page, { fileId, pageNumber: 1, rectangles: [{ x: 50, y: 690, width: 70, height: 30 }], quote: "", context: "", extractorVersion: PDF_EXTRACTOR_VERSION }, "#F2D675");
-    const mark = (await papers.resources(page)).highlights[0];
-    confirm(token => papers.removeHighlight(mark.id, "highlight-tab", token));
+    await papers.annotate(page, { fileId, pageNumber: 1, rectangles: [{ x: 50, y: 690, width: 70, height: 30 }], quote: "", context: "", extractorVersion: PDF_EXTRACTOR_VERSION }, "annotations", "yellow");
+    const mark = (await papers.resources(page)).annotations[0];
+    confirm(token => papers.deleteAnnotation(mark.id, "highlight-tab", token));
     assert.equal(history.state("highlight-tab").canUndo, true);
     confirm(token => service.trash([page], "trash", token));
     erase(purge, [page]);
     assert.equal(history.state("highlight-tab").canUndo, false);
     assert.equal(service.sql.prepare("SELECT count(*) FROM attachments").pluck().get(), 0);
+});
+
+test("a failed permanent deletion rolls back rows and keeps every tab's history", async t => {
+    const { service, history, purge, id, file } = await annotated(t);
+    const other = service.create("editable", "B");
+    service.commitEdit({ pageId: other.id, tabId: "other", batch: 1, blocks: [], attributes: { pinned: true } });
+    confirm(token => service.trash([id], "trash", token));
+    service.sql.prepare("UPDATE attachments SET stored_name='../invalid.pdf'").run();
+    const before = history.state("other"), trash = history.state("trash");
+    const preview = purge.purge([id], "purge");
+    assert.equal(preview.status, "confirmation");
+    if (preview.status !== "confirmation") throw new Error("Expected confirmation");
+    assert.throws(() => purge.purge([id], "purge", preview.token), hasFailure("attachment-invalid-name"));
+    assert.equal(service.get(id).attributes.deleted, true);
+    assert.equal(existsSync(file), true);
+    assert.deepEqual(history.state("other"), before);
+    assert.deepEqual(history.state("trash"), trash);
 });
 test("menus and shortcut dispatch use the same table, respect editor handling and ignore composing input", () => {
     const event = (key: string, overrides = {}): Pick<KeyboardEvent, "key" | "ctrlKey" | "altKey" | "shiftKey" | "metaKey" | "isComposing" | "defaultPrevented"> => ({ key, ctrlKey: true, altKey: false, shiftKey: false, metaKey: false, isComposing: false, defaultPrevented: false, ...overrides });

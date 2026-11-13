@@ -39,7 +39,7 @@
         <p class="hint">每次获取最新 10 篇，已保存的文章和阅读状态会保留。</p>
     {/if}
     {#if address.error}
-        <p class="hint" role="status">{address.error}</p>
+        <p class="hint" role="status">{message(address.error)}</p>
     {/if}
     {#if source && address.url && address.url !== source.url}
         <p class="hint">修改地址会保留此来源已保存的条目。</p>
@@ -56,7 +56,7 @@
         </label>
     {/if}
     {#if error}
-        <p class="error" role="alert">{error}</p>
+        <p class="error" role="alert">{message(error)}</p>
     {/if}
     <div class="actions">
         <button type="submit" disabled={pending || !address.url}>{pending ? "正在处理…" : "保存并校验来源"}</button>
@@ -166,11 +166,12 @@
     import { feedIntervals, type FeedSource, type FeedSourceInput } from "../../../shared/types/feed";
     import { arxivURL, feedURL } from "../../../shared/utils/feed";
     import { intervalLabel } from "./labels";
+    import { message, failure, type ErrorValue } from "../../i18n.svelte";
 
     let { source, pending, error = "", onsave, oncancel }: {
         source?: FeedSource;
         pending: boolean;
-        error?: string;
+        error?: ErrorValue;
         onsave: (input: FeedSourceInput) => Promise<void>;
         oncancel: () => void;
     } = $props();
@@ -194,7 +195,7 @@
             return { url: kind === "arxiv" ? arxivURL(categories, keyword) : feedURL(kind === "url" ? url : kind), error: "" };
         }
         catch (error) {
-            return { url: "", error: error instanceof Error ? error.message : "请检查订阅条件。" };
+            return { url: "", error: failure(error) };
         }
     });
 

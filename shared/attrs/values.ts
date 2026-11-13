@@ -1,15 +1,57 @@
+import { LabloomError } from "../failure";
+import { type LinkTarget } from "../types/content";
 import { validTimeSeconds } from "../content/time";
-import { attributeTypes, type AttributeDefinition, type AttributeType, type AttributeValue } from "../types/attributes";
+import { attributeTypes, type AttributeDefinition, type AttributeMetadata, type AttributeType, type AttributeValue } from "../types/attributes";
 
-type ValueRule = { empty: null | "" | readonly [] } | { default: AttributeValue };
+const optionMetadata = {
+    initial: { options: [] },
+    validate(value: Record<string, unknown>): boolean {
+        const options = value.options;
+        return Object.keys(value).length === 1 && Array.isArray(options) && options.length <= 10000
+            && options.every(item => record(item) && Object.keys(item).length === 2 && typeof item.id === "string" && !!item.id
+                && typeof item.name === "string" && !!item.name.trim() && item.name.length <= 100)
+            && new Set(options.map(item => item.id)).size === options.length
+            && new Set(options.map(item => item.name)).size === options.length;
+    }
+};
+type ValueRule = ({ empty: null | "" | readonly [] } | { default: AttributeValue }) & { metadata?: typeof optionMetadata; target?: "page" | "file" };
 const valueRules = {
     boolean: { default: false },
     string: { empty: "" }, url: { empty: "" },
     number: { empty: null }, minute: { empty: null }, hour: { empty: null },
-    day: { empty: null }, month: { empty: null }, year: { empty: null },
-    select: { empty: null }, "page-link": { empty: null }, json: { empty: null },
-    multiselect: { empty: [] }, "page-links": { empty: [] }
+    day: { empty: null }, month: { empty: null }, year: { empty: null }, recurrence: { empty: null },
+    select: { empty: null, metadata: optionMetadata }, "page-link": { empty: null, target: "page" }, file: { empty: null, target: "file" }, json: { empty: null },
+    multiselect: { empty: [], metadata: optionMetadata }, "page-links": { empty: [], target: "page" }, files: { empty: [], target: "file" }
 } as const satisfies Record<AttributeType, ValueRule>;
+
+export function attributeTargetKind(type: AttributeType): "page" | "file" | undefined {
+    const rule = valueRules[type];
+    return "target" in rule ? rule.target : undefined;
+}
+
+export function attributeTargets(type: AttributeType, value: AttributeValue): LinkTarget[] {
+    const rule = valueRules[type];
+    if (!("target" in rule)) return [];
+    const ids = Array.isArray(value) ? value : typeof value === "string" ? [value] : [];
+    return (ids as string[]).map(id => ({ kind: rule.target, id }));
+}
+
+export function defaultMetadata(type: AttributeType): AttributeMetadata {
+    const rule = valueRules[type];
+    return "metadata" in rule ? structuredClone(rule.metadata.initial) : {};
+}
+
+export function validateMetadata(type: AttributeType, value: unknown): asserts value is AttributeMetadata {
+    const rule = valueRules[type];
+    if (!record(value) || !("metadata" in rule ? rule.metadata.validate(value) : Object.keys(value).length === 0)) {
+        throw new LabloomError({ kind: "attribute-invalid-metadata", type });
+    }
+}
+
+export function convertMetadata(from: AttributeType, to: AttributeType, value: AttributeMetadata): AttributeMetadata {
+    return from === to || (["select", "multiselect"].includes(from) && ["select", "multiselect"].includes(to))
+        ? structuredClone(value) : defaultMetadata(to);
+}
 
 export function nullable(type: AttributeType): boolean {
     return "empty" in valueRules[type];
@@ -17,7 +59,7 @@ export function nullable(type: AttributeType): boolean {
 
 export function emptyValue(type: AttributeType): AttributeValue {
     const rule = valueRules[type];
-    if (!("empty" in rule)) throw new Error("此类型的属性不能清空。");
+    if (!("empty" in rule)) throw new LabloomError({ kind: "attribute-not-nullable" });
     return typeof rule.empty === "object" && rule.empty !== null ? [] : rule.empty;
 }
 
@@ -49,14 +91,10 @@ export function jsonValue(value: unknown, depth = 0): value is AttributeValue {
 }
 
 export function validateDefinition(value: unknown): asserts value is AttributeDefinition {
-    if (!record(value) || typeof value.id !== "string" || !attributeTypes.includes(value.type as never) || !record(value.metadata)) throw new Error("属性定义无效。");
-    if (value.metadata.name !== undefined && (typeof value.metadata.name !== "string" || !value.metadata.name.trim() || value.metadata.name.length > 100)) throw new Error("属性名称应为 1–100 个字符。");
-    if (value.type === "select" || value.type === "multiselect") {
-        const options = value.metadata.options;
-        if (!Array.isArray(options) || options.length > 10000 || options.some(item => !record(item) || typeof item.id !== "string" || !item.id || typeof item.name !== "string" || !item.name.trim() || item.name.length > 100)) throw new Error("选项需要稳定标识和非空名称。");
-        if (new Set(options.map(item => item.id)).size !== options.length || new Set(options.map(item => item.name)).size !== options.length) throw new Error("选项标识和名称不能重复。");
-    }
-    if (!jsonValue(value.metadata)) throw new Error("属性元数据必须是有效 JSON。");
+    if (!record(value) || typeof value.id !== "string" || !attributeTypes.includes(value.type as never) || !record(value.metadata)) throw new LabloomError({ kind: "attribute-invalid-definition" });
+    if (typeof value.name !== "string" || !value.name.trim() || value.name.length > 100) throw new LabloomError({ kind: "attribute-invalid-name" });
+    if ([value.hidden, value.readonly].some(flag => flag !== undefined && typeof flag !== "boolean")) throw new LabloomError({ kind: "attribute-invalid-permissions" });
+    validateMetadata(value.type as AttributeType, value.metadata);
 }
 
 export function validateValue(definition: AttributeDefinition, value: unknown): asserts value is AttributeValue {
@@ -76,9 +114,9 @@ export function validateValue(definition: AttributeDefinition, value: unknown): 
             break;
         case "multiselect": valid = Array.isArray(value) && new Set(value).size === value.length && value.every(id => options.some(option => option.id === id));
             break;
-        case "page-link": valid = validUUID(value);
+        case "file": case "page-link": valid = validUUID(value);
             break;
-        case "page-links": valid = Array.isArray(value) && new Set(value).size === value.length && value.every(validUUID);
+        case "files": case "page-links": valid = Array.isArray(value) && new Set(value).size === value.length && value.every(validUUID);
             break;
         case "url": {
             try {
@@ -89,27 +127,30 @@ export function validateValue(definition: AttributeDefinition, value: unknown): 
             }
             break;
         }
+        case "recurrence": valid = record(value) && Object.keys(value).length === 2 && Number.isSafeInteger(value.every) && Number(value.every) > 0 && ["minute", "hour", "day", "week", "month"].includes(String(value.unit));
+            break;
         case "json": valid = jsonValue(value);
             break;
     }
-    if (!valid) throw new Error(`“${definition.metadata.name ?? definition.id}”的值不符合 ${definition.type} 类型。`);
+    if (!valid) throw new LabloomError({ kind: "attribute-invalid-value", attrId: definition.id, name: definition.name ?? definition.id, type: definition.type });
 }
 
 export function encodeValue(definition: AttributeDefinition, value: AttributeValue): string | number | null {
     validateValue(definition, value);
     if (definition.type === "boolean") return value ? 1 : 0;
-    if (["json", "multiselect", "page-links"].includes(definition.type)) return JSON.stringify(value);
+    if (definition.type === "recurrence") return value === null ? null : JSON.stringify(value);
+    if (["json", "multiselect", "page-links", "files"].includes(definition.type)) return JSON.stringify(value);
     return value as string | number | null;
 }
 
 export function decodeValue(definition: AttributeDefinition, value: unknown): AttributeValue {
-    let result = value;
+    let result = definition.type === "recurrence" && typeof value === "string" ? JSON.parse(value) : value;
     if (definition.type === "boolean") {
-        if (value !== 0 && value !== 1) throw new Error("已保存的布尔属性无效。");
+        if (value !== 0 && value !== 1) throw new LabloomError({ kind: "attribute-invalid-boolean" });
         result = value === 1;
     }
-    else if (["json", "multiselect", "page-links"].includes(definition.type)) {
-        if (typeof value !== "string") throw new Error("已保存的复合属性无效。");
+    else if (["json", "multiselect", "page-links", "files"].includes(definition.type)) {
+        if (typeof value !== "string") throw new LabloomError({ kind: "attribute-invalid-compound" });
         result = JSON.parse(value);
     }
     validateValue(definition, result);

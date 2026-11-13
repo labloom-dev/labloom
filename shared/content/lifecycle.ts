@@ -17,20 +17,12 @@ export function pageTargets(page: GraphPage, definitions: AttributeDefinition[])
 // Containment follows UUID arrays, never reverse uses of a shared block.
 export function unreachablePages(pages: GraphPage[], blocks: Map<string, ContentBlock>, definitions: AttributeDefinition[]): string[] {
     const live = pages.filter(page => !page.attributes.deleted);
-    let candidates = live;
-    while (true) {
-        const reached = reachableFromRoots(candidates, blocks, definitions);
-        if (reached.size === candidates.length) return live.filter(page => !reached.has(page.id)).map(page => page.id);
-        // Recycling an owner also disables outgoing links in blocks whose other
-        // occurrences are all recycled. Account for those losses in this preview.
-        candidates = candidates.filter(page => reached.has(page.id));
-    }
+    const reached = reachableFromRoots(live, blocks, definitions);
+    return live.filter(page => !reached.has(page.id)).map(page => page.id);
 }
 
 function reachableFromRoots(pages: GraphPage[], blocks: Map<string, ContentBlock>, definitions: AttributeDefinition[]): Set<string> {
     const byId = new Map(pages.map(page => [page.id, page]));
-    // For retention, a linked block needs a position in at least one live page.
-    const owned = walkChildren(pages.flatMap(page => [page.titleBlockId, ...page.children]), blocks);
     const visitedPages = new Set<string>(), visitedBlocks = new Set<string>();
     const queue: Target[] = pages.filter(page => page.attributes.independent === true).map(page => ({ kind: "page", id: page.id }));
     while (queue.length) {
@@ -43,10 +35,10 @@ function reachableFromRoots(pages: GraphPage[], blocks: Map<string, ContentBlock
             queue.push(...[page.titleBlockId, ...page.children].map(id => ({ kind: "block" as const, id })), ...pageTargets(page, definitions));
         }
         else {
-            if (!owned.has(target.id) || visitedBlocks.has(target.id)) continue;
+            if (visitedBlocks.has(target.id)) continue;
             visitedBlocks.add(target.id);
             const block = blocks.get(target.id);
-            if (block) queue.push(...block.children.map(id => ({ kind: "block" as const, id })), ...references(block));
+            if (block) queue.push(...block.children.map(id => ({ kind: "block" as const, id })), ...references(block).filter(target => target.kind === "page"));
         }
     }
     return visitedPages;

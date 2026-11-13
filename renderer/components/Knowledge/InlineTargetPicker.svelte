@@ -11,7 +11,7 @@
         {#each rows as row, index (row.key)}<button class="compact-item" class:active={index === active} onclick={() => choose(index)}>{row.label}<small>{row.kind}</small></button>{/each}
         {#if !rows.length}<p>没有找到页面</p>{/if}
     </div>
-    {#if error}<p class="error">{error}</p>{/if}
+    {#if error}<p class="error">{message(error)}</p>{/if}
 </div>
 <style>
     .inline-picker { position: fixed; inset: auto; margin: 0; width: min(320px, calc(100vw - 16px)); }
@@ -23,12 +23,13 @@
     p { color: var(--c-muted); font-size: var(--font-secondary); }
 </style>
 <script lang="ts">
+    import { failure, message, type ErrorValue } from "../../i18n.svelte";
     import type { PageSummary, PageRecord, Target } from "../../../shared/types/content";
     import { blockText } from "../../../shared/content/blocks";
     import { blockKindNames } from "../../../shared/content/block-labels";
-    import { message } from "./state.svelte";
+
     let { position, bounds, onselect, onclose }: { position: { x: number; y: number }; bounds: { left: number; right: number; bottom: number }; onselect: (target: Target, label: string) => void; onclose: () => void } = $props();
-    let keyword = $state(""), active = $state(0), pages = $state<PageSummary[]>([]), chosen = $state.raw<PageRecord | null>(null), error = $state("");
+    let keyword = $state(""), active = $state(0), pages = $state<PageSummary[]>([]), chosen = $state.raw<PageRecord | null>(null), error = $state<ErrorValue>("");
     const left = $derived(Math.max(bounds.left, Math.min(position.x, bounds.right - 320))), top = $derived(Math.max(40, Math.min(position.y + 6, bounds.bottom - 280)));
     const rows = $derived.by(() => {
         if (!chosen) return pages.map(page => ({ key: page.id, target: { kind: "page" as const, id: page.id }, label: page.title || "未命名", kind: "" }));
@@ -48,7 +49,7 @@
             void window.api.knowledge.list({ keyword: query, limit: 40 }).then(result => {
                 if (live) pages = result.items;
             }, problem => {
-                if (live) error = message(problem);
+                if (live) error = failure(problem);
             });
         }, 150);
         return () => {
@@ -65,7 +66,7 @@
             chosen = await window.api.knowledge.get(page.id); active = 0;
         }
         catch (problem) {
-            error = message(problem);
+            error = failure(problem);
         }
     }
     function keys(event: KeyboardEvent): void {

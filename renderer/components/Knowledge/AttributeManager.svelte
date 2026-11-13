@@ -3,26 +3,29 @@
         <button class="button" onclick={create}>新建属性</button>
         {#each [true, false] as builtin (builtin)}
             <h3>{builtin ? "内置属性" : "自定义属性"}</h3>
-            {#each definitions.filter(item => isBuiltin(item.id) === builtin && !item.metadata.hidden && item.id !== "deleted") as item (item.id)}
-                <button class="definition" class:active={draft?.id === item.id} onclick={() => select(item.id)}><span>{item.metadata.name || item.id}</span><small>{labels[item.type]}</small></button>
+            {#each definitions.filter(item => isBuiltin(item.id) === builtin && !item.hidden && item.id !== "deleted") as item (item.id)}
+                <button class="definition" class:active={draft?.id === item.id} onclick={() => select(item.id)}><span>{item.name || item.id}</span><small>{labels[item.type]}</small></button>
             {/each}
         {/each}
     </nav>
     <div class="manager-body">
         {#if draft}
-            <label>名称<input bind:value={draft.metadata.name} maxlength="100" /></label>
-            <label>类型<select bind:value={draft.type} disabled={isBuiltin(draft.id)}>{#each attributeTypes as type (type)}<option value={type}>{labels[type]}</option>{/each}</select></label>
+            <label>名称<input bind:value={draft.name} maxlength="100" disabled={isBuiltin(draft.id)} /></label>
+            <label>类型<select value={draft.type} onchange={event => {
+                const type = event.currentTarget.value as AttributeType;
+                draft = { ...draft!, type, metadata: convertMetadata(draft!.type, type, draft!.metadata) };
+            }} disabled={isBuiltin(draft.id)}>{#each attributeTypes.filter(type => type !== "recurrence" || draft?.type === "recurrence") as type (type)}<option value={type}>{labels[type]}</option>{/each}</select></label>
             {#if draft.type === "select" || draft.type === "multiselect"}
                 <p class="muted">选项改名会保留原有选择；移除选项前会预览影响。</p>
                 <div bind:this={optionsRoot}>
                     {#each draft.metadata.options ?? [] as option (option.id)}
-                        <div class="option"><input bind:value={option.name} aria-label="选项名称" disabled={isBuiltin(draft.id) && draft.id !== "tags"} /><button class="text-button" disabled={isBuiltin(draft.id) && draft.id !== "tags"} onclick={() => draft!.metadata.options = draft!.metadata.options!.filter(item => item.id !== option.id)}>移除</button></div>
+                        <div class="option"><input bind:value={option.name} aria-label="选项名称" disabled={isBuiltin(draft.id) && !editableBuiltinMetadata(draft.id)} /><button class="text-button" disabled={isBuiltin(draft.id) && !editableBuiltinMetadata(draft.id)} onclick={() => draft!.metadata.options = draft!.metadata.options!.filter(item => item.id !== option.id)}>移除</button></div>
                     {/each}
                 </div>
-                <button class="text-button" disabled={isBuiltin(draft.id) && draft.id !== "tags"} onclick={addOption}>＋ 添加选项</button>
+                <button class="text-button" disabled={isBuiltin(draft.id) && !editableBuiltinMetadata(draft.id)} onclick={addOption}>＋ 添加选项</button>
             {/if}
             <footer><button class="button primary" disabled={busy} onclick={() => apply(draft)}>保存定义</button>{#if !isBuiltin(draft.id)}<button class="button" disabled={busy} onclick={() => apply(null)}>删除属性</button>{/if}</footer>
-            {#if error}<p class="error">{error}</p>{/if}
+            {#if error}<p class="error">{message(error)}</p>{/if}
         {/if}
     </div>
 </section>
@@ -42,13 +45,15 @@
     footer { margin-top: 12px; }
 </style>
 <script lang="ts">
+    import { failure, message, type ErrorValue } from "../../i18n.svelte";
     import { tick } from "svelte";
-    import { attributeTypes, type AttributeDefinition } from "../../../shared/types/attributes";
-    import { isBuiltin } from "../../../shared/attrs/builtins";
-    import { define, message, writeFromTab } from "./state.svelte";
+    import { attributeTypes, type AttributeDefinition, type AttributeType } from "../../../shared/types/attributes";
+    import { editableBuiltinMetadata, isBuiltin } from "../../../shared/attrs/builtins";
+    import { attributeLabels as labels } from "./attribute-labels";
+    import { convertMetadata } from "../../../shared/attrs/values";
+    import { define, writeFromTab } from "./state.svelte";
     let { definitions, tabId }: { definitions: AttributeDefinition[]; tabId: string } = $props();
-    let draft = $state<AttributeDefinition | null>(null), busy = $state(false), error = $state("");
-    const labels = { string: "文本", number: "数字", boolean: "勾选", minute: "时间（分）", hour: "时间（时）", day: "日期", month: "年月", year: "年份", select: "单选", multiselect: "多选", url: "网址", "page-link": "页面链接", "page-links": "多个页面链接", json: "JSON" };
+    let draft = $state<AttributeDefinition | null>(null), busy = $state(false), error = $state<ErrorValue>("");
     let optionsRoot = $state<HTMLDivElement>();
     async function addOption(): Promise<void> {
         if (!draft) return;
@@ -62,7 +67,7 @@
         error = "";
     }
     function create(): void {
-        draft = { id: `custom:${crypto.randomUUID()}`, type: "string", metadata: { name: "新属性" } };
+        draft = { id: `custom:${crypto.randomUUID()}`, type: "string", name: "新属性", metadata: {} };
         error = "";
     }
     async function apply(value: AttributeDefinition | null): Promise<void> {
@@ -74,7 +79,7 @@
             }
         }
         catch (problem) {
-            error = message(problem);
+            error = failure(problem);
         }
         finally {
             busy = false;

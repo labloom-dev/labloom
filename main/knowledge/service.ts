@@ -1,54 +1,88 @@
+import { LabloomError } from "../../shared/failure";
 import { nowSeconds } from "../../shared/content/time";
 import { randomUUID } from "node:crypto";
-import { record, validUUID } from "../../shared/attrs/values";
+import { attributeTargets, decodeValue, record, validUUID } from "../../shared/attrs/values";
 import { blockText, payload, references, validateBlock, validTarget } from "../../shared/content/blocks";
 import { type AttributeDefinition, type AttributeImpact, type AttributeValue } from "../../shared/types/attributes";
 import { pageKinds, type Backlink, type BlockDeletion, type ChangePreview, type CommitResult, type ContentBlock, type EditCommit, type KnowledgeChange, type PageKind, type PageRecord, type Placement, type ResolvedTarget, type Target } from "../../shared/types/content";
 import { fingerprint } from "./attributes";
-import { EditChanges, type ReminderChange, type RowChanges } from "./changes";
+import { EditChanges, type RowChanges } from "./changes";
+import { type WorkspaceDatabase } from "../storage/database";
+import { TimerService } from "./timers";
 import { KnowledgeRecords } from "./records";
 
 class DefinitionRollback extends Error {
     constructor(readonly impact: AttributeImpact) { super("definition preview"); }
 }
 export function checkTab(id: unknown): asserts id is string {
-    if (typeof id !== "string" || !id || id.length > 100) throw new Error("编辑会话无效。");
+    if (typeof id !== "string" || !id || id.length > 100) throw new LabloomError({ kind: "edit-invalid-session" });
 }
+const workspaceEffects = new WeakMap<object, (() => void)[]>();
 export class KnowledgeService extends KnowledgeRecords {
     onCommitted?: (tab: string, page: string, rows: RowChanges) => void;
     onInvalidated?: (keys: string[], exceptTab?: string) => void;
-    onScheduled?: (pages: ReminderChange[]) => void;
+    readonly timers: TimerService;
+    constructor(db: WorkspaceDatabase, timeZone: () => string = () => "system", clock: () => number = Date.now) {
+        super(db, timeZone);
+        this.timers = new TimerService(this, timeZone, clock);
+        this.attributes.onWritten = (pageId, fields) => this.timers.recalculate(pageId, fields);
+    }
     onChanged?: (change: KnowledgeChange) => void;
+    private get commitEffects(): (() => void)[] {
+        let effects = workspaceEffects.get(this.sql);
+        if (!effects) {
+            effects = [];
+            workspaceEffects.set(this.sql, effects);
+        }
+        return effects;
+    }
+
+    transaction<T>(action: () => T): T {
+        const start = this.commitEffects.length;
+        let result: T;
+        try {
+            result = this.sql.transaction(action)();
+        }
+        catch (error) {
+            this.commitEffects.splice(start);
+            throw error;
+        }
+        if (!this.sql.inTransaction) for (const effect of this.commitEffects.splice(0)) effect();
+        return result;
+    }
+
+    afterCommit(action: () => void): void {
+        if (this.sql.inTransaction) this.commitEffects.push(action);
+        else action();
+    }
+
+    invalidateHistory(keys: string[], exceptTab?: string): void {
+        this.afterCommit(() => this.onInvalidated?.(keys, exceptTab));
+    }
 
     private writable(id: string): ReturnType<KnowledgeRecords["header"]> {
         const page = this.header(id);
-        if (this.flags(id).deleted) throw new Error("回收站中的页面不能编辑。");
+        if (this.flags(id).deleted) throw new LabloomError({ kind: "page-recycled-readonly" });
         return page;
     }
 
     private planEdit(input: EditCommit): EditChanges {
         if (!record(input) || !Number.isSafeInteger(input.batch) || input.batch < 0 || !Array.isArray(input.blocks) || !record(input.attributes ?? {}) ||
-            !Array.isArray(input.detach ?? []) || input.detach?.some(id => typeof id !== "string")) throw new Error("页面编辑参数无效。");
+            !Array.isArray(input.detach ?? []) || input.detach?.some(id => typeof id !== "string")) throw new LabloomError({ kind: "edit-invalid-input" });
         checkTab(input.tabId);
         const page = this.writable(input.pageId), plan = new EditChanges(this), submitted = new Set<string>();
+        if (page.kind === "feed" && (input.pageChildren?.length || input.blocks.some(block => block.id !== page.titleBlockId || block.children.length))) throw new LabloomError({ kind: "feed-body-forbidden" });
         for (const block of input.blocks) {
             validateBlock(block);
-            if (submitted.has(block.id)) throw new Error("一次编辑只能为同一块提交一份内容。");
+            if (submitted.has(block.id)) throw new LabloomError({ kind: "edit-duplicate-block" });
             submitted.add(block.id);
             const previous = this.blockRow(block.id);
-            if (previous?.type === "title" && block.type !== "title" || block.id === page.titleBlockId && block.type !== "title") throw new Error("页面标题必须保持标题块类型。");
-            if (previous?.type === "source") throw new Error("来源片段为只读内容。");
-            if (block.type === "source") {
-                // A shallow clipboard copy points at the anchor; its text is a refreshable cache.
-                const source = block.payload.source!;
-                if (previous || block.payload.inline.length || !this.statement("SELECT 1 FROM anchors WHERE id=?").get(source.anchorId))
-                    throw new Error("来源片段为只读内容。");
-            }
+            if (previous?.type === "title" && block.type !== "title" || block.id === page.titleBlockId && block.type !== "title") throw new LabloomError({ kind: "block-title-type" });
             plan.putBlock(block);
         }
         if (input.pageChildren !== undefined) plan.pageChildren(page.id, input.pageChildren);
         for (const id of submitted) {
-            if (!this.owners(id).includes(page.id) && !plan.owners(id).includes(page.id)) throw new Error("编辑包含不属于当前页面的块。");
+            if (!this.owners(id).includes(page.id) && !plan.owners(id).includes(page.id)) throw new LabloomError({ kind: "block-not-owned" });
         }
         plan.verifyContainment();
         plan.attributes(page.id, input.attributes ?? {}, input.detach);
@@ -61,7 +95,7 @@ export class KnowledgeService extends KnowledgeRecords {
     private validateSchedule(plan: EditChanges, id: string, attrs: Record<string, AttributeValue>): void {
         if ("schedule_start" in attrs || "schedule_end" in attrs) {
             const start = plan.readValue(id, "schedule_start")?.value, end = plan.readValue(id, "schedule_end")?.value;
-            if (typeof start === "number" && typeof end === "number" && end < start) throw new Error("结束时间不能早于开始时间。");
+            if (typeof start === "number" && typeof end === "number" && end < start) throw new LabloomError({ kind: "schedule-reversed" });
         }
     }
 
@@ -80,11 +114,12 @@ export class KnowledgeService extends KnowledgeRecords {
     finish(plan: EditChanges, pageId: string, tabId: string, batch: number, preview: ChangePreview | null, confirmation?: string, capture?: (rows: RowChanges) => void): CommitResult {
         if (preview && confirmation !== preview.token) return { status: "confirmation", preview };
         this.recycle(plan, preview?.recycled.map(p => p.id) ?? []);
-        const reminders = plan.reminderChanges();
         plan.persist();
-        if (reminders.length) this.onScheduled?.(reminders);
-        if (capture) capture(plan.rows);
-        else this.onCommitted?.(tabId, pageId, plan.rows);
+        for (const change of plan.timerChanges()) this.timers.recalculate(change.pageId, change.fields);
+        this.afterCommit(() => {
+            if (capture) capture(plan.rows);
+            else this.onCommitted?.(tabId, pageId, plan.rows);
+        });
         const changed = plan.changed();
         return { status: "saved", batch, changed, sharedUses: this.sharedUses(changed.blocks) };
     }
@@ -99,7 +134,7 @@ export class KnowledgeService extends KnowledgeRecords {
 
     transact(tabId: string, action: () => CommitResult): CommitResult {
         checkTab(tabId);
-        const result = this.sql.transaction(action)();
+        const result = this.transaction(action);
         if (result.status === "saved" && !this.sql.inTransaction) this.onChanged?.({ sourceTab: tabId, ...result.changed });
         return result;
     }
@@ -122,14 +157,14 @@ export class KnowledgeService extends KnowledgeRecords {
         if (source.kind === "page") plan.pageChildren(source.id, children);
         else {
             const block = plan.block(source.id);
-            if (!block) throw new Error("块容器不存在。");
+            if (!block) throw new LabloomError({ kind: "block-container-missing" });
             plan.putBlock({ ...block, children });
         }
     }
 
     removeEverywhere(plan: EditChanges, id: string): ReturnType<KnowledgeRecords["uses"]> {
         const uses = this.uses(id);
-        if (uses.some(u => u.slot === "title")) throw new Error("页面标题块不能单独删除。");
+        if (uses.some(u => u.slot === "title")) throw new LabloomError({ kind: "block-title-delete" });
         const containers = new Map(uses.map(u => [u.kind + ":" + u.id, u]));
         for (const container of containers.values()) this.writeChildren(plan, container, plan.children(container).filter(child => child !== id));
         return uses;
@@ -139,7 +174,7 @@ export class KnowledgeService extends KnowledgeRecords {
         const names: Record<ContentBlock["type"], string> = {
             title: "标题", paragraph: "段落", heading_1: "一级标题", heading_2: "二级标题", heading_3: "三级标题",
             unordered_list: "无序列表项", ordered_list: "有序列表项", blockquote: "引文", callout: "提示块",
-            code: "代码块", table: "表格", hr: "分隔线", source: "来源片段", blocked_reference: "链接引用"
+            code: "代码块", table: "表格", hr: "分隔线", blocked_reference: "链接引用"
         };
         const target = block.payload.target;
         if (block.type === "blocked_reference" && target) {
@@ -160,7 +195,7 @@ export class KnowledgeService extends KnowledgeRecords {
             const { pageId, blockId, tabId } = input;
             this.writable(pageId);
             const plan = new EditChanges(this), block = plan.block(blockId), pages = this.owners(blockId);
-            if (!block || !pages.includes(pageId)) throw new Error("待删除的块不属于此页面。");
+            if (!block || !pages.includes(pageId)) throw new LabloomError({ kind: "block-delete-not-owned" });
             const uses = this.removeEverywhere(plan, blockId);
             plan.touches.add(pageId);
             plan.blocks.add(blockId);
@@ -175,22 +210,22 @@ export class KnowledgeService extends KnowledgeRecords {
     place(input: Placement, confirmation?: string): CommitResult {
         return this.transact(input?.tabId, () => {
             const { position, action, tabId } = input;
-            if (!record(position) || !Number.isSafeInteger(position.index) || position.index < 0 || !validUUID(position.blockId)) throw new Error("块位置无效。");
+            if (!record(position) || !Number.isSafeInteger(position.index) || position.index < 0 || !validUUID(position.blockId)) throw new LabloomError({ kind: "block-invalid-position" });
             const { pageId, containerId, index } = position;
-            this.writable(pageId);
+            if (this.writable(pageId).kind === "feed") throw new LabloomError({ kind: "feed-body-forbidden" });
             const container: Target = { kind: containerId === pageId ? "page" : "block", id: containerId };
-            if (container.kind === "block" && !this.owners(containerId).includes(pageId)) throw new Error("容器不属于此页面。");
+            if (container.kind === "block" && !this.owners(containerId).includes(pageId)) throw new LabloomError({ kind: "block-container-not-owned" });
             const plan = new EditChanges(this), children = [...plan.children(container)];
-            if (children[index] !== position.blockId) throw new Error("块位置已发生变化，请重新操作。");
+            if (children[index] !== position.blockId) throw new LabloomError({ kind: "block-position-changed" });
             if (action === "insert") {
                 const block = plan.block(input.blockId ?? "");
-                if (!block || block.type === "title" || !plan.owners(block.id).some(id => !plan.flags(id).deleted)) throw new Error("同步块目标不可用。");
+                if (!block || block.type === "title" || !plan.owners(block.id).some(id => !plan.flags(id).deleted)) throw new LabloomError({ kind: "block-sync-unavailable" });
                 children.splice(index + 1, 0, block.id);
             }
             else if (action === "remove") children.splice(index, 1);
             else if (action === "clone" || action === "duplicate") {
                 const block = plan.block(position.blockId);
-                if (!block) throw new Error("缺失块不能复制。");
+                if (!block) throw new LabloomError({ kind: "block-copy-missing" });
                 const copy = { ...block, id: randomUUID() };
                 plan.putBlock(copy);
                 if (action === "duplicate") children.splice(index + 1, 0, copy.id);
@@ -198,7 +233,7 @@ export class KnowledgeService extends KnowledgeRecords {
             }
             else {
                 const dest = action === "move-up" ? index - 1 : action === "move-down" ? index + 1 : -1;
-                if (dest < 0 || dest >= children.length) throw new Error("无法移动到此位置。");
+                if (dest < 0 || dest >= children.length) throw new LabloomError({ kind: "block-move-invalid" });
                 [children[index], children[dest]] = [children[dest], children[index]];
             }
             this.writeChildren(plan, container, children);
@@ -210,7 +245,7 @@ export class KnowledgeService extends KnowledgeRecords {
     }
 
     private selectPages(ids: string[]): string[] {
-        if (!Array.isArray(ids) || !ids.length || !ids.every(validUUID)) throw new Error("页面选择无效。");
+        if (!Array.isArray(ids) || !ids.length || !ids.every(validUUID)) throw new LabloomError({ kind: "page-invalid-selection" });
         for (const id of ids) this.header(id);
         return [...new Set(ids)];
     }
@@ -230,7 +265,8 @@ export class KnowledgeService extends KnowledgeRecords {
         return this.transact(tabId, () => {
             const selected = this.selectPages(ids), plan = new EditChanges(this);
             for (const id of selected) {
-                plan.attributes(id, { deleted: false, independent: true, recycle_reason: null, recycled_at: null, ...(plan.readValue(id, "reminder_at") ? { reminder_at: null } : {}) }, [], true);
+                plan.attributes(id, { deleted: false, recycle_reason: null, recycled_at: null }, [], true);
+                if (!plan.reachable({ kind: "page", id }, new Set())) plan.attributes(id, { independent: true }, [], true);
                 plan.touches.add(id);
             }
             return this.finish(plan, selected[0], tabId, 0, null);
@@ -248,38 +284,60 @@ export class KnowledgeService extends KnowledgeRecords {
     }
 
     create(kind: PageKind = "editable", title = "", initial: Record<string, AttributeValue> = {}, parentId?: string, tabId = ""): PageRecord {
-        if (!pageKinds.includes(kind) || typeof title !== "string" || title.length > 1000 || !record(initial)) throw new Error("新页面参数无效。");
+        if (!pageKinds.includes(kind) || typeof title !== "string" || title.length > 1000 || !record(initial)) throw new LabloomError({ kind: "page-invalid-create" });
         const changed = { pages: [] as string[], blocks: [] as string[] };
-        const page = this.sql.transaction(() => {
+        const page = this.transaction(() => {
             if (parentId) this.writable(parentId);
+            if (kind === "annotation" && initial.annotation_file != null) {
+                if (!parentId || this.header(parentId).kind !== "paper") throw new LabloomError({ kind: "annotation-paper-required" });
+                const files = this.get(parentId).attributes.paper_files as string[];
+                if (!files.includes(String(initial.annotation_file))) throw new LabloomError({ kind: "paper-file-removed" });
+            }
             const id = randomUUID(), titleId = randomUUID(), bodyId = randomUUID(), plan = new EditChanges(this);
             for (const block of [{ id: titleId, type: "title" as const, payload: payload("title", title), children: [] },
-                { id: bodyId, type: "paragraph" as const, payload: payload("paragraph"), children: [] }]) this.putBlock(block);
-            this.statement("INSERT INTO pages(id,kind,title_block_id,children) VALUES (?,?,?,?)").run(id, kind, titleId, JSON.stringify([bodyId]));
+                ...kind === "feed" ? [] : [{ id: bodyId, type: "paragraph" as const, payload: payload("paragraph"), children: [] }]]) this.putBlock(block);
+            this.statement("INSERT INTO pages(id,kind,title_block_id,children) VALUES (?,?,?,?)").run(id, kind, titleId, JSON.stringify(kind === "feed" ? [] : [bodyId]));
+            this.attributes.initializePage(id);
             const now = nowSeconds();
-            plan.attributes(id, { independent: kind !== "annotation", ...(kind === "task" ? { task_status: "todo", priority: "normal" } : {}), ...initial, created_at: now, modified_at: now, deleted: false }, [], true);
+            plan.attributes(id, { independent: kind !== "annotation", ...(kind === "task" ? { task_status: "todo", priority: "normal" } : {}), ...(kind === "feed" ? { feed_status: "enabled", feed_refresh: { every: 60, unit: "minute" } } : {}), ...initial, created_at: now, modified_at: now, deleted: false }, [], true);
             this.validateSchedule(plan, id, initial);
-            if (parentId) {
+            if (parentId && kind === "annotation") {
+                if (this.header(parentId).kind !== "paper") throw new LabloomError({ kind: "annotation-paper-required" });
+                const current = this.get(parentId).attributes.paper_annotations as string[];
+                plan.attributes(parentId, { paper_annotations: [...current, id] }, [], true);
+                const before = plan.rows.before["page:" + id] as import("./changes").PagePatch;
+                const after = plan.rows.after["page:" + id] as import("./changes").PagePatch;
+                after.values ??= {}; after.values.deleted = { value: 0 };
+                for (const blockId of [titleId, bodyId]) {
+                    const row = this.blockRow(blockId)!;
+                    plan.rows.before["block:" + blockId] = structuredClone(row);
+                    plan.rows.after["block:" + blockId] = structuredClone(row);
+                }
+                before.creation = true;
+                before.values = { ...structuredClone(after.values), deleted: { value: 1 } };
+                plan.touches.add(parentId);
+            }
+            else if (parentId) {
                 const reference = randomUUID();
                 plan.putBlock({ id: reference, type: "blocked_reference", payload: { ...payload("blocked_reference"), target: { kind: "page", id } }, children: [] });
                 plan.pageChildren(parentId, [...this.children({ kind: "page", id: parentId }), reference]);
                 plan.touches.add(parentId);
             }
-            if (!plan.reachable({ kind: "page", id }, new Set())) throw new Error("非独立页面需要从存活页面建立引用入口。");
-            const reminders = plan.reminderChanges();
+            if (!plan.reachable({ kind: "page", id }, new Set())) throw new LabloomError({ kind: "page-retaining-reference-required" });
             plan.persist();
-            this.onScheduled?.(reminders);
-            if (parentId) this.onInvalidated?.(["page:" + parentId]);
+            for (const change of plan.timerChanges()) this.timers.recalculate(change.pageId, change.fields);
+            if (parentId && kind === "annotation" && tabId) this.afterCommit(() => this.onCommitted?.(tabId, parentId, plan.rows));
+            else if (parentId) this.invalidateHistory(["page:" + parentId]);
             changed.pages = [...plan.pages];
-            changed.blocks = [titleId, bodyId, ...plan.blocks];
+            changed.blocks = [titleId, ...kind === "feed" ? [] : [bodyId], ...plan.blocks];
             return this.get(id);
-        })();
+        });
         if (!this.sql.inTransaction) this.onChanged?.({ sourceTab: tabId, ...changed });
         return page;
     }
 
     resolve(target: Target): ResolvedTarget | null {
-        if (!validTarget(target)) throw new Error("引用目标无效。");
+        if (!validTarget(target)) throw new LabloomError({ kind: "reference-invalid" });
         if (target.kind === "block") {
             const plan = new EditChanges(this), block = plan.block(target.id), owners = plan.owners(target.id);
             if (!block || !owners.length) return { status: "deleted", title: "已删除", text: "" };
@@ -297,7 +355,8 @@ export class KnowledgeService extends KnowledgeRecords {
         for (const edge of this.incoming({ kind: "page", id })) {
             const block = edge.sourceKind === "block";
             for (const owner of block ? this.owners(edge.sourceId) : [edge.sourceId]) {
-                if (!result.has(owner) || block) result.set(owner, { sourceId: owner, title: this.title(owner), sourceKind: block ? "reference" : "attribute", deleted: this.flags(owner).deleted });
+                const before = result.get(owner), fields = [...new Set([...(before?.sourceFields ?? []), ...block ? [] : [edge.sourceField]])];
+                result.set(owner, { sourceId: owner, title: this.title(owner), sourceKind: block || before?.sourceKind === "reference" ? "reference" : "attribute", ...(fields.length ? { sourceFields: fields } : {}), deleted: this.flags(owner).deleted });
             }
         }
         return [...result.values()];
@@ -305,12 +364,15 @@ export class KnowledgeService extends KnowledgeRecords {
 
     rebuildLinks(): void {
         this.sql.transaction(() => {
-            this.statement("DELETE FROM link_index").run();
-            const insert = this.statement("INSERT OR IGNORE INTO link_index(source_kind,source_id,source_field,target_kind,target_id,retains) VALUES (?,?,?,?,?,1)");
+            this.statement("DELETE FROM link_refs").run();
+            const insert = this.statement("INSERT OR IGNORE INTO link_refs(source_kind,source_id,source_field,target_kind,target_id) VALUES (?,?,?,?,?)");
             const ids = this.statement("SELECT id FROM blocks").pluck().all() as string[];
             for (const block of this.readBatch(ids)) for (const t of references(block)) insert.run("block", block.id, "payload", t.kind, t.id);
-            const rows = this.statement("SELECT page_id AS pageId, attr_id AS field, value, type FROM page_attrs JOIN attrs ON attrs.id=attr_id WHERE type IN ('page-link','page-links') AND value IS NOT NULL").all() as { pageId: string; field: string; value: string; type: string }[];
-            for (const row of rows) for (const id of row.type === "page-link" ? [row.value] : JSON.parse(row.value)) insert.run("page", row.pageId, row.field, "page", id);
+            const rows = this.statement("SELECT page_id AS pageId, attr_id AS field, value, type FROM page_attrs JOIN attrs_meta ON attrs_meta.id=attr_id WHERE type IN ('page-link','page-links','file','files') AND value IS NOT NULL").all() as { pageId: string; field: string; value: string; type: AttributeDefinition["type"] }[];
+            for (const row of rows) {
+                const definition = this.attributes.definition(row.field);
+                for (const target of attributeTargets(row.type, decodeValue(definition, row.value))) insert.run("page", row.pageId, row.field, target.kind, target.id);
+            }
         })();
     }
 
@@ -318,29 +380,34 @@ export class KnowledgeService extends KnowledgeRecords {
         checkTab(sourceTab);
         let saved: KnowledgeChange | undefined;
         try {
-            this.sql.transaction(() => {
+            this.transaction(() => {
                 const impact = this.attributes.previewDefinition(id, definition);
                 const owners = this.statement("SELECT page_id AS pageId FROM page_attrs WHERE attr_id=?").all(id) as { pageId: string }[];
                 const plan = new EditChanges(this);
-                const old = this.statement("SELECT type FROM attrs WHERE id=?").get(id) as { type: string } | undefined;
+                const old = this.statement("SELECT type FROM attrs_meta WHERE id=?").get(id) as { type: string } | undefined;
+                const previous = old ? this.attributes.definition(id) : undefined;
+                const previousLinks = new Map(owners.map(({ pageId }) => [pageId, this.outgoing({ kind: "page", id: pageId })]));
                 this.attributes.applyDefinition(id, definition, impact.token);
-                if ([old?.type, definition?.type].some(type => type === "page-link" || type === "page-links")) {
+                const next = definition ? this.attributes.definition(id) : undefined;
+                if ([old?.type, definition?.type].some(type => ["page-link", "page-links", "file", "files"].includes(type ?? ""))) {
                     for (const { pageId } of owners) {
                         const value = plan.readValue(pageId, id)?.value;
-                        const targets: string[] = typeof value !== "string" ? [] : definition?.type === "page-link" ? [value] : definition?.type === "page-links" ? JSON.parse(value) : [];
-                        plan.setLinks({ kind: "page", id: pageId }, id, targets.map(id => ({ kind: "page", id })));
+                        const targets = next && value !== undefined ? attributeTargets(next.type, decodeValue(next, value)) : [];
+                        plan.setLinks({ kind: "page", id: pageId }, id, targets, previousLinks.get(pageId));
                     }
                 }
                 const ids = plan.lostPages();
                 const combined: AttributeImpact = { ...impact, token: fingerprint({ impact: impact.token, ids }), recycled: ids.map(id => ({ id, title: this.title(id) })) };
                 if ((impact.pages.length || ids.length) && token !== combined.token) throw new DefinitionRollback(combined);
                 this.recycle(plan, ids);
-                const reminders = plan.reminderChanges();
                 plan.persist();
-                this.onScheduled?.(reminders);
-                this.onInvalidated?.([...new Set([...impact.pages.map(p => p.id), ...ids])].map(id => "page:" + id));
+                for (const change of plan.timerChanges()) this.timers.recalculate(change.pageId, change.fields);
+                if (previous?.type !== next?.type) for (const { pageId } of owners) this.timers.recalculate(pageId, [id]);
+                const removedOptions = previous?.metadata.options?.some(option => !next?.metadata.options?.some(value => value.id === option.id));
+                this.invalidateHistory([...new Set([...impact.pages.map(p => p.id), ...ids])].map(id => "page:" + id)
+                    .concat(!next || previous?.type !== next.type || removedOptions ? ["attribute:" + id] : []));
                 saved = { ...plan.changed(), sourceTab, definition: id, pages: [...new Set([...owners.map(p => p.pageId), ...ids])] };
-            })();
+            });
         }
         catch (error) {
             if (error instanceof DefinitionRollback) return error.impact;

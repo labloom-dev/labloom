@@ -4,7 +4,7 @@
         <button onclick={openInTab} disabled={closing}>在标签页中打开</button>
         <button onclick={close} disabled={closing}>关闭</button>
     </header>
-    {#if current.state.error}<p class="error">保存失败：{current.state.error}</p>{/if}
+    {#if current.state.error}<p class="error">{message(current.state.error)}</p>{/if}
     {#if current.state.page && !current.state.loading}
         <div class="body-only"><Editor session={current} {tabId} /></div>
     {:else}<p>正在读取…</p>{/if}
@@ -26,6 +26,7 @@
     import Editor from "../Editor/Editor.svelte";
     import { session, knowledgeState } from "./state.svelte";
     import { openPage } from "../layout/navigation";
+    import { message } from "../../i18n.svelte";
     let { pageId, tabId, position, onclose }: { pageId: string; tabId: string; position: { x: number; y: number }; onclose: () => void } = $props();
     const current = untrack(() => session(tabId, pageId));
     $effect(() => {
@@ -41,7 +42,7 @@
         closing = true;
         const saved = await current.flush();
         closing = false;
-        if (!saved) knowledgeState.error = current.state.error || "批注尚未保存，请结束输入法组字后重试。";
+        if (!saved) knowledgeState.error = current.state.error || { kind: "page-composing" };
         return saved;
     }
     async function close(): Promise<void> {

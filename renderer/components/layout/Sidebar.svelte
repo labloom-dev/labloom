@@ -1,17 +1,12 @@
 <nav class="activity" aria-label="主导航">
     {#each destinations.filter(item => ["overview", "feed", "library", "papers", "calendar"].includes(item.type)) as item (item.type)}
-        <button class:active={activeType === item.type} aria-label={item.title} title={tooltip(item.type)} onclick={() => {
-            if (item.type === "library") {
-                shell.collapsed = false; persistPanel();
-            }
-            else openDestination(item.type);
-        }}><Icon name={item.icon} size={20} /></button>
+        <button class:active={activeType === item.type} aria-label={item.title} title={tooltip(item.type)} onclick={() => openDestination(item.type)}><Icon name={item.icon} size={20} /></button>
     {/each}
     <button class="settings" class:active={activeType === "settings"} aria-label="偏好设置" title={tooltip("settings")} onclick={() => openDestination("settings")}><Icon name="settings" /></button>
 </nav>
 {#if !shell.collapsed}
     <aside class="left-panel" style:width={shell.width + "px"}>
-        <header><span>知识库</span><button aria-label="打开完整知识库" title="打开完整知识库" onclick={() => openDestination("library")}><Icon name="library" size={16} /></button></header>
+        <header><span>知识库</span></header>
         <input class="filter" type="search" placeholder="筛选标题…" aria-label="筛选标题" bind:value={filter} />
         <div class="groups">
             <SidebarGroup title="固定" query={{ pinned: true }} keyword={applied} initiallyOpen />
@@ -31,7 +26,6 @@
     .settings { margin-top: auto; }
     .left-panel { display: flex; flex-direction: column; flex-shrink: 0; min-width: 0; min-height: 0; background: var(--c-sidebar-background); font-size: var(--font-body); }
     header { display: flex; align-items: center; justify-content: space-between; height: var(--tabbar-height); flex-shrink: 0; padding-inline: var(--panel-indent); }
-    header button { width: var(--button-height); height: var(--button-height); }
     .filter { height: var(--button-height); min-width: 0; margin: 0 var(--panel-indent) 4px; padding-inline: 6px; border: var(--border-width) solid var(--c-line); border-radius: var(--control-radius); background: var(--c-paper); color: inherit; font: inherit; }
     .groups { overflow: auto; flex: 1; min-height: 0; }
 </style>

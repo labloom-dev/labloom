@@ -15,10 +15,11 @@ mkdirSync(join(root, "dist"), { recursive: true });
 const output = mkdtempSync(join(root, "dist", "feed-tests-"));
 after(() => rmSync(output, { recursive: true, force: true }));
 writeFileSync(join(output, "package.json"), "{\"type\":\"commonjs\"}");
-const program = ts.createProgram(["main/feed/ipc.ts", "main/feed/pdf.ts", "main/storage/workspace.ts"].map(file => join(root, file)), {
+const program = ts.createProgram(["main/feed/ipc.ts", "main/feed/pdf.ts", "main/storage/workspace.ts", "main/knowledge/scheduler.ts"].map(file => join(root, file)), {
     target: ts.ScriptTarget.ES2022,
     module: ts.ModuleKind.CommonJS,
     esModuleInterop: true,
+    resolveJsonModule: true,
     strict: true,
     skipLibCheck: true,
     noEmitOnError: true,
@@ -33,18 +34,21 @@ assert.equal(diagnostics.length, 0, ts.formatDiagnosticsWithColorAndContext(diag
 }));
 program.emit();
 const require = createRequire(import.meta.url);
+const hasFailure = (...kinds) => error => kinds.includes(error?.failure?.kind);
 const { FeedService } = require(join(output, "main/feed/service.js"));
 const { importFeedPDF } = require(join(output, "main/feed/pdf.js"));
 const { parseFeed, parseJSONFeed, fetchFeed, discoverFeeds, retryAfter, FeedError } = require(join(output, "main/feed/parser.js"));
 const { arxivURL, feedURL, normalizeURL } = require(join(output, "shared/utils/feed.js"));
 const { createWorkspace, openWorkspace } = require(join(output, "main/storage/workspace.js"));
 const { createWorkspaceDatabase } = require(join(output, "main/storage/database.js"));
+const { initializeBuiltinAttrs } = require(join(output, "main/storage/builtin-attrs.js"));
 const { createWorkspaceSchema } = require(join(output, "main/storage/schema.js"));
 
 function memoryDatabase() {
     const database = new Database(":memory:");
     database.pragma("foreign_keys = ON");
     createWorkspaceSchema(database);
+    initializeBuiltinAttrs(createWorkspaceDatabase(database));
     database.exec("INSERT INTO workspace_meta (id, name, created_at, last_modified_at) VALUES ('workspace', 'Fixture', 0, 0)");
     return database;
 }
@@ -187,19 +191,19 @@ test("JSON Feed items are read with their identifiers, authors, content and exte
     assert.equal(entries[1].title, "Plain words.");
     assert.equal(entries[1].fullContent, true);
     assert.deepEqual([entries[2].externalId, entries[2].url, entries[2].fullContent], [null, null, false]);
-    assert.throws(() => parseJSONFeed("{\"items\":[]}", "https://example.org"), /订阅格式/);
-    assert.throws(() => parseJSONFeed("{", "https://example.org"), /JSON Feed/);
+    assert.throws(() => parseJSONFeed("{\"items\":[]}", "https://example.org"), hasFailure("feed-unsupported-format"));
+    assert.throws(() => parseJSONFeed("{", "https://example.org"), hasFailure("feed-invalid-json"));
 });
 
 test("invalid feeds and arXiv error responses fail without creating entries", async () => {
-    await assert.rejects(parseFeed("<html>not a feed</html>", "https://example.org"), /不是有效的 RSS 或 Atom/);
+    await assert.rejects(parseFeed("<html>not a feed</html>", "https://example.org"), hasFailure("feed-invalid-xml"));
     await assert.rejects(parseFeed("<!DOCTYPE rss [<!ENTITY x SYSTEM \"file:///etc/passwd\">]><rss/>", "https://example.org"));
-    await assert.rejects(parseFeed("<feed xmlns=\"http://www.w3.org/2005/Atom\"><entry><id>http://arxiv.org/api/errors#incorrect_id_format</id><summary>Invalid query</summary></entry></feed>", "https://export.arxiv.org"), /Invalid query/);
+    await assert.rejects(parseFeed("<feed xmlns=\"http://www.w3.org/2005/Atom\"><entry><id>http://arxiv.org/api/errors#incorrect_id_format</id><summary>Invalid query</summary></entry></feed>", "https://export.arxiv.org"), hasFailure("feed-arxiv-query"));
     assert.deepEqual((await parseFeed("<feed xmlns=\"http://www.w3.org/2005/Atom\"><title>Empty</title></feed>", "https://example.org")).entries, []);
 });
 
 test("a document type is rejected before the root element and accepted as article content", async () => {
-    await assert.rejects(parseFeed("<?xml version=\"1.0\"?>\n<!-- header -->\n<!doctype rss SYSTEM \"feed.dtd\"><rss version=\"2.0\"><channel/></rss>", "https://example.org"), /XML 声明/);
+    await assert.rejects(parseFeed("<?xml version=\"1.0\"?>\n<!-- header -->\n<!doctype rss SYSTEM \"feed.dtd\"><rss version=\"2.0\"><channel/></rss>", "https://example.org"), hasFailure("feed-xml-declaration"));
     // Some sites publish each post as a whole HTML document.
     const { entries: [post] } = await parseFeed(`<?xml version="1.0"?><!-- not a <!DOCTYPE declaration -->
         <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>Blog</title>
@@ -217,7 +221,7 @@ test("fetching classifies HTTP and network failures and rejects oversized respon
     const failure = async respond => fetchFeed({ url: "https://example.org/feed" }, respond).then(() => assert.fail("expected a failure"), error => error);
     const limited = await failure(async () => new Response("limited", { status: 429, headers: { "Retry-After": "120" } }));
     assert.ok(limited instanceof FeedError);
-    assert.match(limited.message, /频繁/);
+    assert.equal(limited.failure.kind, "feed-rate-limited");
     assert.deepEqual([limited.retryable, limited.retryAfter], [true, 120000]);
     const down = await failure(async () => new Response("", { status: 503 }));
     assert.deepEqual([down.retryable, down.retryAfter], [true, undefined]);
@@ -225,27 +229,27 @@ test("fetching classifies HTTP and network failures and rejects oversized respon
     const offline = await failure(async () => {
         throw new TypeError("fetch failed", { cause: Object.assign(new Error("getaddrinfo ENOTFOUND example.org"), { code: "ENOTFOUND" }) });
     });
-    assert.deepEqual([offline.retryable, /无法连接/.test(offline.message)], [true, true]);
+    assert.deepEqual([offline.retryable, offline.failure.kind], [true, "feed-network"]);
     const certificate = await failure(async () => {
         throw new Error("net::ERR_CERT_AUTHORITY_INVALID");
     });
-    assert.deepEqual([certificate.retryable, /证书/.test(certificate.message)], [false, true]);
+    assert.deepEqual([certificate.retryable, certificate.failure.kind], [false, "feed-certificate"]);
     const slow = await failure(async () => {
         throw new DOMException("The operation timed out.", "TimeoutError");
     });
-    assert.deepEqual([slow.retryable, /超时/.test(slow.message)], [true, true]);
+    assert.deepEqual([slow.retryable, slow.failure.kind], [true, "feed-timeout"]);
     const unreachable = await failure(async () => {
         throw new TypeError("fetch failed", { cause: Object.assign(new Error("Connect Timeout Error (timeout: 10000ms)"), { code: "UND_ERR_CONNECT_TIMEOUT" }) });
     });
-    assert.deepEqual([unreachable.retryable, /超时/.test(unreachable.message)], [true, true]);
+    assert.deepEqual([unreachable.retryable, unreachable.failure.kind], [true, "feed-timeout"]);
     assert.ok(unreachable.cause instanceof TypeError, "the underlying error is kept for the log");
     // A TLS failure that is not about the certificate may pass, so it is retried.
     const handshake = await failure(async () => {
         throw new Error("net::ERR_SSL_PROTOCOL_ERROR");
     });
-    assert.deepEqual([handshake.retryable, /无法连接/.test(handshake.message)], [true, true]);
+    assert.deepEqual([handshake.retryable, handshake.failure.kind], [true, "feed-network"]);
     const large = await failure(async () => new Response("x".repeat(10 * 1024 * 1024 + 1)));
-    assert.match(large.message, /10 MB/);
+    assert.equal(large.failure.kind, "feed-too-large");
     assert.equal(large.retryable, false);
     assert.equal(retryAfter("30"), 30000);
     assert.equal(retryAfter("Wed, 07 Oct 2026 10:01:00 GMT", Date.UTC(2026, 9, 7, 10)), 60000);
@@ -312,8 +316,8 @@ test("a web page leads to the feed it advertises only while a source is being sa
     assert.deepEqual(requested, ["https://lab.example/blog/", "https://lab.example/feeds/all.atom?x=1&y=2"]);
     assert.equal(found.url, "https://lab.example/feeds/all.atom?x=1&y=2");
     assert.deepEqual([found.title, found.etag, found.entries.length], ["arXiv", "\"feed\"", 2]);
-    await assert.rejects(fetchFeed({ url: "https://lab.example/blog/" }, fetcher), /网页/);
-    await assert.rejects(fetchFeed({ url: "https://lab.example/", discover: true }, async () => new Response("<!doctype html><html><body>No feeds</body></html>")), /没有提供/);
+    await assert.rejects(fetchFeed({ url: "https://lab.example/blog/" }, fetcher), hasFailure("feed-webpage"));
+    await assert.rejects(fetchFeed({ url: "https://lab.example/", discover: true }, async () => new Response("<!doctype html><html><body>No feeds</body></html>")), hasFailure("feed-no-discovery"));
 });
 
 test("blog feeds import the latest ten unique entries and retain older saved articles", async t => {
@@ -389,8 +393,8 @@ test("Anthropic pages provide the section's own articles with safe links, summar
         assert.equal(new Set(entries.map(entry => entry.externalId)).size, 10);
         assert.ok(entries.every(entry => entry.content === "" && entry.fullContent === false));
     }
-    await assert.rejects(fetchFeed({ url: "https://www.anthropic.com/news" }, async () => new Response("<!DOCTYPE html><h1>Unavailable</h1>")), /未找到 Anthropic 文章/);
-    await assert.rejects(fetchFeed({ url: "https://www.anthropic.com/news/article" }, async () => new Response("<!DOCTYPE html><h1>Article</h1>")), /网页/);
+    await assert.rejects(fetchFeed({ url: "https://www.anthropic.com/news" }, async () => new Response("<!DOCTYPE html><h1>Unavailable</h1>")), hasFailure("feed-anthropic-empty"));
+    await assert.rejects(fetchFeed({ url: "https://www.anthropic.com/news/article" }, async () => new Response("<!DOCTYPE html><h1>Article</h1>")), hasFailure("feed-webpage"));
 });
 
 test("arXiv requests are serialized and spaced at least three seconds apart", async () => {
@@ -450,8 +454,8 @@ test("entries and read state survive refreshes and reopening the workspace; canc
         const history = restored.getState({ sourceId: id });
         assert.equal(history.total, 2);
         assert.equal(history.items.find(saved => saved.id === item.id).isRead, true);
-        await assert.rejects(restored.refresh(id), /已取消/);
-        await assert.rejects(restored.saveSource({ id, name: "Edited", url: "https://rss.arxiv.org/atom/cs.AI" }), /已取消/);
+        await assert.rejects(restored.refresh(id), hasFailure("feed-cancelled-refresh"));
+        await assert.rejects(restored.saveSource({ id, name: "Edited", url: "https://rss.arxiv.org/atom/cs.AI" }), hasFailure("feed-cancelled"));
         // Subscribing to the same address again continues the same subscription.
         assert.equal(await restored.saveSource({ name: "Again", url: "https://rss.arxiv.org/atom/cs.AI" }), id);
         state = restored.getState({});
@@ -476,14 +480,14 @@ test("failed refresh preserves saved data and does not block other sources", asy
     await service.refresh();
     const state = service.getState({});
     assert.equal(state.total, 2);
-    assert.equal(state.sources[0].error, "Network unavailable");
+    assert.deepEqual(state.sources[0].error, { kind: "unexpected", diagnostic: "Network unavailable" });
     assert.equal(state.sources[1].error, null);
     assert.ok(state.sources[0].lastRefreshed);
     await assert.rejects(service.saveSource({ id: bad, name: "Broken edit", url: "https://other.example/bad" }));
     assert.equal(service.getState({}).sources[0].name, "A");
     assert.equal(service.getState({}).sources[0].url, "https://example.org/bad");
-    await assert.rejects(service.saveSource({ name: "Duplicate", url: "https://example.org/good" }), /已经添加/);
-    await assert.rejects(service.saveSource({ id: bad, name: "A", url: "https://example.org/good" }), /已经添加/);
+    await assert.rejects(service.saveSource({ name: "Duplicate", url: "https://example.org/good" }), hasFailure("feed-duplicate"));
+    await assert.rejects(service.saveSource({ id: bad, name: "A", url: "https://example.org/good" }), hasFailure("feed-duplicate"));
 });
 
 test("temporary failures retry after 30 seconds, 2 minutes and 10 minutes, then wait for the interval", async t => {
@@ -491,9 +495,9 @@ test("temporary failures retry after 30 seconds, 2 minutes and 10 minutes, then 
     let calls = 0;
     const { service, clock } = fixture(t, async request => {
         calls++;
-        if (outcome === "down") throw new FeedError("来源暂时不可用", true);
-        if (outcome === "limited") throw new FeedError("来源请求过于频繁", true, 45 * minute);
-        if (outcome === "gone") throw new FeedError("订阅地址不存在", false);
+        if (outcome === "down") throw new FeedError({ kind: "feed-unavailable", status: 503 }, true);
+        if (outcome === "limited") throw new FeedError({ kind: "feed-rate-limited" }, true, 45 * minute);
+        if (outcome === "gone") throw new FeedError({ kind: "feed-address-missing", status: 404 }, false);
         if (outcome === "broken") throw new Error("页面结构可能已变化");
         return fetched([entry({ externalId: "1", title: "One" })], { url: request.url });
     });
@@ -517,7 +521,7 @@ test("temporary failures retry after 30 seconds, 2 minutes and 10 minutes, then 
     assert.deepEqual(waits, [30000, 2 * minute, 10 * minute, 120 * minute, 120 * minute]);
     console.warn = warn;
     assert.equal(logged.length, 0, "failures without an underlying cause are not logged");
-    assert.deepEqual([source().error, source().lastRefreshed, source().lastAdded], ["来源暂时不可用", start, 0]);
+    assert.deepEqual([source().error, source().lastRefreshed, source().lastAdded], [{ kind: "feed-unavailable", status: 503 }, start, 0]);
     assert.equal(source().lastChecked, clock.now);
     assert.equal(service.getState({}).total, 1, "a failure keeps what was fetched before");
 
@@ -538,7 +542,7 @@ test("temporary failures retry after 30 seconds, 2 minutes and 10 minutes, then 
     clock.now = source().nextRefresh;
     await service.refreshDue();
     assert.equal(source().nextRefresh - clock.now, 120 * minute);
-    assert.equal(source().error, "订阅地址不存在");
+    assert.deepEqual(source().error, { kind: "feed-address-missing", status: 404 });
 
     // Neither is an error from outside the fetch layer, such as a page whose structure changed.
     outcome = "ok";
@@ -546,7 +550,7 @@ test("temporary failures retry after 30 seconds, 2 minutes and 10 minutes, then 
     outcome = "broken";
     clock.now = source().nextRefresh;
     await service.refreshDue();
-    assert.deepEqual([source().error, source().nextRefresh - clock.now], ["页面结构可能已变化", 120 * minute]);
+    assert.deepEqual([source().error, source().nextRefresh - clock.now], [{ kind: "unexpected", diagnostic: "页面结构可能已变化" }, 120 * minute]);
 });
 
 test("only sources that are due, enabled and automatic are refreshed in the background", async t => {
@@ -580,12 +584,12 @@ test("only sources that are due, enabled and automatic are refreshed in the back
     requested.length = 0;
     await service.refresh();
     assert.deepEqual(requested.sort(), ["/hourly", "/manual", "/quick"]);
-    await assert.rejects(service.refresh(paused), /已暂停/);
+    await assert.rejects(service.refresh(paused), hasFailure("feed-paused"));
 
     // Resuming makes a source due at once, so what it missed is fetched on the next check.
     requested.length = 0;
     service.setSourceStatus(paused, "resume");
-    assert.deepEqual([byId(paused).status, byId(paused).nextRefresh], ["enabled", null]);
+    assert.deepEqual([byId(paused).status, byId(paused).nextRefresh], ["enabled", clock.now]);
     await service.refreshDue();
     assert.deepEqual(requested, ["/paused"]);
 
@@ -593,7 +597,7 @@ test("only sources that are due, enabled and automatic are refreshed in the back
     requested.length = 0;
     await service.saveSource({ id: hourly, name: "Hourly", url: "https://example.org/hourly", intervalMinutes: 30 });
     assert.equal(byId(hourly).nextRefresh, byId(hourly).lastChecked + 30 * minute);
-    await assert.rejects(service.saveSource({ id: hourly, name: "Hourly", url: "https://example.org/hourly", intervalMinutes: 5 }), /15 至 1440/);
+    await assert.rejects(service.saveSource({ id: hourly, name: "Hourly", url: "https://example.org/hourly", intervalMinutes: 5 }), hasFailure("feed-invalid-interval"));
     assert.deepEqual(requested, [], "changing settings does not fetch again");
 });
 
@@ -670,43 +674,48 @@ test("concurrent refreshes share a request and results are paginated", async t =
 });
 
 test("a few sources are fetched at a time, and those waiting their turn already count as refreshing", async t => {
-    let holding = false, inFlight = 0, most = 0;
-    const releases = [], started = [];
-    const { service } = fixture(t, async request => {
-        if (holding) {
-            most = Math.max(most, ++inFlight);
-            started.push(new URL(request.url).pathname);
-            await new Promise(resolve => releases.push(resolve));
-            inFlight--;
-        }
-        return fetched([entry({ externalId: request.url, title: request.url })], { url: request.url });
-    });
-    const ids = [];
-    for (let i = 0; i < 7; i++) ids.push(await service.saveSource({ name: `Source ${i}`, url: `https://example.org/${i}` }));
-    service.setSourceStatus(ids[6], "pause");
-    service.setSourceStatus(ids[6], "resume");
-    holding = true;
-    const all = service.refresh();
-    // A second request for one of them, and the automatic check, join the same queue.
-    const again = service.refresh(ids[5]);
-    const due = service.refreshDue();
-    await new Promise(resolve => setImmediate(resolve));
-    assert.equal(service.getState({}).sources.filter(source => source.refreshing).length, 7);
-    assert.deepEqual([started.length, inFlight], [4, 4]);
-    // A source paused while it waits is not fetched when its turn comes.
-    service.setSourceStatus(ids[6], "pause");
-    while (releases.length) {
-        releases.shift()();
+    for (const action of ["pause", "delete", "change-address"]) {
+        let holding = false, inFlight = 0, most = 0;
+        const releases = [], started = [];
+        const { service } = fixture(t, async request => {
+            if (holding) {
+                most = Math.max(most, ++inFlight);
+                started.push(new URL(request.url).pathname);
+                await new Promise(resolve => releases.push(resolve));
+                inFlight--;
+            }
+            return fetched([entry({ externalId: request.url, title: request.url })], { url: request.url });
+        });
+        const ids = [];
+        for (let i = 0; i < 7; i++) ids.push(await service.saveSource({ name: `Source ${i}`, url: `https://example.org/${i}` }));
+        holding = true;
+        // Occupy all four slots explicitly. Database/UUID ordering cannot start source 6 early.
+        const first = ids.slice(0, 4).map(id => service.refresh(id));
+        const all = service.refresh();
+        const again = service.refresh(ids[5]);
+        const due = service.refreshDue();
         await new Promise(resolve => setImmediate(resolve));
+        assert.equal(service.getState({}).sources.filter(source => source.refreshing).length, 7);
+        assert.deepEqual([started.length, inFlight], [4, 4]);
+        assert.ok(!started.includes("/6"), "the source under test is definitely queued");
+        if (action === "pause") service.setSourceStatus(ids[6], "pause");
+        else if (action === "delete") {
+            const result = service.knowledge.trash([ids[6]], "queue-test");
+            if (result.status === "confirmation") service.knowledge.trash([ids[6]], "queue-test", result.preview.token);
+        }
+        else service.knowledge.attributes.write(ids[6], { feed_url: "https://example.org/changed" });
+        while (releases.length) {
+            releases.shift()();
+            await new Promise(resolve => setImmediate(resolve));
+        }
+        await Promise.all([...first, all, again, due]);
+        assert.equal(most, 4);
+        assert.deepEqual(started.sort(), ["/0", "/1", "/2", "/3", "/4", "/5"], `${action}: changed queued source is skipped`);
+        assert.equal(service.getState({}).sources.filter(source => source.refreshing).length, 0);
+        holding = false;
+        await service.refresh(ids[0]);
+        assert.equal(service.getState({}).sources.find(source => source.id === ids[0]).error, null);
     }
-    await Promise.all([all, again, due]);
-    assert.equal(most, 4);
-    assert.deepEqual(started.sort(), ["/0", "/1", "/2", "/3", "/4", "/5"], "each source was fetched once");
-    assert.equal(service.getState({}).sources.filter(source => source.refreshing).length, 0);
-    // The queue is free again afterwards.
-    holding = false;
-    await service.refresh(ids[0]);
-    assert.equal(service.getState({}).sources.find(source => source.id === ids[0]).error, null);
 });
 
 test("a fetched entry updates the item already saved for it instead of adding another", async t => {
@@ -757,25 +766,6 @@ test("a fetched entry updates the item already saved for it instead of adding an
     assert.deepEqual([service.getState({}).total, service.getState({}).sources[0].lastAdded], [6, 0]);
 });
 
-test("items saved before identifiers became optional are recognised after the upgrade", async t => {
-    const published = Date.UTC(2026, 9, 7, 10);
-    const legacy = entry({ title: "Hashed", authors: "Eve", publishedAt: published });
-    const { service, database } = fixture(t, loaderOf(() => [
-        entry({ title: "Addressed", url: "https://example.org/x" }),
-        legacy
-    ]));
-    database.exec("INSERT INTO feed_sources (id, name, url) VALUES ('source', 'Old', 'https://example.org/feed')");
-    const insert = database.prepare("INSERT INTO feed_items (id, source_id, external_id, title, url, authors, summary, published_at, is_read) VALUES (?, 'source', ?, ?, ?, ?, '', ?, 1)");
-    // Earlier versions saved the address, or a hash of title, authors and date, as the identifier.
-    insert.run("by-url", "https://example.org/x", "Addressed", "https://example.org/x", "", null);
-    const { createHash } = require("node:crypto");
-    insert.run("by-hash", createHash("sha256").update(JSON.stringify(["Hashed", "Eve", new Date(published).toISOString()])).digest("hex"), "Hashed", null, "Eve", published);
-    await service.refresh("source");
-    const state = service.getState({});
-    assert.deepEqual([state.total, state.sources[0].lastAdded, state.unreadCount], [2, 0, 0]);
-    assert.deepEqual(state.items.map(item => item.id).sort(), ["by-hash", "by-url"]);
-});
-
 test("items are filtered by read state and followed keywords, ordered either way, and marked read by source", async t => {
     const day = n => Date.UTC(2026, 9, n);
     const { service } = fixture(t, async request => fetched(request.url.endsWith("/a") ? [
@@ -803,8 +793,8 @@ test("items are filtered by read state and followed keywords, ordered either way
     assert.deepEqual(titles({ followed: true }), ["Agents", "Diffusion models"]);
     assert.deepEqual(titles({ followed: true, keyword: "sampling" }), ["Diffusion models"]);
     assert.deepEqual(service.getState({}).keywords, ["diffusion", "Large Language"]);
-    assert.throws(() => service.setKeywords(["x".repeat(101)]), /100/);
-    assert.throws(() => service.setKeywords(Array.from({ length: 51 }, (_, i) => `k${i}`)), /50/);
+    assert.throws(() => service.setKeywords(["x".repeat(101)]), hasFailure("feed-keyword-too-long"));
+    assert.throws(() => service.setKeywords(Array.from({ length: 51 }, (_, i) => `k${i}`)), hasFailure("feed-too-many-keywords"));
     assert.throws(() => service.setKeywords("diffusion"));
 
     service.setRead(service.getState({}).items[1].id, true);
@@ -818,8 +808,8 @@ test("items are filtered by read state and followed keywords, ordered either way
     assert.equal(service.markAllRead(), 0, "and are left out of marking everything read");
     assert.equal(service.getState({ sourceId: b }).sources.find(source => source.id === b).unreadCount, 2);
     assert.equal(service.markAllRead(b), 2);
-    assert.throws(() => service.markAllRead("missing"), /不存在/);
-    assert.throws(() => service.setPosition(long.id, 1.5), /阅读位置/);
+    assert.throws(() => service.markAllRead("missing"), hasFailure("feed-source-missing"));
+    assert.throws(() => service.setPosition(long.id, 1.5), hasFailure("feed-invalid-position"));
 });
 
 test("an item is added to the library once, and a paper that left the library is only replaced on request", async t => {
@@ -860,7 +850,7 @@ test("an item is added to the library once, and a paper that left the library is
         const current = service.getItem(item.id).paperId;
         papers.get(current).state = state;
         assert.equal(service.getItem(item.id).paperState, state);
-        assert.throws(() => service.importItem(item.id), /确认后可以重新入库/);
+        assert.throws(() => service.importItem(item.id), hasFailure("feed-reimport-confirmation"));
         assert.equal(service.getItem(item.id).paperId, current, "the link is kept until the reader decides");
         const replacement = service.importItem(item.id, true);
         assert.notEqual(replacement, current);
@@ -874,56 +864,30 @@ test("an item is added to the library once, and a paper that left the library is
     };
     assert.throws(() => service.importItem(other.id), /Library unavailable/);
     assert.equal(service.getItem(other.id).paperId, null);
-    assert.throws(() => new FeedService(createWorkspaceDatabase(database)).importItem(other.id), /不支持/);
+    assert.throws(() => new FeedService(createWorkspaceDatabase(database)).importItem(other.id), hasFailure("feed-library-unavailable"));
 });
 
-test("registering two windows shares one initial and periodic check until the application quits", t => {
+test("two windows configure one immediate and fifteen-second process scheduler until exit", t => {
     t.mock.timers.enable({ apis: ["setInterval", "setTimeout"] });
-    const app = new EventEmitter();
-    const refreshDue = t.mock.fn(async () => {});
-    const interval = t.mock.fn(setInterval), timeout = t.mock.fn(setTimeout);
-    const stopInterval = t.mock.fn(clearInterval), stopTimeout = t.mock.fn(clearTimeout);
-    const ipc = join(output, "main/feed/ipc.js"), load = createRequire(ipc);
-    const exports = {};
-    // Load a fresh IPC module with Electron's application lifecycle under test control.
-    runInNewContext(readFileSync(ipc, "utf8"), {
-        exports,
-        require: id => {
-            if (id === "electron") return { app };
-            if (id === "./service") return { FeedService: class {
-                refreshDue = refreshDue;
-            } };
-            return load(id);
-        },
-        setInterval: interval, setTimeout: timeout,
-        clearInterval: stopInterval, clearTimeout: stopTimeout,
-        console
+    const app = new EventEmitter(), check = t.mock.fn(async () => {}), interval = t.mock.fn(setInterval), timeout = t.mock.fn(setTimeout), clear = t.mock.fn(clearInterval);
+    const module = join(output, "main/knowledge/scheduler.js"), load = createRequire(module), exports = {};
+    runInNewContext(readFileSync(module, "utf8"), {
+        exports, require: id => id === "electron" ? { app, BrowserWindow: { getAllWindows: () => [] }, Notification: { isSupported: () => false } } : load(id),
+        setInterval: interval, setTimeout: timeout, clearInterval: clear, console
     });
-    t.after(() => app.emit("quit"));
-    const window = () => Object.assign(new EventEmitter(), { webContents: { ipc: { handle: t.mock.fn() } } });
-    const a = window(), b = window();
-    const startup = { state: { status: "ready" }, getDatabase: () => ({}) };
-    exports.registerFeedIPCs(a, startup, {});
-    exports.registerFeedIPCs(b, startup, {});
-    assert.equal(a.webContents.ipc.handle.mock.callCount(), b.webContents.ipc.handle.mock.callCount());
-    assert.ok(b.webContents.ipc.handle.mock.callCount() > 0, "both windows receive their handlers");
-    assert.equal(interval.mock.callCount(), 1);
-    assert.equal(timeout.mock.callCount(), 1);
-    assert.equal(app.listenerCount("quit"), 1);
-    t.mock.timers.tick(2999);
-    assert.equal(refreshDue.mock.callCount(), 0);
-    t.mock.timers.tick(1);
-    assert.equal(refreshDue.mock.callCount(), 1, "one initial check after three seconds");
-    a.emit("closed");
-    t.mock.timers.tick(27000);
-    assert.equal(refreshDue.mock.callCount(), 2, "one periodic check after thirty seconds, even after the first window closes");
-    t.mock.timers.tick(30000);
-    assert.equal(refreshDue.mock.callCount(), 3);
-    app.emit("quit");
-    assert.equal(stopInterval.mock.callCount(), 1);
-    assert.equal(stopTimeout.mock.callCount(), 1);
-    t.mock.timers.tick(60000);
-    assert.equal(refreshDue.mock.callCount(), 3, "no checks remain after application exit");
+    const startup = { state: { status: "needs-workspace" } }, timers = () => ({ check });
+    exports.configureScheduler(startup, timers, async () => {});
+    exports.configureScheduler(startup, timers, async () => {});
+    assert.equal(interval.mock.callCount(), 1); assert.equal(timeout.mock.callCount(), 0);
+    assert.equal(check.mock.callCount(), 0);
+    startup.state.status = "ready"; startup.onReady();
+    assert.equal(check.mock.callCount(), 1, "the first check happens immediately when the workspace is ready");
+    t.mock.timers.tick(14999); assert.equal(check.mock.callCount(), 1);
+    t.mock.timers.tick(1); assert.equal(check.mock.callCount(), 2);
+    t.mock.timers.tick(15000); assert.equal(check.mock.callCount(), 3);
+    assert.equal(app.listenerCount("will-quit"), 1);
+    app.emit("will-quit"); assert.equal(clear.mock.callCount(), 1);
+    t.mock.timers.tick(60000); assert.equal(check.mock.callCount(), 3);
 });
 
 test("arXiv PDF addresses are derived from modern and legacy entry addresses only", async () => {

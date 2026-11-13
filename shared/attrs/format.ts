@@ -3,7 +3,7 @@ import { type AttributeDefinition, type AttributeFormat, type AttributeType, typ
 import { builtinValueFormats, isBuiltin } from "./builtins";
 import { isEmpty } from "./values";
 
-type Context = { zone?: string };
+type Context = Parameters<AttributeFormat>[2];
 type Format = AttributeFormat;
 const empty: Format = () => "";
 const plain: Format = (_, value) => String(value);
@@ -11,7 +11,13 @@ const options: Format = (definition, value) => {
     const selected = Array.isArray(value) ? value : [value];
     return selected.map(id => definition.metadata.options?.find(option => option.id === id)?.name).filter(Boolean).join("、");
 };
+const files: Format = (_, value, { fileName }) => (Array.isArray(value) ? value : [value])
+    .map(id => fileName?.(String(id))).filter(Boolean).join("、");
 const defaults: Record<AttributeType, { display: Format; search?: Format }> = {
+    recurrence: { display: (_, value) => {
+        const item = value as { every: number; unit: string };
+        return `每 ${item.every} ${{ minute: "分钟", hour: "小时", day: "天", week: "周", month: "个月" }[item.unit]}`;
+    } },
     string: { display: plain }, url: { display: plain }, number: { display: plain },
     minute: { display: (_, value, { zone }) => secondsToWall(value as number, zone).replace("T", " ") },
     hour: { display: (_, value, { zone }) => secondsToWall(value as number, zone).slice(0, 13).replace("T", " ") + "时" },
@@ -20,6 +26,7 @@ const defaults: Record<AttributeType, { display: Format; search?: Format }> = {
     year: { display: (_, value) => secondsToYear(value as number) },
     select: { display: options }, multiselect: { display: options },
     boolean: { display: (_, value) => value ? "是" : "否", search: empty },
+    file: { display: files }, files: { display: files },
     "page-link": { display: empty }, "page-links": { display: empty }, json: { display: empty }
 };
 

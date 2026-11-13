@@ -14,7 +14,7 @@
         <div class="hero-art"><span class="art-label">a little idea, a little bloom</span><Bloom /><span class="art-caption">GROW AT YOUR OWN PACE</span></div>
     </div>
 
-    {#if error}<div class="notice error" role="alert">{error} <button class="text-button" onclick={load}>重新加载</button></div>{/if}
+    {#if error}<div class="notice error" role="alert">{message(error)} <button class="text-button" onclick={load}>{t("dialog.retry")}</button></div>{/if}
     <div class="stats" aria-busy={pending}>
         {#each stats as stat (stat.label)}
             <button class="stat-card" onclick={() => openDestination(stat.destination)}>
@@ -31,7 +31,7 @@
             {#if pending}
                 <div class="empty-state" role="status"><strong>正在整理你的来信…</strong><p>读取已保存在工作区的订阅内容。</p></div>
             {:else if error}
-                <div class="empty-state"><Icon name="feed" size={30} /><strong>暂时没能读到订阅</strong><p>已有内容仍保留在工作区，可以重试加载。</p><button class="button" onclick={load}>重新加载</button></div>
+                <div class="empty-state"><Icon name="feed" size={30} /><strong>暂时没能读到订阅</strong><p>已有内容仍保留在工作区，可以重试加载。</p><button class="button" onclick={load}>{t("dialog.retry")}</button></div>
             {:else if feedState?.items.length}
                 <div class="latest-list">
                     {#each feedState.items.slice(0, 3) as item (item.id)}
@@ -467,6 +467,7 @@
 
 
 <script lang="ts">
+    import { message, t, failure, type ErrorValue } from "../../i18n.svelte";
     import { onMount } from "svelte";
     import { type FeedState } from "../../../shared/types/feed";
     import Bloom from "../utils/Bloom.svelte";
@@ -483,7 +484,7 @@
     let counts = $state<{ pages: number; papers: number; tasks: number } | null>(null);
     let recent = $state<PageSummary[]>([]);
     let pending = $state(true);
-    let error = $state("");
+    let error = $state<ErrorValue>("");
     let now = $state(Date.now());
     const date = $derived(new Date(now).toLocaleDateString("zh-CN", { timeZone: currentTimeZone(), month: "long", day: "numeric", weekday: "long" }));
     let loading = false;
@@ -506,7 +507,7 @@
             }
         }
         catch (cause) {
-            if (active) error = cause instanceof Error ? cause.message : "暂时无法读取订阅内容。";
+            if (active) error = failure(cause);
         }
         finally {
             loading = false;

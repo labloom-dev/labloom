@@ -11,7 +11,7 @@
             {#if query.trim() && !options.some(item => item.name === query.trim())}<button role="option" aria-selected={active === matches.length} class:active={active === matches.length} disabled={busy} onmousedown={event => event.preventDefault()} onclick={() => void choose(matches.length)}>新建标签 {query.trim()}</button>{/if}
         </div>
     {/if}
-    {#if error}<span class="error">{error}</span>{/if}
+    {#if error}<span class="error">{message(error)}</span>{/if}
 </div>
 <style>
     .tags-input { position: relative; display: flex; align-items: center; flex-wrap: nowrap; gap: 3px; min-width: 0; height: var(--button-height); overflow-x: auto; scrollbar-width: none; }
@@ -23,11 +23,12 @@
     .error { color: var(--c-reader-error-text); font-size: var(--font-min); }
 </style>
 <script lang="ts">
+    import { failure, message, type ErrorValue } from "../../i18n.svelte";
     import type { AttributeDefinition, AttributeValue } from "../../../shared/types/attributes";
-    import { copyData, define, message, writeFromTab } from "./state.svelte";
+    import { copyData, define, writeFromTab } from "./state.svelte";
     let { definition, value, tabId, disabled = false, onchange }: { definition: AttributeDefinition; value: AttributeValue; tabId: string; disabled?: boolean; onchange: (value: AttributeValue) => void } = $props();
     let root: HTMLDivElement;
-    let query = $state(""), active = $state(0), open = $state(false), busy = $state(false), error = $state("");
+    let query = $state(""), active = $state(0), open = $state(false), busy = $state(false), error = $state<ErrorValue>("");
     const options = $derived(definition.metadata.options ?? []), selected = $derived(Array.isArray(value) ? value : []);
     const chosen = $derived(options.filter(option => selected.includes(option.id)));
     const matches = $derived(options.filter(option => !selected.includes(option.id) && option.name.toLocaleLowerCase().includes(query.toLocaleLowerCase())));
@@ -48,7 +49,7 @@
                     if (await writeFromTab(tabId, () => define(definition.id, { ...copyData(definition), metadata: { ...copyData(definition.metadata), options: [...copyData(options), fresh] } }, tabId))) onchange([...selected, fresh.id]);
                 }
                 catch (problem) {
-                    error = message(problem); return;
+                    error = failure(problem); return;
                 }
                 finally {
                     busy = false;

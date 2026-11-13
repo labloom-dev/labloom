@@ -26,15 +26,19 @@ export const knowledgeChannels = {
     loadTabs: "knowledge:loadTabs",
     saveTabs: "knowledge:saveTabs",
     importPDF: "knowledge:importPDF",
+    importFiles: "knowledge:importFiles",
+    files: "knowledge:files",
+    openFile: "knowledge:openFile",
     resources: "knowledge:resources",
     readFile: "knowledge:readFile",
-    getAnchor: "knowledge:getAnchor",
+    getAnnotation: "knowledge:getAnnotation",
     unlockPDF: "knowledge:unlockPDF",
-    changeHighlight: "knowledge:changeHighlight",
+    changeAnnotation: "knowledge:changeAnnotation",
     position: "knowledge:position",
-    highlight: "knowledge:highlight",
-    removeHighlight: "knowledge:removeHighlight",
+    deleteAnnotation: "knowledge:deleteAnnotation",
     annotate: "knowledge:annotate",
+    timers: "knowledge:timers",
+    setTimer: "knowledge:setTimer",
     notices: "knowledge:notices",
     readNotice: "knowledge:readNotice"
 } as const;
@@ -44,7 +48,8 @@ export const saveBeforeCloseReply = "knowledge:close-reply";
 
 export const appearanceChannels = {
     get: "appearance:get",
-    save: "appearance:save"
+    save: "appearance:save",
+    changed: "appearance:changed"
 } as const;
 
 export const startupChannels = {
