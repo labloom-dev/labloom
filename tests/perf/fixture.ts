@@ -1,25 +1,24 @@
+import { knowledgeServices, historyServices, session, type Knowledge } from "../support/session";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import type Database from "better-sqlite3";
-import { EditHistory } from "../../main/knowledge/history";
-import { KnowledgeService } from "../../main/knowledge/service";
-import { createWorkspace } from "../../main/storage/workspace";
+import { createWorkspace } from "../support/session";
 import { payload } from "../../shared/content/blocks";
 import { nowSeconds } from "../../shared/content/time";
 
 export type SeedPage = { id: string; children: string[] };
 type Fixture = {
     sql: Database.Database;
-    service: KnowledgeService;
+    service: Knowledge;
     makePage(count: number, title: string, match?: boolean, independent?: boolean): SeedPage;
     attr: Database.Statement;
 };
 
 export function fixture(): Fixture {
     const ws = createWorkspace(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "perf-")));
-    const service = new KnowledgeService(ws.db);
-    new EditHistory(service);
+    const service = knowledgeServices();
+    historyServices();
     const sql = ws.database;
     const block = sql.prepare("INSERT INTO blocks (id, type, content, children) VALUES (?, ?, ?, '[]')");
     const page = sql.prepare("INSERT INTO pages (id, kind, title_block_id, children) VALUES (?, 'editable', ?, ?)");

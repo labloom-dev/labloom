@@ -7,6 +7,7 @@ export const knowledgeChannels = {
     listUpdates: "knowledge:listUpdates",
     get: "knowledge:get",
     readObjects: "knowledge:readObjects",
+    syncBlocks: "knowledge:syncBlocks",
     create: "knowledge:create",
     commitEdit: "knowledge:commitEdit",
     previewEdit: "knowledge:previewEdit",

@@ -1,5 +1,5 @@
 import { type AttributeDefinition, type AttributeImpact, type AttributeValue } from "./attributes";
-import { type Backlink, type CommitResult, type BlockDeletion, type ChangePreview, type EditCommit, type KnowledgeChange, type Placement, type ResolvedTarget, type PageKind, type PageList, type PageQuery, type PageRecord, type PageObjects, type Target } from "./content";
+import { type Backlink, type CommitResult, type BlockDeletion, type ChangePreview, type ContentBlock, type EditCommit, type KnowledgeChange, type Placement, type ResolvedTarget, type PageKind, type PageList, type PageQuery, type PageRecord, type PageObjects, type Target } from "./content";
 import { type PaperAnnotation, type AnnotationInput, type Attachment, type PaperImport, type PaperResources, type ReadingPosition } from "./papers";
 
 export type PurgeResult = { status: "confirmation"; token: string; pages: { id: string; title: string }[]; links: number } | { status: "deleted"; pages: string[]; blocks: string[] };
@@ -11,6 +11,7 @@ export type KnowledgeAPI = {
     listUpdates(query: PageQuery, unchanged: string[]): Promise<PageList & { order: string[] }>;
     get(id: string): Promise<PageRecord>;
     readObjects(pageId: string, ids: string[]): Promise<PageObjects>;
+    syncBlocks(workspaceId: string, ids: string[]): Promise<ContentBlock[] | null>;
     create(kind: PageKind, title?: string, initial?: Record<string, AttributeValue>, parentId?: string, tabId?: string): Promise<PageRecord>;
     commitEdit(input: EditCommit, confirmation?: string): Promise<CommitResult>;
     previewEdit(input: EditCommit): Promise<ChangePreview | null>;

@@ -152,3 +152,13 @@ CREATE TRIGGER pages_attrs_delete AFTER DELETE ON pages
             BEGIN
                 DELETE FROM page_attrs WHERE page_id = OLD.id;
             END;
+--> statement-breakpoint
+CREATE TRIGGER blocks_links_delete AFTER DELETE ON blocks
+            BEGIN
+                DELETE FROM link_refs WHERE source_kind = 'block' AND source_id = OLD.id;
+            END;
+--> statement-breakpoint
+CREATE TRIGGER page_attrs_links_delete AFTER DELETE ON page_attrs
+            BEGIN
+                DELETE FROM link_refs WHERE source_kind = 'page' AND source_id = OLD.page_id AND source_field = OLD.attr_id;
+            END;

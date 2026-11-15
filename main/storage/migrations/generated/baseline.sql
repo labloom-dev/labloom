@@ -37,7 +37,6 @@ CREATE TABLE `feed_items` (
 	`raw_content` text DEFAULT '' NOT NULL,
 	`has_full_content` integer DEFAULT false NOT NULL,
 	`published_at` integer,
-	`origin_snapshot` text,
 	`is_read` integer DEFAULT false NOT NULL,
 	`reading_position` text,
 	`paper_id` text,
@@ -95,6 +94,7 @@ CREATE TABLE `sync_refs` (
 	`position` integer NOT NULL,
 	`block_id` text NOT NULL,
 	PRIMARY KEY(`container_kind`, `container_id`, `slot`, `position`),
+	FOREIGN KEY (`block_id`) REFERENCES `blocks`(`id`) ON UPDATE no action ON DELETE no action DEFERRABLE INITIALLY DEFERRED,
 	CONSTRAINT "sync_refs_container_kind" CHECK("sync_refs"."container_kind" IN ('page', 'block')),
 	CONSTRAINT "sync_refs_slot" CHECK("sync_refs"."slot" IN ('title', 'children')),
 	CONSTRAINT "sync_refs_position" CHECK("sync_refs"."position" >= 0),
@@ -280,4 +280,14 @@ CREATE TRIGGER workspace_meta_modified AFTER UPDATE OF name, settings ON workspa
 CREATE TRIGGER pages_attrs_delete AFTER DELETE ON pages
             BEGIN
                 DELETE FROM page_attrs WHERE page_id = OLD.id;
+            END;
+--> statement-breakpoint
+CREATE TRIGGER blocks_links_delete AFTER DELETE ON blocks
+            BEGIN
+                DELETE FROM link_refs WHERE source_kind = 'block' AND source_id = OLD.id;
+            END;
+--> statement-breakpoint
+CREATE TRIGGER page_attrs_links_delete AFTER DELETE ON page_attrs
+            BEGIN
+                DELETE FROM link_refs WHERE source_kind = 'page' AND source_id = OLD.page_id AND source_field = OLD.attr_id;
             END;

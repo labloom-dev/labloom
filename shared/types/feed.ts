@@ -44,8 +44,6 @@ export type FeedEntry = {
     publishedAt: number | null;
 };
 
-/** The address and identifier an item had when it was first fetched. */
-export type FeedOrigin = { feedURL: string; externalId: string | null };
 export type FeedPosition = { progress: number };
 export type FeedPaperState = "none" | "saved" | "recycled" | "missing";
 

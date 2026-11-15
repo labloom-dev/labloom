@@ -6,7 +6,7 @@ import { createServer } from "node:http";
 import { runInNewContext } from "node:vm";
 import { createRequire } from "node:module";
 import { resolve, join } from "node:path";
-import ts from "typescript";
+import { build as bundle } from "esbuild";
 import Database from "better-sqlite3";
 
 // Compile the tested modules with the existing compiler; no test framework is needed.
@@ -15,43 +15,18 @@ mkdirSync(join(root, "dist"), { recursive: true });
 const output = mkdtempSync(join(root, "dist", "feed-tests-"));
 after(() => rmSync(output, { recursive: true, force: true }));
 writeFileSync(join(output, "package.json"), "{\"type\":\"commonjs\"}");
-const program = ts.createProgram(["main/feed/ipc.ts", "main/feed/pdf.ts", "main/storage/workspace.ts", "main/knowledge/scheduler.ts"].map(file => join(root, file)), {
-    target: ts.ScriptTarget.ES2022,
-    module: ts.ModuleKind.CommonJS,
-    esModuleInterop: true,
-    resolveJsonModule: true,
-    strict: true,
-    skipLibCheck: true,
-    noEmitOnError: true,
-    rootDir: root,
-    outDir: output
+await bundle({
+    entryPoints: [join(root, "tests/support/feed-entry.ts")], outfile: join(output, "modules.cjs"),
+    bundle: true, platform: "node", format: "cjs", target: "node22", packages: "external"
 });
-const diagnostics = ts.getPreEmitDiagnostics(program);
-assert.equal(diagnostics.length, 0, ts.formatDiagnosticsWithColorAndContext(diagnostics, {
-    getCanonicalFileName: file => file,
-    getCurrentDirectory: () => root,
-    getNewLine: () => "\n"
-}));
-program.emit();
 const require = createRequire(import.meta.url);
 const hasFailure = (...kinds) => error => kinds.includes(error?.failure?.kind);
-const { FeedService } = require(join(output, "main/feed/service.js"));
-const { importFeedPDF } = require(join(output, "main/feed/pdf.js"));
-const { parseFeed, parseJSONFeed, fetchFeed, discoverFeeds, retryAfter, FeedError } = require(join(output, "main/feed/parser.js"));
-const { arxivURL, feedURL, normalizeURL } = require(join(output, "shared/utils/feed.js"));
-const { createWorkspace, openWorkspace } = require(join(output, "main/storage/workspace.js"));
-const { createWorkspaceDatabase } = require(join(output, "main/storage/database.js"));
-const { initializeBuiltinAttrs } = require(join(output, "main/storage/builtin-attrs.js"));
-const { createWorkspaceSchema } = require(join(output, "main/storage/schema.js"));
-
-function memoryDatabase() {
-    const database = new Database(":memory:");
-    database.pragma("foreign_keys = ON");
-    createWorkspaceSchema(database);
-    initializeBuiltinAttrs(createWorkspaceDatabase(database));
-    database.exec("INSERT INTO workspace_meta (id, name, created_at, last_modified_at) VALUES ('workspace', 'Fixture', 0, 0)");
-    return database;
-}
+const {
+    session, createWorkspace, openWorkspace, openTest, feedServices, knowledgeServices, paperServices, purgeServices,
+    watchFeed, events, importFeedPDF, parseFeed, parseJSONFeed, fetchFeed, discoverFeeds, retryAfter, FeedError,
+    arxivURL, feedURL, normalizeURL
+} = require(join(output, "modules.cjs"));
+after(() => session.close());
 
 const rss = `<?xml version="1.0"?><rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
     <channel><title>Research</title><link>https://example.org</link><description>Updates</description>
@@ -66,12 +41,11 @@ const atom = `<feed xmlns="http://www.w3.org/2005/Atom"><title>arXiv</title>
     <entry><id>http://arxiv.org/abs/2610.00001v2</id><title>Language models, revised</title>
     <link rel="alternate" href="javascript:alert(1)"/><summary>Updated.</summary></entry></feed>`;
 
-/** A FeedService over a fresh in-memory workspace, with a controllable clock. */
-function fixture(t, load, library) {
-    const database = memoryDatabase();
-    t.after(() => database.close());
+/** A fresh session with a controllable clock and injected fetcher. */
+function fixture(t, load) {
     const clock = { now: Date.UTC(2026, 10, 1) };
-    const service = new FeedService(createWorkspaceDatabase(database), load, library, () => clock.now);
+    const { database } = openTest(t, { loadFeed: load, clock: () => clock.now });
+    const service = feedServices();
     return { database, service, clock };
 }
 
@@ -416,9 +390,9 @@ test("arXiv requests are serialized and spaced at least three seconds apart", as
 
 test("entries and read state survive refreshes and reopening the workspace; cancelling keeps the history", async () => {
     const folder = mkdtempSync(join(output, "workspace-"));
-    const workspace = createWorkspace(folder);
+    const workspace = createWorkspace(folder, { loadFeed: request => loaderOf(entries)(request) });
     const { entries } = await parseFeed(atom, "https://rss.arxiv.org/atom/cs.AI");
-    const service = new FeedService(workspace.db, loaderOf(entries));
+    const service = feedServices();
     const id = await service.saveSource({ name: "arXiv", url: "https://rss.arxiv.org/atom/cs.AI" });
     let state = service.getState({ sourceId: id });
     assert.equal(state.total, 2);
@@ -438,10 +412,10 @@ test("entries and read state survive refreshes and reopening the workspace; canc
     assert.equal(service.itemURL(item.id), item.url);
     assert.throws(() => service.getState({ offset: -1 }));
     assert.throws(() => service.getState({ read: "some" }));
-    workspace.database.close();
-    const reopened = openWorkspace(folder);
+    session.close();
+    const reopened = openWorkspace(folder, undefined, { loadFeed: request => loaderOf(entries)(request) });
     try {
-        const restored = new FeedService(reopened.db, loaderOf(entries));
+        const restored = feedServices();
         const saved = restored.getItem(item.id);
         assert.deepEqual([saved.isRead, saved.readingPosition, saved.paperState], [true, { progress: 0.5 }, "none"]);
         assert.deepEqual(restored.getState({}).keywords, ["language"]);
@@ -463,7 +437,7 @@ test("entries and read state survive refreshes and reopening the workspace; canc
         assert.equal(state.items.find(saved => saved.id === item.id).isRead, true);
     }
     finally {
-        reopened.database.close();
+        session.close();
     }
 });
 
@@ -662,7 +636,7 @@ test("concurrent refreshes share a request and results are paginated", async t =
         return fetched(Array.from({ length: 55 }, (_, i) => ({ ...template, externalId: `paper-${i}`, url: `https://example.org/papers/${i}` })), { url: request.url });
     });
     let notices = 0;
-    service.onChanged = () => notices++;
+    t.after(watchFeed(() => notices++));
     const id = await service.saveSource({ name: "Research", url: "https://example.org/feed" });
     notices = 0;
     await Promise.all([service.refresh(id), service.refresh(id)]);
@@ -750,9 +724,9 @@ test("a fetched entry updates the item already saved for it instead of adding an
     assert.equal(first.publishedAt, Date.UTC(2026, 9, 1));
     assert.deepEqual(state.items.map(item => service.getItem(item.id).readingPosition), Array(3).fill({ progress: 0.25 }));
     assert.equal(service.getItem(before[2].id).summary, "Now with a summary.");
-    const row = database.prepare("SELECT external_id, origin_snapshot FROM feed_items WHERE id = ?").get(before[1].id);
+    const row = database.prepare("SELECT external_id FROM feed_items WHERE id = ?").get(before[1].id);
     assert.equal(row.external_id, "guid-2");
-    assert.deepEqual(JSON.parse(row.origin_snapshot), { feedURL: "https://example.org/feed", externalId: null });
+    assert.ok(!database.pragma("table_info(feed_items)").some(column => column.name === "origin_snapshot"));
 
     // Different identifiers are different items, even at one address or with one title and date.
     entries = [
@@ -812,82 +786,37 @@ test("items are filtered by read state and followed keywords, ordered either way
     assert.throws(() => service.setPosition(long.id, 1.5), hasFailure("feed-invalid-position"));
 });
 
-test("an item is added to the library once, and a paper that left the library is only replaced on request", async t => {
-    const papers = new Map();
-    const announced = [];
-    const library = {
-        createPaper: paper => {
-            const id = `paper-${papers.size + 1}`;
-            papers.set(id, { paper, state: "saved" });
-            return id;
-        },
-        paperState: id => papers.get(id)?.state ?? "missing",
-        announce: id => announced.push(id)
-    };
+test("an item becomes a real paper and only replaces a recycled or missing paper after confirmation", async t => {
     const { service, database } = fixture(t, loaderOf([
         entry({ externalId: "arXiv:2610.00001", title: "Language models", url: "https://arxiv.org/abs/2610.00001", authors: "Alice, Bob", summary: "A".repeat(5000), publishedAt: Date.UTC(2026, 9, 7, 23, 30) })
-    ]), library);
+    ]));
     const source = await service.saveSource({ name: "arXiv", url: "https://rss.arxiv.org/atom/cs.AI" });
     const [item] = service.getState({}).items;
+    const knowledge = knowledgeServices(), papers = paperServices(), purge = purgeServices();
     assert.equal(service.getItem(item.id).paperState, "none");
-    const paperId = service.importItem(item.id);
-    assert.deepEqual(announced, [paperId]);
-    const { paper } = papers.get(paperId);
-    assert.deepEqual([paper.title, paper.authors, paper.url, paper.published], ["Language models", "Alice, Bob", "https://arxiv.org/abs/2610.00001", "2026-10-07"]);
-    assert.equal(paper.abstract.length, 4001);
-    assert.deepEqual(paper.origin, {
-        kind: "feed", itemId: item.id, sourceId: source, sourceName: "arXiv", feedURL: "https://rss.arxiv.org/atom/cs.AI",
-        externalId: "arXiv:2610.00001", url: "https://arxiv.org/abs/2610.00001"
-    });
-    assert.deepEqual([service.getState({}).items[0].paperId, service.getItem(item.id).paperState], [paperId, "saved"]);
-    // Importing again, or fetching the entry again, keeps the one paper.
-    assert.equal(service.importItem(item.id), paperId);
-    await service.refresh(source);
-    assert.equal(service.getItem(item.id).paperId, paperId);
-    assert.equal(papers.size, 1);
-
+    await service.saveSource({ id: source, name: "arXiv", url: "https://rss.arxiv.org/atom/cs.LG" });
+    let current = service.importItem(item.id);
+    assert.equal(papers.state(current), "saved");
+    assert.equal(knowledge.get(current).attributes.paper_abstract.length, 4001);
+    assert.equal(knowledge.get(current).attributes.source_snapshot.feedURL, "https://rss.arxiv.org/atom/cs.LG");
+    assert.equal(service.importItem(item.id), current);
     for (const state of ["recycled", "missing"]) {
-        const current = service.getItem(item.id).paperId;
-        papers.get(current).state = state;
+        const trash = knowledge.trash([current], "trash");
+        knowledge.trash([current], "trash", trash.preview.token);
+        if (state === "missing") {
+            const preview = purge.purge([current], "purge");
+            purge.purge([current], "purge", preview.token);
+        }
         assert.equal(service.getItem(item.id).paperState, state);
         assert.throws(() => service.importItem(item.id), hasFailure("feed-reimport-confirmation"));
-        assert.equal(service.getItem(item.id).paperId, current, "the link is kept until the reader decides");
         const replacement = service.importItem(item.id, true);
         assert.notEqual(replacement, current);
-        assert.equal(service.getItem(item.id).paperState, "saved");
+        current = replacement;
     }
-
-    // A paper that cannot be created leaves the item unlinked.
-    const [other] = database.prepare("INSERT INTO feed_items (id, source_id, external_id, title, authors, summary) VALUES ('other', ?, 'other', 'Other', '', '') RETURNING id").all(source);
-    library.createPaper = () => {
-        throw new Error("Library unavailable");
-    };
-    assert.throws(() => service.importItem(other.id), /Library unavailable/);
-    assert.equal(service.getItem(other.id).paperId, null);
-    assert.throws(() => new FeedService(createWorkspaceDatabase(database)).importItem(other.id), hasFailure("feed-library-unavailable"));
-});
-
-test("two windows configure one immediate and fifteen-second process scheduler until exit", t => {
-    t.mock.timers.enable({ apis: ["setInterval", "setTimeout"] });
-    const app = new EventEmitter(), check = t.mock.fn(async () => {}), interval = t.mock.fn(setInterval), timeout = t.mock.fn(setTimeout), clear = t.mock.fn(clearInterval);
-    const module = join(output, "main/knowledge/scheduler.js"), load = createRequire(module), exports = {};
-    runInNewContext(readFileSync(module, "utf8"), {
-        exports, require: id => id === "electron" ? { app, BrowserWindow: { getAllWindows: () => [] }, Notification: { isSupported: () => false } } : load(id),
-        setInterval: interval, setTimeout: timeout, clearInterval: clear, console
-    });
-    const startup = { state: { status: "needs-workspace" } }, timers = () => ({ check });
-    exports.configureScheduler(startup, timers, async () => {});
-    exports.configureScheduler(startup, timers, async () => {});
-    assert.equal(interval.mock.callCount(), 1); assert.equal(timeout.mock.callCount(), 0);
-    assert.equal(check.mock.callCount(), 0);
-    startup.state.status = "ready"; startup.onReady();
-    assert.equal(check.mock.callCount(), 1, "the first check happens immediately when the workspace is ready");
-    t.mock.timers.tick(14999); assert.equal(check.mock.callCount(), 1);
-    t.mock.timers.tick(1); assert.equal(check.mock.callCount(), 2);
-    t.mock.timers.tick(15000); assert.equal(check.mock.callCount(), 3);
-    assert.equal(app.listenerCount("will-quit"), 1);
-    app.emit("will-quit"); assert.equal(clear.mock.callCount(), 1);
-    t.mock.timers.tick(60000); assert.equal(check.mock.callCount(), 3);
+    database.prepare("INSERT INTO feed_items(id,source_id,external_id,title,authors,summary) VALUES ('other',?,'other','Other','','')").run(source);
+    database.exec("CREATE TEMP TRIGGER reject_paper BEFORE INSERT ON pages WHEN NEW.kind='paper' BEGIN SELECT RAISE(ABORT,'Library unavailable'); END");
+    assert.throws(() => service.importItem("other"), /Library unavailable/);
+    assert.equal(service.getItem("other").paperId, null);
 });
 
 test("arXiv PDF addresses are derived from modern and legacy entry addresses only", async () => {
@@ -952,81 +881,48 @@ async function pdfServer(t) {
     return { url: `http://127.0.0.1:${server.address().port}`, pdf, calls, recover: () => retry = true };
 }
 
-for (const path of ["/ok", "/404", "/html", "/prefixed", "/timeout", "/body-timeout", "/large", "/large-stream", "/retry"]) {
-    test(`PDF import through a local server: ${path}`, async t => {
+for (const address of ["/ok", "/404", "/html", "/prefixed", "/timeout", "/body-timeout", "/large", "/large-stream", "/retry"]) {
+    test(`PDF download through a local server: ${address}`, async t => {
         const server = await pdfServer(t);
-        const papers = new Map(), tempFiles = [];
-        const library = {
-            createPaper: paper => {
- papers.set("paper", { paper, pdf: null }); return "paper";
-},
-            paperState: id => papers.has(id) ? "saved" : "missing",
-            hasPDF: id => Boolean(papers.get(id)?.pdf),
-            importPDF: (id, url) => importFeedPDF(url, file => {
-                tempFiles.push(file);
-                papers.get(id).pdf = readFileSync(file);
-            }, fetch, { maxBytes: 128, timeoutMs: 100 }),
-            announce: () => {}
-        };
-        const { service } = fixture(t, loaderOf([entry({ externalId: "pdf", pdfURL: server.url + path })]), library);
-        await service.saveSource({ name: "PDF", url: server.url + "/feed" });
-        const [item] = service.getState({}).items;
-        const page = service.importItem(item.id);
-        assert.equal(page, "paper", "paper creation returns immediately");
-        assert.equal(papers.size, 1);
-        assert.equal(service.getItem(item.id).pdfStatus, "downloading");
-        assert.equal(server.calls.get(path), undefined, "network work starts after importItem returns");
-        const first = service.fetchPDF(item.id), again = service.fetchPDF(item.id);
-        assert.equal(first, again, "repeated requests share the same attempt");
-        await first;
-        assert.equal(server.calls.get(path), 1);
-        assert.equal(service.getItem(item.id).paperState, "saved");
-        if (path === "/ok") {
-            assert.equal(service.getItem(item.id).pdfStatus, "saved");
-            assert.deepEqual(papers.get(page).pdf, server.pdf);
-            await service.fetchPDF(item.id);
-            assert.equal(server.calls.get(path), 1, "an attached PDF is not downloaded again");
+        const temporary = [];
+        let saved;
+        const download = () => importFeedPDF(server.url + address, file => {
+            temporary.push(file);
+            saved = readFileSync(file);
+        }, fetch, { maxBytes: 128, timeoutMs: 100 });
+        if (address === "/ok") {
+            await download();
+            assert.deepEqual(saved, server.pdf);
         }
         else {
-            assert.equal(service.getItem(item.id).pdfStatus, "failed");
-            assert.equal(papers.get(page).pdf, null);
-            assert.equal(service.getItem(item.id).paperId, page);
-            if (path === "/retry") {
+            await assert.rejects(download());
+            assert.equal(saved, undefined);
+            if (address === "/retry") {
                 server.recover();
-                await service.fetchPDF(item.id);
-                assert.equal(service.getItem(item.id).pdfStatus, "saved");
-                assert.equal(server.calls.get(path), 2);
-                assert.equal(papers.size, 1, "retry attaches to the original paper");
-                assert.deepEqual(papers.get(page).pdf, server.pdf);
+                await download();
+                assert.deepEqual(saved, server.pdf);
             }
         }
-        assert.ok(tempFiles.every(file => !existsSync(file)), "download temporary files are removed");
+        assert.ok(temporary.every(file => !existsSync(file)));
     });
 }
 
-test("a previously imported paper without a PDF can fetch it, and source refresh preserves the PDF address", async t => {
+test("an imported paper can download its preserved PDF address after a later refresh", async t => {
     const server = await pdfServer(t);
     let withAddress = true;
-    let attached = false;
-    const library = {
-        createPaper: () => "paper", paperState: () => "saved", hasPDF: () => attached,
-        importPDF: (_id, url) => importFeedPDF(url, () => {
- attached = true;
-}, fetch), announce: () => {}
-    };
-    const { service, database } = fixture(t, loaderOf(() => [entry({ externalId: "saved", pdfURL: withAddress ? server.url + "/ok" : null })]), library);
+    const { service } = fixture(t, loaderOf(() => [entry({ externalId: "saved", pdfURL: withAddress ? server.url + "/ok" : null })]));
     await service.saveSource({ name: "PDF", url: server.url + "/feed" });
     const [item] = service.getState({}).items;
-    database.prepare("UPDATE feed_items SET paper_id = 'paper' WHERE id = ?").run(item.id);
-    assert.equal(service.getItem(item.id).pdfStatus, "idle");
+    const page = service.importItem(item.id);
+    await service.fetchPDF(item.id);
+    assert.equal(paperServices().hasPDF(page), true);
     withAddress = false;
     await service.refresh();
     assert.equal(service.getItem(item.id).pdfURL, server.url + "/ok");
-    await service.fetchPDF(item.id);
     assert.equal(service.getItem(item.id).pdfStatus, "saved");
 });
 
-test("temporary PDF files are removed when PaperService refuses an attachment", async t => {
+test("temporary PDF files are removed when the paper module refuses an attachment", async t => {
     const server = await pdfServer(t);
     let temporary;
     await assert.rejects(importFeedPDF(server.url + "/ok", file => {

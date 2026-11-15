@@ -21,12 +21,13 @@ export function unreferencedFiles(db: WorkspaceDatabase): StoredAttachment[] {
         WHERE m.type IN ('file','files') AND f.value IS NOT NULL)`).all() as StoredAttachment[];
 }
 
-/** Rename inside the transaction so failed deletion can restore both rows and bytes. */
-export function withFileCleanup<T>(db: WorkspaceDatabase, root: string, action: (cleanup: () => void) => T): T {
+/** Collect irreversible garbage together; failed deletion restores rows and bytes. */
+export function withFileCleanup<T>(db: WorkspaceDatabase, root: string, action: (cleanup: (blocks: string[]) => string[]) => T): T {
     const moved: { from: string; to: string }[] = [];
     let result: T;
     try {
-        result = db.$client.transaction(() => action(() => {
+        result = db.$client.transaction(() => action(blocks => {
+            if (blocks.length) db.$client.prepare("DELETE FROM blocks WHERE id IN (SELECT value FROM json_each(?))").run(JSON.stringify(blocks));
             for (const file of unreferencedFiles(db)) {
                 const from = attachmentPath(root, file.storedName), to = from + ".purge-" + randomUUID();
                 if (existsSync(from)) {
@@ -35,6 +36,7 @@ export function withFileCleanup<T>(db: WorkspaceDatabase, root: string, action: 
                 db.$client.prepare("DELETE FROM link_refs WHERE target_kind='file' AND target_id=?").run(file.id);
                 db.$client.prepare("DELETE FROM attachments WHERE id=?").run(file.id);
             }
+            return blocks;
         }))();
     }
     catch (error) {

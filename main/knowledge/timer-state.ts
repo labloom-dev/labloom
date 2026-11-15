@@ -1,0 +1,82 @@
+import { isTimeType, resolveTimeZone } from "../../shared/content/time";
+import { reminderDue } from "../../shared/content/timers";
+import { LabloomError } from "../../shared/failure";
+import { type Notice } from "../../shared/types/knowledge";
+import { reconcileFeedTimer } from "../feed/schedule";
+import * as workspace from "../workspace-state";
+import * as attributes from "./attributes";
+import * as data from "./records";
+
+type TimerRow = { pageId: string; attrId: string; leadSeconds: number; dueAt: number | null; firedAt: number | null; seen: number };
+const columns = "page_id AS pageId,attr_id AS attrId,lead_seconds AS leadSeconds,due_at AS dueAt,fired_at AS firedAt,seen";
+export function now(): number {
+    return Math.floor(workspace.clock() / 1000);
+}
+
+export function settings(pageId: string): Record<string, number[]> {
+    data.header(pageId);
+    const result: Record<string, number[]> = {};
+    for (const row of data.statement("SELECT attr_id AS attrId,lead_seconds AS leadSeconds FROM timers WHERE page_id=? ORDER BY lead_seconds").all(pageId) as TimerRow[]) {
+        if (isTimeType(attributes.definition(row.attrId).type)) (result[row.attrId] ??= []).push(row.leadSeconds);
+    }
+    return result;
+}
+
+export function set(pageId: string, attrId: string, leadSeconds: number, enabled: boolean): void {
+    if (!Number.isSafeInteger(leadSeconds) || leadSeconds < 0 || typeof enabled !== "boolean") throw new LabloomError({ kind: "timer-invalid-settings" });
+    const definition = attributes.definition(attrId);
+    if (!isTimeType(definition.type) || data.flags(pageId).deleted) throw new LabloomError({ kind: "timer-attribute-unavailable" });
+    if (!data.statement("SELECT 1 FROM page_attrs WHERE page_id=? AND attr_id=?").get(pageId, attrId)) throw new LabloomError({ kind: "timer-attribute-missing" });
+    workspace.native().transaction(() => {
+        if (!enabled) data.statement("DELETE FROM timers WHERE page_id=? AND attr_id=? AND lead_seconds=?").run(pageId, attrId, leadSeconds);
+        else {
+            const inserted = data.statement("INSERT OR IGNORE INTO timers(page_id,attr_id,lead_seconds) VALUES (?,?,?)").run(pageId, attrId, leadSeconds);
+            if (inserted.changes) recalculate(pageId, [attrId], leadSeconds);
+        }
+    })();
+}
+
+export function recalculate(pageId: string, fields?: string[], leadOnly?: number): void {
+    const all = !fields || fields.some(id => ["deleted", "task_status"].includes(id));
+    const feedChange = fields?.some(id => ["feed_url", "feed_status", "feed_refresh", "deleted"].includes(id));
+    const rows = data.statement(`SELECT ${columns} FROM timers WHERE page_id=?` + (all ? "" : " AND attr_id IN (SELECT value FROM json_each(?))")).all(...(all ? [pageId] : [pageId, JSON.stringify(fields)])) as TimerRow[];
+    if (!rows.length && !feedChange) return;
+    const page = { ...data.header(pageId), attributes: data.valuesFor([pageId]).get(pageId)! };
+    for (const row of rows) {
+        const definition = attributes.definition(row.attrId);
+        if (!isTimeType(definition.type)) {
+            if (row.attrId !== "feed_refresh" || page.kind !== "feed" || definition.type !== "recurrence") data.statement("DELETE FROM timers WHERE page_id=? AND attr_id=?").run(pageId, row.attrId);
+            continue;
+        }
+        if (!all && !fields!.includes(row.attrId) || leadOnly !== undefined && row.leadSeconds !== leadOnly) continue;
+        const due = page.attributes.deleted || page.kind === "task" && page.attributes.task_status === "done" ? null
+            : reminderDue(definition.type, page.attributes[row.attrId] as number | null, row.leadSeconds, resolveTimeZone(workspace.timeZone()));
+        data.statement("UPDATE timers SET due_at=?,fired_at=NULL,seen=0 WHERE page_id=? AND attr_id=? AND lead_seconds=?")
+            .run(due !== null && due > now() ? due : null, pageId, row.attrId, row.leadSeconds);
+    }
+    if (page.kind === "feed" && fields?.some(id => ["deleted", "feed_url", "feed_status", "feed_refresh"].includes(id))) reconcileFeedTimer(workspace.database(), pageId, page.attributes, now(), fields.some(id => ["deleted", "feed_url", "feed_status"].includes(id)));
+}
+
+export function recalculateAll(): void {
+    workspace.native().transaction(() => {
+        for (const id of data.statement("SELECT DISTINCT page_id FROM timers").pluck().all() as string[]) recalculate(id);
+    })();
+}
+
+export function notices(): Notice[] {
+
+    return (data.statement(`SELECT t.${columns.replaceAll(",", ",t.")} FROM timers t JOIN page_attrs d ON d.page_id=t.page_id AND d.attr_id='deleted'
+        WHERE t.fired_at IS NOT NULL AND d.value=0 ORDER BY t.fired_at DESC,t.page_id,t.attr_id,t.lead_seconds LIMIT 100`).all() as TimerRow[]).map(row => notice(row));
+}
+
+export function notice(row: TimerRow): Notice {
+    return {
+        pageId: row.pageId, attrId: row.attrId, leadSeconds: row.leadSeconds, title: data.title(row.pageId),
+        attrName: attributes.definition(row.attrId).name, firedAt: row.firedAt!, seen: !!row.seen
+    };
+}
+
+export function read(pageId: string, attrId: string, leadSeconds: number): void {
+    if (!Number.isSafeInteger(leadSeconds) || leadSeconds < 0) throw new LabloomError({ kind: "timer-invalid-notice" });
+    data.statement("UPDATE timers SET seen=1 WHERE page_id=? AND attr_id=? AND lead_seconds=?").run(pageId, attrId, leadSeconds);
+}

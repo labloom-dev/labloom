@@ -1,3 +1,4 @@
+import { startupServices, session } from "./support/session";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -12,8 +13,7 @@ import { defaultAppearance } from "../shared/types/appearance";
 import { type StartupState } from "../shared/types/startup";
 import { type Language } from "../shared/locale";
 import { AppStorage } from "../main/storage/app";
-import { createWorkspace, openWorkspace } from "../main/storage/workspace";
-import { Startup } from "../main/startup/startup";
+import { createWorkspace, openWorkspace } from "./support/session";
 import { handle } from "../main/ipc";
 import { confirmationText } from "../shared/content/confirmation";
 
@@ -74,9 +74,13 @@ test("application failures contain kinds and data, while filesystem, SQLite and 
 
 test("IPC transports plain failures and renderer unwrapping preserves kinds, data, successful values and event disposers", async () => {
     const handlers = new Map<string, (event: IpcMainInvokeEvent) => Promise<IPCReply<unknown>>>();
-    const contents = { mainFrame: {}, ipc: { handle: (channel: string, listener: unknown): void => {
-        handlers.set(channel, listener as (event: IpcMainInvokeEvent) => Promise<IPCReply<unknown>>);
-    } } };
+    const contents = {
+        mainFrame: {}, ipc: {
+            handle: (channel: string, listener: unknown): void => {
+                handlers.set(channel, listener as (event: IpcMainInvokeEvent) => Promise<IPCReply<unknown>>);
+            }
+        }
+    };
     handle(contents as unknown as WebContents, "expected", () => {
         throw new LabloomError({ kind: "attribute-invalid-value", attrId: "A", name: "A", type: "file" });
     });
@@ -87,7 +91,7 @@ test("IPC transports plain failures and renderer unwrapping preserves kinds, dat
     if (reply.ok) throw new Error("Expected a failure reply");
     assert.equal(Object.getPrototypeOf(reply.failure), Object.prototype);
     assert.equal(reply.failure.kind, "attribute-invalid-value");
-    const stop = (): void => {};
+    const stop = (): void => { };
     const api = connectAPI<{ expected(): Promise<void>; success(): Promise<number>; onChanged(): () => void }>({
         expected: async () => reply,
         success: async () => ({ ok: true, value: 42 }),
@@ -105,12 +109,12 @@ test("startup distinguishes a non-workspace folder, a missing folder and an inco
     const empty = mkdtempSync(join(root, "empty-")), missing = join(root, "missing");
     const old = createWorkspace(mkdtempSync(join(root, "old-")));
     old.database.exec("ALTER TABLE attachments ADD COLUMN old_format TEXT");
-    old.database.close();
+    session.close();
     const bytes = readFileSync(join(old.info.path, "workspace.sqlite"));
     for (const language of ["zh-CN", "en"] as const) {
         const storage = new AppStorage(join(root, language));
         storage.load(); storage.saveAppearance({ ...defaultAppearance, language });
-        const startup = new Startup(storage); startup.restore(); t.after(() => startup.close());
+        const startup = startupServices(storage); startup.restore(); t.after(() => startup.close());
         const states = [startup.choose(empty, "open"), startup.choose(missing, "open"), startup.choose(old.info.path, "open")];
         const [a, b, c] = states.map(failure);
         assert.deepEqual(states.map(state => state.status === "needs-workspace" ? state.attemptedPath : null), [empty, missing, old.info.path]);
@@ -136,16 +140,18 @@ test("startup distinguishes a non-workspace folder, a missing folder and an inco
 
 test("English startup language survives an app restart with an incompatible last workspace", t => {
     const root = mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "startup-language-")), workspace = createWorkspace(mkdtempSync(join(root, "workspace-")));
-    workspace.database.exec("ALTER TABLE attachments ADD COLUMN old_format TEXT"); workspace.database.close();
+    workspace.database.exec("ALTER TABLE attachments ADD COLUMN old_format TEXT"); session.close();
     const storage = new AppStorage(join(root, "profile")); storage.load(); storage.saveAppearance({ ...defaultAppearance, language: "en" }); storage.remember(workspace.info);
-    const reopened = new AppStorage(storage.root), startup = new Startup(reopened); t.after(() => startup.close());
+    const reopened = new AppStorage(storage.root), startup = startupServices(reopened); t.after(() => startup.close());
     assert.equal(failure(startup.restore()).kind, "workspace-incompatible");
     assert.equal(reopened.getAppearance().language, "en");
 });
 
 test("confirmation descriptions use the selected language and include the actual impact counts", () => {
-    const preview = { token: "A", causes: [], direct: [], recycled: [{ id: "A", title: "A" }],
-        deletedBlocks: [{ id: "B", excerpt: "B", pages: 2, positions: 3, links: 4 }] };
+    const preview = {
+        token: "A", causes: [], direct: [], recycled: [{ id: "A", title: "A" }],
+        deletedBlocks: [{ id: "B", excerpt: "B", pages: 2, positions: 3, links: 4 }]
+    };
     const chinese = confirmationText(preview, translator("zh-CN")), english = confirmationText(preview, translator("en"));
     assert.ok(chinese.includes("3个位置") && chinese.includes("4个链接"));
     assert.ok(english.includes("3 positions across 2 pages") && english.includes("4 link references") && english.includes("recycle bin: A"));

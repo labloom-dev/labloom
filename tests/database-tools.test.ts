@@ -5,7 +5,8 @@ import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { test, type TestContext } from "node:test";
 import Database from "better-sqlite3";
-import { createBaseline } from "../main/storage/migrations/runner";
+import { createBaseline, validateBaseline } from "../main/storage/migrations/runner";
+import { baselineSql, baselineVersion } from "../main/storage/migrations/generated";
 
 const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const localRoot = join(projectRoot, ".local");
@@ -78,6 +79,7 @@ test("generation replaces the baseline after definition changes and old workspac
     assert.deepEqual(readdirSync(directory).sort(), ["baseline.sql", "index.ts"]);
     const sql = readFileSync(join(directory, "baseline.sql"), "utf8");
     assert.match(sql, /CREATE TABLE `blocks`[\s\S]*?`content` text DEFAULT ''[\s\S]*?\) STRICT;/);
+    assert.match(sql, /FOREIGN KEY \(`block_id`\) REFERENCES `blocks`\(`id`\) ON UPDATE no action ON DELETE no action DEFERRABLE INITIALLY DEFERRED/);
     assert.doesNotMatch(sql, /\b(?:DROP|ALTER) TABLE|__new_|PRAGMA foreign_keys/);
     const generated = savedFiles(directory);
     assert.match(cli(root, ["generate"]), /no files written/);
@@ -133,5 +135,23 @@ test("baseline initialization requires an empty database and preserves an existi
     }
     finally {
         database.close();
+    }
+});
+
+test("full schema validation rejects removal of deferred checking even when foreign_key_list is unchanged", () => {
+    const database = new Database(":memory:"), reference = new Database(":memory:");
+    try {
+        createBaseline(reference);
+        const changed = baselineSql.replace(" DEFERRABLE INITIALLY DEFERRED", "");
+        assert.notEqual(changed, baselineSql);
+        database.exec(changed);
+        database.pragma("user_version=" + baselineVersion);
+        assert.deepEqual(database.pragma("foreign_key_list(sync_refs)"), reference.pragma("foreign_key_list(sync_refs)"));
+        const before = database.serialize();
+        assert.throws(() => validateBaseline(database), { message: "workspace-incompatible" });
+        assert.deepEqual(database.serialize(), before);
+    }
+    finally {
+        database.close(); reference.close();
     }
 });

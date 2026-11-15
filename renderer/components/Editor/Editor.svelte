@@ -47,11 +47,19 @@
 {#if preview}
     <div class="preview" popover="manual" {@attach element => element.showPopover()} style:left={preview.x + "px"} style:top={preview.y + "px"}><ReferenceView {session} target={preview.target} /></div>
 {/if}
+{#if pasteChoice}
+    <div class="compact-menu paste-menu" role="menu" aria-label="粘贴方式" style:left={pasteChoice.x + "px"} style:top={pasteChoice.y + "px"} onkeydown={pasteKeys}>
+        <button class="compact-item" role="menuitem" {@attach element => element.focus({ preventScroll: true })} onmousedown={keep} onclick={() => void perform(() => paste(false))}>粘贴</button>
+        <button class="compact-item" role="menuitem" onmousedown={keep} onclick={() => void perform(() => paste(true))}>粘贴同步块</button>
+    </div>
+{/if}
 {#if editor}<Toolbar {editor} {session} />{/if}
 
 <style>
     .body-context { position: fixed; inset: auto; margin: 0; }
     .body-context button { width: 100%; }
+    .paste-menu { position: fixed; z-index: 85; min-width: 170px; }
+    .paste-menu button { width: 100%; }
     .editor { position: relative; min-height: calc(var(--pane-height, 100vh) - var(--pagebar-height)); min-width: 0; color: var(--dc-c-fg-default); background: var(--dc-c-bg-default); }
     .editor.paper { min-height: var(--editor-min-height); }
     .editor :global(.tiptap) { outline: none; min-height: var(--editor-min-height); padding: 16px 32px 20px 44px; user-select: text; }
@@ -95,7 +103,7 @@
     import { mount, onMount, unmount, untrack } from "svelte";
     import { Editor, Extension } from "@tiptap/core";
     import History from "@tiptap/extension-history";
-    import { Slice, type Node as DocNode } from "@tiptap/pm/model";
+    import { type Node as DocNode } from "@tiptap/pm/model";
     import { TextSelection, type SelectionBookmark } from "@tiptap/pm/state";
     import type { EditorView } from "@tiptap/pm/view";
     import { Mapping, type Step } from "@tiptap/pm/transform";
@@ -113,13 +121,17 @@
     import TargetPicker from "../Knowledge/TargetPicker.svelte";
     import Toolbar from "./Toolbar.svelte";
     import { blankBlock, blockData, blockJSON, canNest, documentEdit, documentExtensions, indexDoc, kindOf, pageDocument, referenceBlock, removesReference, subtree } from "./document";
-    import { clipboardRows, editing, located, remoteEdit, selectionIn, shallowPaste, syncInsert } from "./transactions";
+    import { clipboardRows, editing, located, remoteEdit, selectionIn, syncInsert } from "./transactions";
+    import { pasteBlocks, readClipboard, writeClipboard, type BlockClipboard } from "./clipboard";
     import { borders, borderPlugin } from "./sync-border";
     import { inverse, patchDocument, replay } from "./reconcile";
     let { session, tabId, anchorId }: { session: PageSession; tabId: string; anchorId?: string } = $props();
     let root: HTMLDivElement, host: HTMLDivElement, editor = $state.raw<Editor | null>(null);
     let contextMenu = $state<HTMLDivElement>();
-    const locked = $derived(readingTabs.has(tabId) || session.state.loading || !!session.state.page?.attributes.deleted);
+    let workspaceId = "", pasting = $state(false);
+    type PasteChoice = { clipboard: BlockClipboard; bookmark: SelectionBookmark; x: number; y: number };
+    let pasteChoice = $state.raw<PasteChoice | null>(null), pendingPaste: PasteChoice | null = null;
+    const locked = $derived(pasting || !!pasteChoice || readingTabs.has(tabId) || session.state.loading || !!session.state.page?.attributes.deleted);
     type Handle = { id: string; pos: number; top: number; left: number; kind: ContentBlockKind; shared: boolean; folded: boolean; children: boolean };
     let handle = $state.raw<Handle | null>(null), menu = $state(false), picker = $state<"inline" | "reference" | "sync" | null>(null);
     let caret: SelectionBookmark | null = null, preview = $state.raw<{ target: Target; pos: number; x: number; y: number } | null>(null);
@@ -162,6 +174,63 @@
             items[(index + (event.key === "ArrowDown" ? 1 : items.length - 1)) % items.length]?.focus();
         }
         else if (event.key === "Escape" || event.key === "Tab") { event.preventDefault(); event.stopPropagation(); contextMenu.hidePopover(); editor?.view.focus(); }
+    }
+    function pasteKeys(event: KeyboardEvent): void {
+        if (event.isComposing) return;
+        if (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Home" || event.key === "End") {
+            event.preventDefault(); event.stopPropagation();
+            const items = [...(event.currentTarget as HTMLDivElement).querySelectorAll<HTMLButtonElement>("button")];
+            const index = items.indexOf(document.activeElement as HTMLButtonElement);
+            items[event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (index + (event.key === "ArrowDown" ? 1 : items.length - 1)) % items.length]?.focus();
+        }
+        else if (event.key === "Escape" || event.key === "Tab") {
+            event.preventDefault(); event.stopPropagation(); pasteChoice = null; pendingPaste = null; editor?.view.focus();
+        }
+    }
+    async function offerPaste(clipboard: BlockClipboard): Promise<void> {
+        const instance = editor;
+        if (!instance || locked) return;
+        const at = instance.view.coordsAtPos(instance.state.selection.from);
+        const choice = pendingPaste = { clipboard, bookmark: instance.state.selection.getBookmark(), x: Math.max(4, Math.min(at.left, window.innerWidth - 184)), y: Math.max(4, Math.min(at.bottom + 4, window.innerHeight - 88)) };
+        pasting = true;
+        try {
+            if (!await session.flush() || instance.isDestroyed) return;
+            const available = await window.api.knowledge.syncBlocks(clipboard.workspaceId, clipboard.ids);
+            if (instance.isDestroyed || pendingPaste !== choice) return;
+            pasteChoice = choice;
+            if (!available) await paste(false);
+        }
+        finally {
+            pasting = false;
+            if (!pasteChoice) pendingPaste = null;
+        }
+    }
+    async function paste(synced: boolean): Promise<void> {
+        const choice = pasteChoice, instance = editor;
+        if (!choice || !instance || instance.isDestroyed) return;
+        pasteChoice = null; pasting = true;
+        try {
+            if (!await session.flush() || instance.isDestroyed) return;
+            const current = synced ? await window.api.knowledge.syncBlocks(choice.clipboard.workspaceId, choice.clipboard.ids) : undefined;
+            if (synced && !current) throw new LabloomError({ kind: "block-sync-unavailable" });
+            if (current) await session.objects(current.map(block => block.id));
+            if (instance.isDestroyed) return;
+            const state = instance.state.apply(instance.state.tr.setSelection(choice.bookmark.resolve(instance.state.doc)));
+            const planned = pasteBlocks(state, choice.clipboard, current ?? undefined);
+            pendingPaste = null;
+            let saved = false;
+            await session.action(async token => {
+                const result = await window.api.knowledge.commitEdit({ ...planned.edit, pageId: session.state.page!.id, tabId, batch: 0, ...(synced ? { sync: choice.clipboard.ids } : {}) }, token);
+                saved = result.status === "saved";
+                return result;
+            });
+            if (saved && !instance.isDestroyed) instance.view.dispatch(selectionIn(instance.state.tr, Math.min(planned.selection, instance.state.doc.content.size)));
+        }
+        finally {
+            pasting = false;
+            pendingPaste = null;
+            if (!instance.isDestroyed) instance.view.focus();
+        }
     }
     function clearPreview(): void {
         clearTimeout(previewTimer); hoveredReference = null; preview = null;
@@ -309,6 +378,10 @@
     }
     onMount(() => {
         const page = session.state.page!, inputHost = host;
+        void perform(async () => {
+            const state = await window.api.startup.getState();
+            if (state.status === "ready") workspaceId = state.workspace.id;
+        });
         const card = referenceBlock.extend({
             addNodeView: () => ({ node }) => {
                 const dom = document.createElement("div");
@@ -359,13 +432,10 @@
                     if (!data) return false;
                     const internal = data.getData("application/x-labloom-blocks");
                     if (internal) {
-                        const paste = shallowPaste(Slice.fromJSON(view.state.schema, JSON.parse(internal)));
-                        const inherited: string[] = [];
-                        paste.content.descendants(node => {
-                            if (node.attrs.blockId) inherited.push(node.attrs.blockId);
-                        });
-                        view.dispatch(view.state.tr.replaceSelection(paste).setMeta("workspace.paste", true).setMeta("workspace.inherited", inherited).scrollIntoView());
-                        return true;
+                        const clipboard = readClipboard(view.state.schema, internal);
+                        if (clipboard) {
+                            void perform(() => offerPaste(clipboard)); return true;
+                        }
                     }
                     const html = data.getData("text/html"), plain = data.getData("text/plain");
                     if (located(view.state)?.node.type.name === "pageTable") return false;
@@ -410,6 +480,7 @@
                         else handle = { ...handle, pos: p.pos };
                     }
                     if (caret) caret = caret.map(tr.mapping);
+                    if (pendingPaste) pendingPaste.bookmark = pendingPaste.bookmark.map(tr.mapping);
                     if (preview) {
                         const pos = tr.mapping.map(preview.pos, 1);
                         preview = tr.doc.nodeAt(pos)?.type.name === "inlineReference" ? { ...preview, pos } : null;
@@ -422,14 +493,10 @@
                 }
                 if (transaction.getMeta(remoteEdit)) return;
                 const before = transaction.before, after = ed.state.doc, edit = documentEdit(before, after);
-                if (transaction.getMeta(syncInsert) || transaction.getMeta("workspace.paste")) {
-                    const inherited = new Set<string>(transaction.getMeta("workspace.inherited") ?? []);
+                if (transaction.getMeta(syncInsert)) {
                     edit.blocks = edit.blocks.filter(b => {
                         const cached = session.state.page!.blocks[b.id];
-                        if (cached && JSON.stringify(cached) === JSON.stringify(b)) return false;
-                        if (!inherited.has(b.id) || indexDoc(before).has(b.id)) return true;
-                        session.state.page!.blocks[b.id] = b;
-                        return false;
+                        return !cached || JSON.stringify(cached) !== JSON.stringify(b);
                     });
                 }
                 if (!removesReference(edit, session.state.page!)) {
@@ -461,7 +528,8 @@
         function copy(view: EditorView, event: ClipboardEvent, cut: boolean): boolean {
             if (view.state.selection.empty || !event.clipboardData) return false;
             const slice = view.state.selection.content(), data = view.serializeForClipboard(slice);
-            event.clipboardData.setData("application/x-labloom-blocks", JSON.stringify(slice.toJSON()));
+            const internal = writeClipboard(workspaceId, slice);
+            if (internal) event.clipboardData.setData("application/x-labloom-blocks", internal);
             event.clipboardData.setData("text/html", data.dom.innerHTML);
             event.clipboardData.setData("text/plain", data.text);
             if (cut && instance.isEditable) view.dispatch(view.state.tr.deleteSelection().scrollIntoView());
@@ -495,6 +563,9 @@
             instance.view.dispatch((update ?? instance.state.tr).setMeta(borders, true));
         });
         function outside(e: PointerEvent): void {
+            if (pasteChoice && e.target instanceof Element && !e.target.closest(".paste-menu")) {
+                pasteChoice = null; pendingPaste = null;
+            }
             if (e.target instanceof Element && !e.target.closest(".handle,.picker-layer,.inline-picker,.block-menu")) close();
             if (preview && e.target instanceof Element && !e.target.closest(".preview,.inline-reference")) preview = null;
         }
@@ -507,6 +578,8 @@
             for (const name of inputEvents) inputHost.removeEventListener(name, hold, true);
             document.removeEventListener("pointerdown", outside, true);
             instance.destroy();
+            pasteChoice = null;
+            pendingPaste = null;
             editor = null;
         };
     });

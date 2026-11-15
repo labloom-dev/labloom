@@ -1,4 +1,5 @@
 import { BrowserWindow, nativeTheme } from "electron";
+import * as events from "../knowledge/events";
 import { setLocale } from "../ui/i18n";
 import { appearanceChannels } from "../../shared/ipc";
 import { handle } from "../ipc";
@@ -28,7 +29,7 @@ export function registerAppearanceIPCs(window: BrowserWindow, storage: AppStorag
         const before = storage.getAppearance();
         const appearance = storage.saveAppearance(value);
         setLocale(appearance.language);
-        for (const open of BrowserWindow.getAllWindows()) if (!open.isDestroyed()) open.webContents.send(appearanceChannels.changed, appearance);
+        events.appearanceChanged(appearance);
         if (appearance.timeZone !== before.timeZone) zoneChanged?.();
         nativeTheme.themeSource = appearance.theme;
         applyFrame();

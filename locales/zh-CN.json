@@ -206,7 +206,7 @@
         "block-missing": "找不到页面中的块：{{blockId}}"
     },
     "startup": {
-        "brand": "知织，Labloom",
+        "brand": "知织",
         "welcome": "让知识，从这里生长。",
         "opening": "正在打开工作区",
         "intro": "欢迎来到知织。选一块属于你的空间，种下第一颗灵感。",

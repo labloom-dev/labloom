@@ -7,7 +7,6 @@ import type { Workspace } from "../../shared/types/startup";
 import { createWorkspaceSchema, validateWorkspaceSchema } from "./schema";
 import { initializeBuiltinAttrs, validateBuiltinAttrs } from "./builtin-attrs";
 import { createWorkspaceDatabase, type WorkspaceDatabase } from "./database";
-import { withFileCleanup } from "./files";
 import { workspaceMeta } from "./tables";
 import { diagnostic, toFailureInfo } from "../../shared/failure";
 
@@ -96,7 +95,6 @@ export function openWorkspace(path: string, expectedId?: string): OpenWorkspace 
         const info = validateWorkspace(database, root, expectedId);
         const db = createWorkspaceDatabase(database);
         database.pragma("foreign_keys = ON");
-        withFileCleanup(db, root, cleanup => cleanup());
         return { info, database, db };
     }
     catch (error) {

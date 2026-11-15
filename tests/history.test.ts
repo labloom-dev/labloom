@@ -1,52 +1,50 @@
+import { knowledgeServices, historyServices, purgeServices, session, type Knowledge, type History } from "./support/session";
 import { hasFailure } from "./failures";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
-import { EditHistory } from "../main/knowledge/history";
-import { KnowledgeService } from "../main/knowledge/service";
-import { PurgeService } from "../main/knowledge/purge";
-import { createWorkspace, openWorkspace } from "../main/storage/workspace";
+import { createWorkspace, openWorkspace } from "./support/session";
 import { blockText, payload } from "../shared/content/blocks";
 
-function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { service: KnowledgeService; history: EditHistory } {
+function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { service: Knowledge; history: History } {
     const workspace = createWorkspace(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "history-")));
     t.after(() => {
-        if (workspace.database.open) workspace.database.close();
+        session.close();
     });
-    const service = new KnowledgeService(workspace.db), history = new EditHistory(service);
+    const service = knowledgeServices(), history = historyServices();
     return { ...workspace, service, history };
 }
 
-function edit(service: KnowledgeService, pageId: string, tabId: string, text: string): void {
+function edit(service: Knowledge, pageId: string, tabId: string, text: string): void {
     const page = service.get(pageId), block = page.blocks[page.children[0]];
     assert.equal(service.commitEdit({ pageId, tabId, batch: 1, blocks: [{ ...block, payload: payload("paragraph", text) }] }).status, "saved");
 }
 
-function text(service: KnowledgeService, pageId: string): string {
+function text(service: Knowledge, pageId: string): string {
     const page = service.get(pageId);
     return blockText(page.blocks[page.children[0]]);
 }
 
-test("windows on the same workspace share history and invalidate overlapping edits", t => {
+test("tabs in the same session share history and invalidate overlapping edits", t => {
     const { service, history, db } = fixture(t), page = service.create();
-    const window = new KnowledgeService(db), other = new EditHistory(window);
+    const other = history;
     edit(service, page.id, "a", "A");
     assert.equal(other.state("a").canUndo, true);
     other.apply("a", "undo");
     assert.equal(text(service, page.id), "");
     history.apply("a", "redo");
-    assert.equal(text(window, page.id), "A");
-    edit(window, page.id, "b", "B");
+    assert.equal(text(service, page.id), "A");
+    edit(service, page.id, "b", "B");
     assert.deepEqual(history.state("a"), { canUndo: false, redo: [] });
     assert.equal(history.state("b").canUndo, true);
-    service.transaction(() => edit(window, page.id, "c", "C"));
+    service.transaction(() => edit(service, page.id, "c", "C"));
     assert.equal(history.state("c").canUndo, true);
     const before = other.state("c");
     assert.throws(() => service.transaction(() => {
-        edit(window, page.id, "d", "D");
-        throw new Error("Abort another window");
+        edit(service, page.id, "d", "D");
+        throw new Error("Abort another tab");
     }), /Abort another/);
     assert.equal(text(service, page.id), "C");
     assert.deepEqual(other.state("c"), before);
@@ -116,20 +114,20 @@ test("reopening preserves content and loses every undo and redo branch", t => {
     edit(service, page.id, "a", "A");
     edit(service, page.id, "a", "B");
     history.apply("a", "undo");
-    database.close();
+    session.close();
     const workspace = openWorkspace(info.path);
-    t.after(() => workspace.database.close());
-    const restored = new KnowledgeService(workspace.db), next = new EditHistory(restored);
+    t.after(() => session.close());
+    const restored = knowledgeServices(), next = historyServices();
     assert.equal(text(restored, page.id), "A");
     assert.deepEqual(next.state("a"), { canUndo: false, redo: [] });
     assert.throws(() => next.apply("a", "undo"), hasFailure("history-empty"));
 });
 
-test("permanent deletion clears unrelated history in every window only after confirmation", t => {
+test("permanent deletion clears unrelated history in every tab only after confirmation", t => {
     const { service, history, db, info } = fixture(t), a = service.create(), b = service.create();
-    const window = new KnowledgeService(db), other = new EditHistory(window), purge = new PurgeService(service, history, info.path);
+    const other = history, purge = purgeServices();
     edit(service, a.id, "a", "A");
-    edit(window, b.id, "b", "B");
+    edit(service, b.id, "b", "B");
     const trash = service.trash([a.id], "trash");
     assert.equal(trash.status, "confirmation");
     service.trash([a.id], "trash", trash.preview.token);

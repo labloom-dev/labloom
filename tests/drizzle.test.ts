@@ -1,3 +1,4 @@
+import { feedServices, session } from "./support/session";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync } from "node:fs";
@@ -5,10 +6,9 @@ import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import Database from "better-sqlite3";
 import { and, eq } from "drizzle-orm";
-import { FeedService } from "../main/feed/service";
 import { createWorkspaceDatabase } from "../main/storage/database";
 import { attrsMeta, blocks, syncRefs, feedItems, pageAttrs, pages, workspaceMeta } from "../main/storage/tables";
-import { createWorkspace, openWorkspace, type OpenWorkspace } from "../main/storage/workspace";
+import { createWorkspace, openWorkspace, type OpenWorkspace } from "./support/session";
 import { type FeedEntry } from "../shared/types/feed";
 
 const testRoot = process.env.LABLOOM_TEST_ROOT;
@@ -21,7 +21,7 @@ function directory(): string {
 
 function track(t: TestContext, workspace: OpenWorkspace): OpenWorkspace {
     t.after(() => {
-        if (workspace.database.open) workspace.database.close();
+        session.close();
     });
     return workspace;
 }
@@ -47,7 +47,7 @@ test("Drizzle round-trips JSON, nullable columns, and STRICT ANY values on the w
     assert.deepEqual(db.select().from(attrsMeta).where(eq(attrsMeta.id, "custom:value")).get()!.metadata, {});
     assert.deepEqual(db.select().from(syncRefs).where(and(eq(syncRefs.containerId, "page"), eq(syncRefs.slot, "children")))
         .orderBy(syncRefs.position).all().map(use => [use.position, use.blockId]), [[0, "child"], [1, "child"]]);
-    database.close();
+    session.close();
     const reopened = track(t, openWorkspace(info.path, info.id));
     assert.deepEqual(reopened.db.select().from(pages).get()!.children, ["child", "child"]);
     assert.deepEqual(reopened.db.select().from(workspaceMeta).get()!.settings, { language: "zh-CN", nested: { enabled: true } });
@@ -55,8 +55,8 @@ test("Drizzle round-trips JSON, nullable columns, and STRICT ANY values on the w
 
 test("Drizzle transactions roll back rows, trigger-maintained references, and modification times together", t => {
     const { db } = track(t, createWorkspace(directory()));
-    db.insert(blocks).values({ id: "title", type: "title" }).run();
-    db.insert(pages).values({ id: "page", kind: "editable", titleBlockId: "title", children: ["missing"] }).run();
+    db.insert(blocks).values([{ id: "title", type: "title" }, { id: "child", type: "paragraph" }]).run();
+    db.insert(pages).values({ id: "page", kind: "editable", titleBlockId: "title", children: ["child"] }).run();
     const before = db.select().from(workspaceMeta).get();
     const uses = db.select().from(syncRefs).all();
     assert.throws(() => db.transaction(tx => {
@@ -64,24 +64,16 @@ test("Drizzle transactions roll back rows, trigger-maintained references, and mo
         tx.update(blocks).set({ content: "changed" }).run();
         throw new Error("Abort edit");
     }), /Abort edit/);
-    assert.deepEqual(db.select().from(pages).get()!.children, ["missing"]);
+    assert.deepEqual(db.select().from(pages).get()!.children, ["child"]);
     assert.equal(db.select().from(blocks).get()!.content, null);
     assert.deepEqual(db.select().from(syncRefs).all(), uses);
     assert.deepEqual(db.select().from(workspaceMeta).get(), before);
 });
 
-test("FeedService construction does not create or upgrade schema", t => {
-    const database = new Database(":memory:");
-    t.after(() => database.close());
-    new FeedService(createWorkspaceDatabase(database));
-    assert.deepEqual(database.prepare("SELECT name FROM sqlite_master").all(), []);
-    assert.equal(database.pragma("user_version", { simple: true }), 0);
-});
-
 test("Feed writes remain atomic when an entry fails halfway through a batch", async t => {
-    const { db } = track(t, createWorkspace(directory()));
+    const { db } = track(t, createWorkspace(directory(), { loadFeed: async request => ({ entries, title: "", url: request.url, etag: null, lastModified: null }) }));
     let entries = [entry("original")];
-    const service = new FeedService(db, async request => ({ entries, title: "", url: request.url, etag: null, lastModified: null }));
+    const service = feedServices();
     const id = await service.saveSource({ name: "Feed", url: "https://example.org/feed" });
     const item = service.getState({}).items[0];
     service.setRead(item.id, true);

@@ -1,16 +1,19 @@
-import { app, shell, BrowserWindow } from "electron";
+import { app, shell, BrowserWindow, Notification, net } from "electron";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import icon from "../resources/labloom-2x-trs.png?asset";
-import { knowledgeChanged, appChannels } from "../shared/ipc";
+import { knowledgeChanged, feedChanged, appearanceChannels, appChannels } from "../shared/ipc";
 import { on } from "./ipc";
 import { captureConsole, LogDirectory } from "./logging";
 import { AppStorage, developmentDataPath } from "./storage/app";
-import { Startup } from "./startup/startup";
+import * as startup from "./startup/startup";
+import * as session from "./session";
+import * as events from "./knowledge/events";
+import * as timers from "./knowledge/timers";
+import { t } from "./ui/i18n";
 import { registerStartupIPCs } from "./startup/ipc";
 import { registerFeedIPCs } from "./feed/ipc";
 import { registerAppearanceIPCs } from "./appearance/ipc";
-import { configureScheduler } from "./knowledge/scheduler";
 import { registerKnowledgeIPCs } from "./knowledge/ipc";
 
 
@@ -32,7 +35,20 @@ process.once("exit", code => {
     applicationLog?.close(`exit ${code}`);
 });
 const storage = new AppStorage(dataPath);
-const startup = new Startup(storage);
+startup.initialize(storage);
+session.configureNetwork((input, init) => net.fetch(input instanceof URL ? input.toString() : input, init));
+let mainWindowRef: BrowserWindow | undefined;
+events.subscribe(event => {
+    const window = mainWindowRef;
+    if (event.type === "reminder") {
+        if (Notification.isSupported()) new Notification({ title: t("notice.reminderTitle"), body: event.body }).show();
+        return;
+    }
+    if (!window || window.isDestroyed()) return;
+    if (event.type === "knowledge") window.webContents.send(knowledgeChanged, event.change);
+    else if (event.type === "feed") window.webContents.send(feedChanged);
+    else window.webContents.send(appearanceChannels.changed, event.appearance);
+});
 
 function openExternal(url: string): void {
     // Pages may only hand web links to the system browser, never file: or application protocols.
@@ -47,11 +63,13 @@ function createWindow(): void {
         minContentHeight = 37 + 8 * 48;
 
     const mainWindow = new BrowserWindow({
-        ...(process.platform !== "darwin" ? { titleBarOverlay: {
-            color: "#fffdf7",
-            symbolColor: "#302c25",
-            height: 32
-        }} : {}),
+        ...(process.platform !== "darwin" ? {
+            titleBarOverlay: {
+                color: "#fffdf7",
+                symbolColor: "#302c25",
+                height: 32
+            }
+} : {}),
         width: 1280,
         height: 860,
         minWidth: minWindowWidth,
@@ -67,22 +85,22 @@ function createWindow(): void {
             sandbox: true
         }
     });
+    mainWindowRef = mainWindow;
+    mainWindow.once("closed", () => {
+        if (mainWindowRef === mainWindow) mainWindowRef = undefined;
+    });
     const contents = mainWindow.webContents;
 
     contents.on("console-message", details => {
         applicationLog?.record(`renderer ${details.level} ${details.sourceId}:${details.lineNumber}`, details.message);
     });
     contents.on("render-process-gone", (_event, details) => applicationLog?.record("Renderer exited", details));
-    registerStartupIPCs(mainWindow, startup);
-    const library = registerKnowledgeIPCs(mainWindow, startup, storage);
-    const feed = registerFeedIPCs(mainWindow, startup, library);
+    registerStartupIPCs(mainWindow);
+    registerKnowledgeIPCs(mainWindow);
+    registerFeedIPCs(mainWindow);
     registerAppearanceIPCs(mainWindow, storage, () => {
-        if (startup.state.status === "ready") {
-            library.getTimers().recalculateAll();
-            for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(knowledgeChanged, { sourceTab: "", pages: [], blocks: [], notices: true });
-        }
+        if (session.ready()) timers.recalculateAll();
     });
-    configureScheduler(startup, library.getTimers, id => feed().refresh(id));
     on(contents, appChannels.openDevTools, () => contents.openDevTools({ mode: "detach" }));
 
     mainWindow.once("ready-to-show", () => {
@@ -129,7 +147,7 @@ function createWindow(): void {
 
         if (
             (command && (input.code === "Minus" || (input.code === "Equal" && input.shift)))
-         || (app.isPackaged && input.code === "KeyI" && ((input.control && input.shift) || (input.meta && input.alt)))
+            || (app.isPackaged && input.code === "KeyI" && ((input.control && input.shift) || (input.meta && input.alt)))
         ) {
             event.preventDefault();
         }

@@ -18,6 +18,7 @@ type ExtraItem = {
 };
 
 export type FeedRequest = {
+    signal?: AbortSignal;
     url: string;
     /** Validators from the previous response, replayed verbatim. */
     etag?: string | null;
@@ -278,7 +279,7 @@ async function download(request: FeedRequest, fetcher: Fetcher): Promise<FeedRes
     if (request.lastModified) headers["If-Modified-Since"] = request.lastModified;
     let response: Response;
     try {
-        response = await fetcher(url, { signal: AbortSignal.timeout(30000), credentials: "omit", headers });
+        response = await fetcher(url, { signal: request.signal ? AbortSignal.any([request.signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000), credentials: "omit", headers });
     }
     catch (error) {
         throw requestError(error);
@@ -338,7 +339,7 @@ export async function fetchFeed(request: FeedRequest, fetcher: Fetcher = fetch):
     }
     // arXiv requests share one connection queue, at least three seconds apart.
     const queued = arxivQueue.then(async () => {
-        await delay(Math.max(0, nextArxivRequest - Date.now()));
+        await delay(Math.max(0, nextArxivRequest - Date.now()), undefined, { signal: request.signal });
         try {
             return await download(request, fetcher);
         }
@@ -346,6 +347,6 @@ export async function fetchFeed(request: FeedRequest, fetcher: Fetcher = fetch):
             nextArxivRequest = Date.now() + 3000;
         }
     });
-    arxivQueue = queued.catch(() => {});
+    arxivQueue = queued.catch(() => { });
     return queued;
 }

@@ -513,7 +513,7 @@ export function session(tabId: string, pageId: string): PageSession {
     return value;
 }
 export function receiveChange(change: KnowledgeChange): void {
-    if (change.purged?.length) {
+    if (change.purged && (change.purged.length || change.blocks.length)) {
         historyEpoch++;
         for (const value of sessions.values()) value.state.history = { canUndo: false, redo: [] };
     }

@@ -1,31 +1,28 @@
+import { knowledgeServices, historyServices, paperServices, purgeServices, session, type Knowledge, type History, type Papers, type Purge } from "./support/session";
 import { hasFailure } from "./failures";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
-import { createWorkspace } from "../main/storage/workspace";
-import { KnowledgeService } from "../main/knowledge/service";
-import { EditHistory } from "../main/knowledge/history";
-import { PaperService } from "../main/knowledge/papers";
-import { PurgeService } from "../main/knowledge/purge";
+import { createWorkspace, openWorkspace } from "./support/session";
 import { payload } from "../shared/content/blocks";
 import { PDF_EXTRACTOR_VERSION } from "../shared/content/pdf-text";
 import type { CommitResult } from "../shared/types/content";
 import { knownCoordinatePdf } from "./fixtures/pdf-text";
 import { commands, menus, shortcutCommand } from "../shared/content/commands";
 
-function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { service: KnowledgeService; history: EditHistory; papers: PaperService; purge: PurgeService } {
+function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { service: Knowledge; history: History; papers: Papers; purge: Purge } {
     const ws = createWorkspace(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "purge-")));
-    const service = new KnowledgeService(ws.db), history = new EditHistory(service), papers = new PaperService(service, ws.info.path), purge = new PurgeService(service, history, ws.info.path);
-    t.after(() => ws.database.close());
+    const service = knowledgeServices(), history = historyServices(), papers = paperServices(), purge = purgeServices();
+    t.after(() => session.close());
     return { ...ws, service, history, papers, purge };
 }
 function confirm(action: (token?: string) => CommitResult): void {
     const result = action();
     assert.equal(result.status === "saved" ? result.status : action(result.preview.token).status, "saved");
 }
-function erase(purge: PurgeService, ids: string[] | null, tab = "purger"): string[] {
+function erase(purge: Purge, ids: string[] | null, tab = "purger"): string[] {
     const result = purge.purge(ids, tab);
     if (result.status === "deleted") return result.pages;
     const done = purge.purge(ids, tab, result.token);
@@ -73,6 +70,64 @@ test("live synchronized blocks survive while soft references remain deleted and 
     assert.throws(() => history.apply("c", "undo"), hasFailure("history-empty"));
     assert.deepEqual(service.sql.prepare("PRAGMA foreign_key_check").all(), []);
 });
+test("purging collects rootless containers together with deleted children and preserves recycled trees", t => {
+    const { service, history, purge } = fixture(t), a = service.create("editable", "A"), d = service.create("editable", "D"), recycled = service.create("editable", "Recycled");
+    const parent = a.blocks[a.children[0]], child = { id: randomUUID(), type: "paragraph" as const, payload: payload("paragraph", "C"), children: [] };
+    service.commitEdit({ pageId: a.id, tabId: "a", batch: 0, blocks: [{ ...parent, children: [child.id] }, child] });
+    service.commitEdit({ pageId: d.id, tabId: "d", batch: 0, blocks: [], pageChildren: [child.id] });
+    // A soft link does not retain the rootless parent, but must survive target deletion.
+    service.commitEdit({ pageId: a.id, tabId: "a", batch: 1, blocks: [{ ...a.blocks[a.titleBlockId], payload: { ...payload("title"), inline: [{ type: "inlineReference", attrs: { target: { kind: "block", id: parent.id }, label: "B" } }] } }] });
+    confirm(token => service.deleteBlock({ pageId: a.id, blockId: parent.id, tabId: "a" }, token));
+    confirm(token => service.trash([d.id, recycled.id], "trash", token));
+    const preview = purge.purge([d.id], "purge");
+    assert.equal(preview.status, "confirmation");
+    if (preview.status === "confirmation") assert.deepEqual(preview.pages.map(page => page.id), [d.id]);
+    erase(purge, [d.id]);
+    assert.equal(service.blockRow(parent.id), null);
+    assert.equal(service.blockRow(child.id), null);
+    assert.ok(service.get(recycled.id).blocks[recycled.children[0]]);
+    assert.equal(history.state("a").canUndo, false);
+    assert.equal(service.statement("SELECT target_id FROM link_refs WHERE source_kind='block' AND source_id=?").pluck().get(a.titleBlockId), parent.id);
+    assert.equal(service.resolve({ kind: "block", id: parent.id })?.status, "deleted");
+    assert.deepEqual(service.sql.pragma("foreign_key_check"), []);
+});
+
+test("reopening collects removed blocks and rootless cycles while keeping live and recycled trees", t => {
+    const { service, database, info } = fixture(t), a = service.create("editable", "A"), recycled = service.create("editable", "Recycled");
+    const removed = a.children[0], left = randomUUID(), right = randomUUID();
+    confirm(token => service.deleteBlock({ pageId: a.id, blockId: removed, tabId: "a" }, token));
+    confirm(token => service.trash([recycled.id], "trash", token));
+    database.transaction(() => {
+        const insert = database.prepare("INSERT INTO blocks(id,type,children) VALUES (?,'paragraph',?)");
+        insert.run(left, JSON.stringify([right])); insert.run(right, JSON.stringify([left]));
+    })();
+    assert.ok(service.blockRow(removed));
+    session.close();
+    const reopened = openWorkspace(info.path); t.after(() => session.close());
+    const current = knowledgeServices();
+    for (const id of [removed, left, right]) assert.equal(current.blockRow(id), null);
+    assert.equal(current.get(a.id).title, "A");
+    assert.ok(current.get(recycled.id).blocks[recycled.children[0]]);
+    assert.deepEqual(reopened.database.pragma("foreign_key_check"), []);
+});
+
+test("collecting only orphan blocks clears every tab's history even when the recycle bin has no pages", t => {
+    const { service, history, purge } = fixture(t), a = service.create("editable", "A"), b = service.create("editable", "B");
+    service.commitEdit({ pageId: b.id, tabId: "b", batch: 0, blocks: [], attributes: { pinned: true } });
+    confirm(token => service.deleteBlock({ pageId: a.id, blockId: a.children[0], tabId: "a" }, token));
+    assert.equal(history.state("a").canUndo, true);
+    assert.equal(history.state("b").canUndo, true);
+    const result = purge.purge(null, "purge");
+    assert.equal(result.status, "deleted");
+    if (result.status === "deleted") {
+        assert.deepEqual(result.pages, []);
+        assert.deepEqual(result.blocks, [a.children[0]]);
+    }
+    assert.equal(history.state("a").canUndo, false);
+    assert.equal(history.state("b").canUndo, false);
+    assert.equal(service.get(b.id).attributes.pinned, true);
+});
+
 test("a changed recycle set invalidates a previously confirmed empty-trash scope", t => {
     const { service, purge } = fixture(t), a = service.create("editable", "A"), b = service.create("editable", "B");
     confirm(token => service.trash([a.id], "a", token));

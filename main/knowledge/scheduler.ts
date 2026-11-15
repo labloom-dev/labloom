@@ -1,25 +1,15 @@
-import { app, BrowserWindow, Notification } from "electron";
-import { knowledgeChanged } from "../../shared/ipc";
-import { type Startup } from "../startup/startup";
-import { type TimerService } from "./timers";
-import { t } from "../ui/i18n";
-
-let stop: (() => void) | undefined;
-export function configureScheduler(startup: Startup, timers: () => TimerService, refresh: (id: string) => Promise<void>): void {
-    if (stop) return;
+import * as feed from "../feed/service";
+import * as data from "./records";
+let interval: ReturnType<typeof setInterval> | undefined;
+export function start(): void {
     const check = (): void => {
-        if (startup.state.status !== "ready") return;
-        void timers().check((notice, body) => {
-            for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(knowledgeChanged, { sourceTab: "", pages: [notice.pageId], blocks: [], notices: true });
-            if (Notification.isSupported()) new Notification({ title: t("notice.reminderTitle"), body }).show();
-        }, refresh).catch(error => console.error("Timer dispatch failed", error));
+        void feed.refreshDue().catch(error => console.error("Timer dispatch failed", error));
     };
-    const interval = setInterval(check, 15000);
+    interval = setInterval(check, 15000);
     interval.unref();
-    startup.onReady = check;
-    stop = () => {
- clearInterval(interval); startup.onReady = undefined;
-};
-    app.once("will-quit", stop);
-    check();
+    if (data.statement("SELECT 1 FROM timers WHERE due_at IS NOT NULL LIMIT 1").get()) check();
+}
+export function stop(): void {
+    clearInterval(interval);
+    interval = undefined;
 }

@@ -42,6 +42,7 @@ export type PageList = { items: PageSummary[]; total: number };
 export type EditCommit = {
     pageId: string; tabId: string; batch: number;
     blocks: ContentBlock[]; pageChildren?: string[]; attributes?: Record<string, AttributeValue>; detach?: string[];
+    sync?: string[];
 };
 export type Position = { pageId: string; containerId: string; index: number; blockId: string };
 export type Placement = { position: Position; action: "insert" | "remove" | "clone" | "duplicate" | "move-up" | "move-down"; blockId?: string; tabId: string };

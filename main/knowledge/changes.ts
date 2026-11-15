@@ -1,10 +1,13 @@
-import { LabloomError } from "../../shared/failure";
 import { attributeTargetKind, attributeTargets, decodeValue, validUUID } from "../../shared/attrs/values";
-import { isTimeType, nowSeconds } from "../../shared/content/time";
 import { changedUses, references, validateBlock } from "../../shared/content/blocks";
+import { isTimeType } from "../../shared/content/time";
+import { LabloomError } from "../../shared/failure";
 import { type AttributeDefinition, type AttributeValue } from "../../shared/types/attributes";
-import { type Changed, type ContentBlock, type Target, type LinkTarget } from "../../shared/types/content";
-import { decodeBlock, KnowledgeRecords, type BlockRow, type LinkRow } from "./records";
+import { type Changed, type ContentBlock, type LinkTarget, type Target } from "../../shared/types/content";
+import * as workspace from "../workspace-state";
+import * as attributes from "./attributes";
+import * as data from "./records";
+import { decodeBlock, type BlockRow, type LinkRow } from "./records";
 
 export type ValueRow = { value: string | number | null };
 export type PagePatch = { creation?: true; children?: string[]; values?: Record<string, ValueRow | null> };
@@ -32,26 +35,30 @@ export class EditChanges {
     private readonly flagCache = new Map<string, { deleted: boolean; independent: boolean }>();
     private readonly schedules = new Map<string, Set<string>>();
 
-    constructor(readonly data: KnowledgeRecords) {}
+    constructor() {
+        workspace.requireWorkspace();
+    }
 
     changed(): Changed {
-        return { pages: [...new Set([...this.pages, ...this.highlightPages])], blocks: [...this.blocks], ...(this.backlinkPages.size ? { backlinks: [...this.backlinkPages] } : {}),
-            ...(this.highlightPages.size ? { highlightPages: [...this.highlightPages] } : {}) };
+        return {
+            pages: [...new Set([...this.pages, ...this.highlightPages])], blocks: [...this.blocks], ...(this.backlinkPages.size ? { backlinks: [...this.backlinkPages] } : {}),
+            ...(this.highlightPages.size ? { highlightPages: [...this.highlightPages] } : {})
+        };
     }
 
     block(id: string): ContentBlock | null {
         const row = this.rows.after["block:" + id] as BlockRow | null | undefined;
-        const value = row === undefined ? this.data.blockRow(id) : row;
+        const value = row === undefined ? data.blockRow(id) : row;
         return value ? decodeBlock(value) : null;
     }
 
     children(source: Target): string[] {
-        return this.containers.get(key(source))?.after ?? this.data.children(source);
+        return this.containers.get(key(source))?.after ?? data.children(source);
     }
 
     private markTargets(target: LinkTarget): void {
         if (target.kind === "page") this.direct.add(target.id);
-        else if (target.kind === "block") for (const id of this.data.owners(target.id)) this.direct.add(id);
+        else if (target.kind === "block") for (const id of data.owners(target.id)) this.direct.add(id);
     }
 
     private setChildren(source: Target, before: string[], after: string[]): void {
@@ -64,11 +71,11 @@ export class EditChanges {
             this.causes.add(id);
             if (source.kind === "block") this.causes.add(source.id);
             // The removed occurrence may itself be a reference or contain one.
-            for (const edge of this.data.outgoing({ kind: "block", id })) this.markTargets(targetOf(edge));
+            for (const edge of data.outgoing({ kind: "block", id })) this.markTargets(targetOf(edge));
         }
     }
 
-    setLinks(source: Target, field: string, targets: LinkTarget[], previousRows = this.data.outgoing(source)): void {
+    setLinks(source: Target, field: string, targets: LinkTarget[], previousRows = data.outgoing(source)): void {
         const unique = new Map(targets.map(t => [key(t), t]));
         this.links.set(key(source) + ":" + field, { source, field, targets: [...unique.values()] });
         const existing = new Set<string>();
@@ -88,9 +95,9 @@ export class EditChanges {
 
     putBlock(value: ContentBlock, stored?: BlockRow): void {
         validateBlock(value);
-        if (value.children.length && this.data.owners(value.id).some(id => this.data.header(id).kind === "feed")) throw new LabloomError({ kind: "feed-body-forbidden" });
+        if (value.children.length && data.owners(value.id).some(id => data.header(id).kind === "feed")) throw new LabloomError({ kind: "feed-body-forbidden" });
         const id = "block:" + value.id;
-        const before = this.data.blockRow(value.id);
+        const before = data.blockRow(value.id);
         const after: BlockRow = stored ?? { id: value.id, type: value.type, content: JSON.stringify(value.payload), children: value.children };
         if (same(before, after)) return;
         this.rows.before[id] = before;
@@ -106,9 +113,9 @@ export class EditChanges {
     }
 
     pageChildren(id: string, children: string[]): void {
-        if (children.length && this.data.header(id).kind === "feed") throw new LabloomError({ kind: "feed-body-forbidden" });
+        if (children.length && data.header(id).kind === "feed") throw new LabloomError({ kind: "feed-body-forbidden" });
         if (!Array.isArray(children) || !children.every(validUUID)) throw new LabloomError({ kind: "page-invalid-children" });
-        const source: Target = { kind: "page", id }, before = this.data.children(source);
+        const source: Target = { kind: "page", id }, before = data.children(source);
         if (same(before, children)) return;
         this.pageChanges("before", id).children = before;
         this.pageChanges("after", id).children = children;
@@ -119,7 +126,7 @@ export class EditChanges {
     readValue(pageId: string, id: string): ValueRow | null {
         const after = (this.rows.after["page:" + pageId] as PagePatch | undefined)?.values;
         if (after && Object.hasOwn(after, id)) return after[id];
-        return this.data.statement("SELECT value FROM page_attrs WHERE page_id=? AND attr_id=?").get(pageId, id) as ValueRow ?? null;
+        return data.statement("SELECT value FROM page_attrs WHERE page_id=? AND attr_id=?").get(pageId, id) as ValueRow ?? null;
     }
 
     setValue(pageId: string, id: string, value: ValueRow | null, def: AttributeDefinition): void {
@@ -146,7 +153,7 @@ export class EditChanges {
 
     attributes(pageId: string, values: Record<string, AttributeValue>, detach: string[] = [], internal = false): void {
         if (!Object.keys(values).length && !detach.length) return;
-        for (const { id, definition, row } of this.data.attributes.prepareValues(pageId, values, detach, internal)) this.setValue(pageId, id, row, definition);
+        for (const { id, definition, row } of attributes.prepareValues(pageId, values, detach, internal)) this.setValue(pageId, id, row, definition);
     }
 
     timerChanges(): TimerChange[] {
@@ -158,7 +165,7 @@ export class EditChanges {
     flags(id: string): { deleted: boolean; independent: boolean } {
         let flags = this.flagCache.get(id);
         if (!flags) {
-            flags = this.data.flags(id);
+            flags = data.flags(id);
             const values = (this.rows.after["page:" + id] as PagePatch | undefined)?.values;
             if (values?.deleted) flags.deleted = values.deleted.value === 1;
             if (values?.independent) flags.independent = values.independent.value === 1;
@@ -169,7 +176,7 @@ export class EditChanges {
 
     parents(id: string): Target[] {
         const result = new Map<string, Target>();
-        for (const parent of this.data.uses(id)) result.set(key(parent), { kind: parent.kind, id: parent.id });
+        for (const parent of data.uses(id)) result.set(key(parent), { kind: parent.kind, id: parent.id });
         for (const { source, before, after } of this.containers.values()) {
             if (after.includes(id)) result.set(key(source), source);
             else if (before.includes(id)) result.delete(key(source));
@@ -181,7 +188,7 @@ export class EditChanges {
         const cached = this.ownersCache.get(id);
         if (cached) return cached;
         if (!this.containers.size) {
-            const owners = this.data.owners(id);
+            const owners = data.owners(id);
             this.ownersCache.set(id, owners);
             return owners;
         }
@@ -200,15 +207,15 @@ export class EditChanges {
         return owners;
     }
 
-    private outgoing(source: Target): LinkTarget[] {
-        const rows = this.data.outgoing(source).filter(r => !this.links.has(key(source) + ":" + r.sourceField)).map(targetOf);
+    outgoing(source: Target): LinkTarget[] {
+        const rows = data.outgoing(source).filter(r => !this.links.has(key(source) + ":" + r.sourceField)).map(targetOf);
         for (const change of this.links.values()) if (key(change.source) === key(source)) rows.push(...change.targets);
         return rows;
     }
 
-    private incoming(t: Target): Target[] {
+    incoming(t: Target): Target[] {
         const result: Target[] = [];
-        for (const edge of this.data.incoming(t)) {
+        for (const edge of data.incoming(t)) {
             const source = { kind: edge.sourceKind, id: edge.sourceId };
             if (!this.links.has(key(source) + ":" + edge.sourceField)) result.push(source);
         }
@@ -216,53 +223,9 @@ export class EditChanges {
         return result;
     }
 
-    reachable(start: Target, recycled: Set<string>): boolean {
-        const seen = new Set<string>(), queue = [start];
-        for (let i = 0; i < queue.length; i++) {
-            const t = queue[i];
-            if (seen.has(key(t))) continue;
-            seen.add(key(t));
-            if (t.kind === "page") {
-                const flags = this.flags(t.id);
-                if (flags.deleted || recycled.has(t.id)) continue;
-                if (flags.independent) return true;
-                queue.push(...this.incoming(t));
-            }
-            else {
-                if (!this.owners(t.id).some(id => !this.flags(id).deleted && !recycled.has(id))) continue;
-                queue.push(...this.parents(t.id));
-            }
-        }
-        return false;
-    }
 
-    lostPages(): string[] {
-        if (!this.seeds.length) return [];
-        const candidates = new Set<string>(), inspectedBlocks = new Set<string>(), recycled = new Set<string>();
-        const expand = (seeds: Target[]): void => {
-            const queue = [...seeds];
-            while (queue.length) {
-                const t = queue.pop()!;
-                if (t.kind === "page") { candidates.add(t.id); continue; }
-                if (inspectedBlocks.has(t.id)) continue;
-                inspectedBlocks.add(t.id);
-                for (const id of this.children(t)) queue.push({ kind: "block", id });
-                queue.push(...this.outgoing(t).filter((target): target is Target => target.kind !== "file"));
-            }
-        };
-        const expandPage = (id: string): void => {
-            const t: Target = { kind: "page", id };
-            const children = this.children(t);
-            expand([...this.outgoing(t).filter((target): target is Target => target.kind !== "file"), ...[this.data.header(id).titleBlockId, ...children].map(id => ({ kind: "block" as const, id }))]);
-        };
-        expand(this.seeds);
-        for (const id of this.recycleSources) expandPage(id);
-        while (true) {
-            const lost = [...candidates].filter(id => !recycled.has(id) && !this.flags(id).deleted && !this.reachable({ kind: "page", id }, recycled));
-            if (!lost.length) return [...recycled].sort();
-            for (const id of lost) { recycled.add(id); expandPage(id); }
-        }
-    }
+
+
 
     verifyContainment(): void {
         for (const { source, before, after } of this.containers.values()) {
@@ -279,29 +242,33 @@ export class EditChanges {
     }
 
     persist(): void {
-        for (const id of this.pages) if (this.data.header(id).kind === "annotation") {
-            for (const link of this.data.incoming({ kind: "page", id })) if (link.sourceKind === "page" && link.sourceField === "paper_annotations") this.highlightPages.add(link.sourceId);
+        for (const id of this.pages) if (data.header(id).kind === "annotation") {
+            for (const link of data.incoming({ kind: "page", id })) if (link.sourceKind === "page" && link.sourceField === "paper_annotations") this.highlightPages.add(link.sourceId);
         }
         for (const [id, value] of Object.entries(this.rows.after)) {
             if (!value) continue;
             if ("content" in value) {
-                this.data.statement("INSERT INTO blocks(id,type,content,children) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET type=excluded.type, content=excluded.content, children=excluded.children")
+                const before = this.rows.before[id];
+                if (before && "content" in before && same(before.children, value.children)) {
+                    data.statement("UPDATE blocks SET type=?,content=? WHERE id=?").run(value.type, value.content, value.id);
+                }
+                else data.statement("INSERT INTO blocks(id,type,content,children) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET type=excluded.type, content=excluded.content, children=excluded.children")
                     .run(value.id, value.type, value.content, JSON.stringify(value.children));
             }
             else {
                 const pageId = id.slice(5);
-                if (value.children) this.data.statement("UPDATE pages SET children=? WHERE id=?").run(JSON.stringify(value.children), pageId);
+                if (value.children) data.statement("UPDATE pages SET children=? WHERE id=?").run(JSON.stringify(value.children), pageId);
                 for (const [attrId, attr] of Object.entries(value.values ?? {})) {
-                    if (attr) this.data.statement("INSERT INTO page_attrs(page_id,attr_id,value) VALUES (?,?,?) ON CONFLICT(page_id,attr_id) DO UPDATE SET value=excluded.value").run(pageId, attrId, typeof attr.value === "number" && Number.isSafeInteger(attr.value) ? BigInt(attr.value) : attr.value);
-                    else this.data.statement("DELETE FROM page_attrs WHERE page_id=? AND attr_id=?").run(pageId, attrId);
+                    if (attr) data.statement("INSERT INTO page_attrs(page_id,attr_id,value) VALUES (?,?,?) ON CONFLICT(page_id,attr_id) DO UPDATE SET value=excluded.value").run(pageId, attrId, typeof attr.value === "number" && Number.isSafeInteger(attr.value) ? BigInt(attr.value) : attr.value);
+                    else data.statement("DELETE FROM page_attrs WHERE page_id=? AND attr_id=?").run(pageId, attrId);
                 }
             }
         }
         for (const { source, field, targets } of this.links.values()) {
-            this.data.statement("DELETE FROM link_refs WHERE source_kind=? AND source_id=? AND source_field=?").run(source.kind, source.id, field);
-            for (const t of targets) this.data.statement("INSERT INTO link_refs(source_kind,source_id,source_field,target_kind,target_id) VALUES (?,?,?,?,?)").run(source.kind, source.id, field, t.kind, t.id);
+            data.statement("DELETE FROM link_refs WHERE source_kind=? AND source_id=? AND source_field=?").run(source.kind, source.id, field);
+            for (const t of targets) data.statement("INSERT INTO link_refs(source_kind,source_id,source_field,target_kind,target_id) VALUES (?,?,?,?,?)").run(source.kind, source.id, field, t.kind, t.id);
         }
-        const now = nowSeconds();
-        for (const id of this.touches) this.data.statement("UPDATE page_attrs SET value=CAST(? AS INTEGER) WHERE page_id=? AND attr_id='modified_at'").run(now, id);
+        const now = workspace.seconds();
+        for (const id of this.touches) data.statement("UPDATE page_attrs SET value=CAST(? AS INTEGER) WHERE page_id=? AND attr_id='modified_at' AND value IS NOT CAST(? AS INTEGER)").run(now, id, now);
     }
 }

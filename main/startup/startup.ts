@@ -1,71 +1,55 @@
-import { LabloomError } from "../../shared/failure";
-import type { StartupState, WorkspaceAction } from "../../shared/types/startup";
-import { AppStorage } from "../storage/app";
-import { createWorkspace, openWorkspace, type OpenWorkspace } from "../storage/workspace";
 import { diagnostic, toFailureInfo } from "../../shared/failure";
+import { type StartupState, type WorkspaceAction } from "../../shared/types/startup";
+import { type AppStorage } from "../storage/app";
 import { setLocale } from "../ui/i18n";
+import * as session from "../session";
 
-export class Startup {
-    onReady?: () => void;
-    state: StartupState = { status: "needs-workspace", lastWorkspace: null, canChoose: false };
-    private workspace: OpenWorkspace | null = null;
-
-    constructor(private readonly storage: AppStorage) {}
-
-    restore(): StartupState {
-        if (this.state.status === "ready") return this.state;
-        this.state = { status: "needs-workspace", lastWorkspace: null, canChoose: false };
-        try {
-            const config = this.storage.load();
-            setLocale(this.storage.getAppearance().language);
-            this.state = { status: "needs-workspace", canChoose: true, ...config };
-            if (config.lastWorkspace) {
-                this.workspace = openWorkspace(config.lastWorkspace.path, config.lastWorkspace.id);
-                this.state = { status: "ready", workspace: this.workspace.info };
-                this.onReady?.();
-            }
+export let state: StartupState = { status: "needs-workspace", lastWorkspace: null, canChoose: false };
+let storage: AppStorage;
+export function initialize(value: AppStorage): void {
+    storage = value;
+    session.configureStorage(value);
+    state = { status: "needs-workspace", lastWorkspace: null, canChoose: false };
+}
+export function restore(): StartupState {
+    if (state.status === "ready") return state;
+    state = { status: "needs-workspace", lastWorkspace: null, canChoose: false };
+    try {
+        const config = storage.load();
+        setLocale(storage.getAppearance().language);
+        state = { status: "needs-workspace", canChoose: true, ...config };
+        if (config.lastWorkspace) {
+            const workspace = session.open(config.lastWorkspace.path, "open", undefined, config.lastWorkspace.id);
+            state = { status: "ready", workspace: workspace.info };
         }
-        catch (error) {
-            if (this.state.status === "needs-workspace") {
-                console.error("Workspace restore failed", error);
-                this.state = { ...this.state, attemptedPath: this.state.lastWorkspace?.path, error: toFailureInfo(error) };
-            }
+    }
+    catch (error) {
+        if (state.status === "needs-workspace") {
+            console.error("Workspace restore failed", error);
+            state = { ...state, attemptedPath: state.lastWorkspace?.path, error: toFailureInfo(error) };
         }
-        return this.state;
     }
-
-    choose(path: string, action: WorkspaceAction): StartupState {
-        // Switching an open workspace requires an editor save lifecycle, added later.
-        if (this.state.status === "ready" || !this.state.canChoose) return this.state;
-        const { error: previousError, ...previous } = this.state;
-        let workspace: OpenWorkspace | undefined;
-        try {
-            workspace = action === "create" ? createWorkspace(path) : openWorkspace(path);
-            this.storage.remember(workspace.info);
-            this.workspace = workspace;
-            this.state = { status: "ready", workspace: workspace.info };
-            this.onReady?.();
-        }
-        catch (error) {
-            workspace?.database.close();
-            console.error("Workspace selection failed", error);
-            this.state = { ...previous, attemptedPath: path, error: workspace && action === "create" ? { kind: "workspace-created-config-failed", diagnostic: diagnostic(error) } : toFailureInfo(error) };
-        }
-        return this.state;
+    return state;
+}
+export function choose(path: string, action: WorkspaceAction): StartupState {
+    // Workspace switching still needs the editor-save lifecycle from the next round.
+    if (state.status === "ready" || !state.canChoose) return state;
+    const { error: previousError, ...previous } = state;
+    let created = false;
+    try {
+        const workspace = session.open(path, action);
+        created = true;
+        storage.remember(workspace.info);
+        state = { status: "ready", workspace: workspace.info };
     }
-
-    close(): void {
-        this.workspace?.database.close();
-        this.workspace = null;
+    catch (error) {
+        session.close();
+        console.error("Workspace selection failed", error);
+        state = { ...previous, attemptedPath: path, error: created && action === "create" ? { kind: "workspace-created-config-failed", diagnostic: diagnostic(error) } : toFailureInfo(error) };
     }
-
-    getDatabase(): OpenWorkspace["db"] {
-        if (!this.workspace || this.state.status !== "ready") throw new LabloomError({ kind: "workspace-not-ready" });
-        return this.workspace.db;
-    }
-
-    getPath(): string {
-        if (!this.workspace) throw new LabloomError({ kind: "workspace-not-ready" });
-        return this.workspace.info.path;
-    }
+    return state;
+}
+export function close(): void {
+    session.close();
+    state = { status: "needs-workspace", lastWorkspace: null, canChoose: false };
 }

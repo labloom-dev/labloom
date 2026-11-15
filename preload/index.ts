@@ -13,6 +13,7 @@ const api: BridgeAPI<AppAPI> = {
         get: (...args) => ipcRenderer.invoke(knowledgeChannels.get, ...args),
         create: (...args) => ipcRenderer.invoke(knowledgeChannels.create, ...args),
         readObjects: (...args) => ipcRenderer.invoke(knowledgeChannels.readObjects, ...args),
+        syncBlocks: (...args) => ipcRenderer.invoke(knowledgeChannels.syncBlocks, ...args),
         commitEdit: (...args) => ipcRenderer.invoke(knowledgeChannels.commitEdit, ...args),
         previewEdit: (...args) => ipcRenderer.invoke(knowledgeChannels.previewEdit, ...args),
         deleteBlock: (...args) => ipcRenderer.invoke(knowledgeChannels.deleteBlock, ...args),

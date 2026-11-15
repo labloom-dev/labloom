@@ -2,13 +2,13 @@ import { LabloomError } from "../../shared/failure";
 import { dialog, type BrowserWindow } from "electron";
 import { startupChannels } from "../../shared/ipc";
 import { handle } from "../ipc";
-import type { Startup } from "./startup";
+import * as startup from "./startup";
 import { t } from "../ui/i18n";
 
-// One folder dialog at a time across windows, since they share one startup state.
+// One dialog at a time prevents repeated clicks in the current window.
 let choosingWorkspace = false;
 
-export function registerStartupIPCs(window: BrowserWindow, startup: Startup): void {
+export function registerStartupIPCs(window: BrowserWindow): void {
     const contents = window.webContents;
     handle(contents, startupChannels.getState, () => startup.state);
     handle(contents, startupChannels.retry, () => choosingWorkspace ? startup.state : startup.restore());

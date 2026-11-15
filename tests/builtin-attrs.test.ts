@@ -1,3 +1,4 @@
+import { knowledgeServices, session, type Knowledge } from "./support/session";
 import { hasFailure } from "./failures";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -8,15 +9,14 @@ import { builtinAttrs, builtinAttrsByPageKind, editableBuiltinMetadata, type Bui
 import { defaultMetadata, defaultValue, encodeValue } from "../shared/attrs/values";
 import { type AttributeDefinition, type AttributeType } from "../shared/types/attributes";
 import { type PageKind } from "../shared/types/content";
-import { KnowledgeService } from "../main/knowledge/service";
-import { createWorkspace, openWorkspace } from "../main/storage/workspace";
+import { createWorkspace, openWorkspace } from "./support/session";
 
-function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { service: KnowledgeService } {
+function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { service: Knowledge } {
     const workspace = createWorkspace(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "builtin-attrs-")));
     t.after(() => {
-        if (workspace.database.open) workspace.database.close();
+        session.close();
     });
-    return { ...workspace, service: new KnowledgeService(workspace.db) };
+    return { ...workspace, service: knowledgeServices() };
 }
 
 function definition(type: AttributeType = "string"): AttributeDefinition {
@@ -116,10 +116,10 @@ test("editable tag options persist, rename searchable values and never store the
     service.setDefinition("tags", tags, "manager");
     assert.equal(service.list({ keyword: "论文" }).total, 0);
     assert.equal(service.list({ keyword: "研究" }).total, 1);
-    database.close();
+    session.close();
     const reopened = openWorkspace(info.path);
-    t.after(() => reopened.database.close());
-    const restored = new KnowledgeService(reopened.db);
+    t.after(() => session.close());
+    const restored = knowledgeServices();
     assert.deepEqual(restored.attributes.definition("tags").metadata.options, [{ id: "paper", name: "研究" }]);
     assert.deepEqual(restored.get(page.id).attributes.tags, ["paper"]);
     assert.equal(reopened.database.prepare("SELECT name FROM attrs_meta WHERE id='tags'").pluck().get(), null);
@@ -135,7 +135,7 @@ test("opening validates builtin names, types, fixed metadata and editable metada
     ]) {
         const { database, info } = fixture(t);
         database.exec(sql);
-        database.close();
+        session.close();
         const before = readFileSync(join(info.path, "workspace.sqlite"));
         assert.throws(() => openWorkspace(info.path));
         assert.deepEqual(readFileSync(join(info.path, "workspace.sqlite")), before);
