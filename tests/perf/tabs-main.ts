@@ -5,8 +5,7 @@ import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import type { Editor } from "@tiptap/core";
 import { fixture, seedLargePage } from "./fixture";
-import { AppStorage } from "../../main/storage/app";
-import { registerAppearanceIPCs } from "../../main/appearance/ipc";
+import { registerSettingsIPCs } from "../../main/settings/ipc";
 import { registerFeedIPCs } from "../../main/feed/ipc";
 import { registerKnowledgeIPCs } from "../../main/knowledge/ipc";
 import { registerStartupIPCs } from "../../main/startup/ipc";
@@ -81,7 +80,7 @@ async function run(large: boolean): Promise<boolean> {
     f.sql.prepare("UPDATE workspace_meta SET settings=?").run(JSON.stringify({ tabs: { groups: [{ id, tabs, activeTabId: tabs[0].id }], focusedGroupId: id, layout: { type: "group", groupId: id } } }));
     const path = dirname(f.sql.name);
     session.close();
-    const storage = new AppStorage(join(root, large ? "B" : "A")), startup = startupServices(storage);
+    const startup = startupServices(join(root, large ? "B" : "A"));
     startup.restore();
     if (startup.choose(path, "open").status !== "ready") throw new Error("Could not open benchmark workspace");
     const window = new BrowserWindow({
@@ -93,7 +92,7 @@ async function run(large: boolean): Promise<boolean> {
             if (details.level === "error") console.error(details.message);
         });
         registerStartupIPCs(window);
-        registerAppearanceIPCs(window, storage);
+        registerSettingsIPCs(window);
         registerKnowledgeIPCs(window); registerFeedIPCs(window);
         await window.loadURL(process.env.LABLOOM_BENCH_URL!);
         window.webContents.debugger.attach();

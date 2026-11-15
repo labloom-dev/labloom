@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { createWorkspace, openWorkspace } from "./support/session";
 import { fingerprint } from "../main/knowledge/attributes";
-import { AppStorage } from "../main/storage/app";
+import * as settings from "../main/settings/store";
 import { builtinAttrs, builtinAttrsByPageKind } from "../shared/attrs/builtins";
 import { display } from "../shared/attrs/format";
 import { validateValue } from "../shared/attrs/values";
@@ -354,23 +354,21 @@ test("new pages have valid typed values, independent retention and system timest
 });
 
 test("keywords and display use the current application timezone on the same open workspace", t => {
-    const { db, info } = fixture(t, { timeZone: () => storage.getAppearance().timeZone });
-    const storage = new AppStorage(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "preferences-")));
-    storage.load();
-    storage.remember(info);
+    settings.initialize(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "preferences-")));
+    fixture(t);
     const service = knowledgeServices();
-    storage.saveAppearance({ ...storage.getAppearance(), timeZone: "Asia/Shanghai" });
+    settings.update({ appearance: { timeZone: "Asia/Shanghai" } });
     const e = service.create("event", "A");
     const anchor = randomUUID(), a = service.create("annotation", "B", { independent: true, annotation_context: anchor });
     assert.ok(!("task_status" in e.attributes) && !("priority" in e.attributes));
     const seconds = 1794071576;
     service.attributes.write(e.id, { created_at: seconds, modified_at: seconds + 3600, schedule_start: seconds + 7200 }, true);
     service.attributes.write(a.id, { created_at: 0, modified_at: 0 }, true);
-    const created = (): string => display({ id: "created_at", ...builtinAttrs.created_at }, service.get(e.id).attributes.created_at, { zone: storage.getAppearance().timeZone });
+    const created = (): string => display({ id: "created_at", ...builtinAttrs.created_at }, service.get(e.id).attributes.created_at, { zone: settings.get().settings.appearance.timeZone });
     assert.equal(created(), "2026-11-08 01:12");
     for (const keyword of ["tags", "true", "modified", anchor, "1794", "17:12", "未开始", "asia"]) assert.equal(service.list({ keyword }).total, 0, keyword);
     for (const keyword of ["2026", "01:12", "02:12", "03:12"]) assert.deepEqual(service.list({ keyword }).items.map(p => p.id), [e.id], keyword);
-    storage.saveAppearance({ ...storage.getAppearance(), timeZone: "UTC" });
+    settings.update({ appearance: { timeZone: "UTC" } });
     assert.equal(created(), "2026-11-07 17:12");
     assert.deepEqual(service.list({ keyword: "17:12" }).items.map(p => p.id), [e.id]);
     assert.equal(service.list({ keyword: "01:12" }).total, 0);

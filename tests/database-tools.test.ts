@@ -36,7 +36,7 @@ function cli(root: string, args: string[], status = 0): string {
 
 function savedFiles(directory: string): Record<string, Buffer> {
     return Object.fromEntries(readdirSync(directory, { recursive: true, withFileTypes: true })
-        .filter(entry => entry.isFile()).map(entry => {
+        .filter(entry => entry.isFile() && !(entry.name === "workspace.lock" && entry.parentPath === directory)).map(entry => {
             const path = join(entry.parentPath, entry.name);
             return [relative(directory, path), readFileSync(path)];
         }));
@@ -84,7 +84,7 @@ test("generation replaces the baseline after definition changes and old workspac
     const generated = savedFiles(directory);
     assert.match(cli(root, ["generate"]), /no files written/);
     assert.deepEqual(savedFiles(directory), generated);
-    const { openWorkspace } = await import(pathToFileURL(join(root, "main/storage/workspace.ts")).href);
+    const { openWorkspace, closeWorkspace } = await import(pathToFileURL(join(root, "main/storage/workspace.ts")).href);
     assert.throws(() => openWorkspace(old), { message: "workspace-incompatible" });
     assert.deepEqual(savedFiles(old), before);
     assert.equal(existsSync(join(old, "backups")), false);
@@ -97,7 +97,7 @@ test("generation replaces the baseline after definition changes and old workspac
         assert.deepEqual(workspace.database.pragma("foreign_key_check"), []);
     }
     finally {
-        workspace.database.close();
+        closeWorkspace(workspace);
     }
     assert.match(cli(root, ["status", "--workspace", fresh]), /Stored version: 1/);
     cli(root, ["init", "--workspace", fresh], 1);

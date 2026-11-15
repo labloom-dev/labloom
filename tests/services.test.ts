@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { test, type TestContext } from "node:test";
-import type { BrowserWindow } from "electron";
+import { type BrowserWindow } from "electron";
 import ts from "typescript";
 import * as session from "../main/session";
 import * as records from "../main/knowledge/records";
@@ -73,6 +73,7 @@ test("opening B drops A history, cached queries, timers and database connection"
     assert.equal(history.state("a").canUndo, true);
     session.close();
     assert.equal(a.database.open, false);
+    assert.equal(a.lock.connection.open, false);
     const b = open(t, { clock: () => now, timeZone: () => "UTC" });
     const second = edits.create("event", "B", { schedule_start: now / 1000 + 60 });
     timers.set(second.id, "schedule_start", 0, true);
@@ -104,7 +105,7 @@ test("every public service operation rejects a closed session before validating 
         () => timers.set("", "", -1, false), () => timers.read("", "", -1), () => timers.recalculateAll(),
         () => feed.getState({}), () => feed.getItem(""), () => feed.saveSource({} as never), () => feed.setSourceStatus("", "pause"),
         () => feed.setRead("", false), () => feed.markAllRead(), () => feed.setPosition("", -1), () => feed.setKeywords([]),
-        () => feed.importItem(""), () => feed.fetchPDF(""), () => feed.refresh(), () => feed.refreshDue(), () => feed.itemURL("")
+        () => feed.importItem(""), () => feed.fetchPDF(""), () => feed.refresh(), () => feed.itemURL("")
     ];
     for (const operation of operations) await assert.rejects(Promise.resolve().then(operation), hasFailure("workspace-not-ready"));
 });
@@ -347,7 +348,7 @@ test("service architecture has no singleton classes, connection WeakMaps, Electr
     const root = process.cwd(), main = join(root, "main");
     const sources = readdirSync(main, { recursive: true }).filter((file): file is string => typeof file === "string" && file.endsWith(".ts"));
     const graph = new Map<string, string[]>();
-    const banned = new Set(["KnowledgeRecords", "KnowledgeService", "EditHistory", "AttributeService", "TimerService", "PaperService", "PurgeService", "FeedService", "Startup"]);
+    const banned = new Set(["KnowledgeRecords", "KnowledgeService", "EditHistory", "AttributeService", "TimerService", "PaperService", "PurgeService", "FeedService", "Startup", "AppStorage"]);
     for (const file of sources.concat(readdirSync(join(root, "shared"), { recursive: true }).filter((file): file is string => typeof file === "string" && file.endsWith(".ts")).map(file => "../shared/" + file))) {
         const absolute = resolve(main, file), source = ts.createSourceFile(absolute, readFileSync(absolute, "utf8"), ts.ScriptTarget.Latest, true), dependencies: string[] = [];
         function visit(node: ts.Node): void {

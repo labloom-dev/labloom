@@ -1,15 +1,17 @@
 import type { FeedAPI } from "./types/feed";
-import { type Appearance } from "./types/appearance";
+import { type SettingsSnapshot, type SettingsResult, type SettingsPatch } from "./settings/Settings";
 import type { StartupState, WorkspaceAction } from "./types/startup";
 import { type KnowledgeAPI } from "./types/knowledge";
 
 // The only surface the renderer can reach; preload implements it over IPC.
 export type AppAPI = {
     openDevTools(): void;
-    appearance: {
-        get(): Promise<Appearance>;
-        save(value: Appearance): Promise<Appearance>;
-        onChanged(listener: (value: Appearance) => void): () => void;
+    beforeQuit(check: () => Promise<boolean> | boolean): () => void;
+    settings: {
+        get(): Promise<SettingsSnapshot>;
+        update(patch: SettingsPatch): Promise<SettingsResult>;
+        flush(revision: number): Promise<SettingsResult>;
+        onChanged(listener: (snapshot: SettingsSnapshot) => void): () => void;
     };
     feed: FeedAPI;
     knowledge: KnowledgeAPI;

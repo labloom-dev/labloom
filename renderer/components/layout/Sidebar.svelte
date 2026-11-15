@@ -14,7 +14,7 @@
             <SidebarGroup title="全部独立页" query={{ attributes: { independent: true } }} keyword={applied} initiallyOpen />
         </div>
     </aside>
-    <Resizer direction="vertical" thickness={4} origin={shell.width} min={170} max={500} changeCB={value => {
+    <Resizer direction="vertical" thickness={4} origin={shell.width} min={minPanelWidth} max={maxPanelWidth} changeCB={value => {
         shell.width = value; persistPanel();
     }} />
 {/if}
@@ -37,6 +37,7 @@
     import SidebarGroup from "./SidebarGroup.svelte";
     import { destinations, openDestination } from "./navigation";
     import { commands, type Command } from "../../../shared/content/commands";
+    import { minPanelWidth, maxPanelWidth } from "../../../shared/settings/defaults";
     import { shell, persistPanel } from "./shell.svelte";
     let tags = $state<{ id: string; name: string }[]>([]), filter = $state(""), applied = $state("");
     const activeType = $derived(tabState.groups.find(group => group.id === tabState.focusedGroupId)?.tabs.find(tab => tab.id === tabState.groups.find(group => group.id === tabState.focusedGroupId)?.activeTabId)?.type);

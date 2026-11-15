@@ -203,7 +203,9 @@
         "workspace-close-unsaved": "Some pages have not been saved. Closing was cancelled. Resolve their errors before closing.",
         "pdf-password-cancelled": "Opening cancelled: this PDF requires a password.",
         "pdf-download-failed": "The PDF download failed. Check the network and try again.",
-        "block-missing": "The block could not be found on this page: {{blockId}}"
+        "block-missing": "The block could not be found on this page: {{blockId}}",
+        "settings-invalid-update": "The settings update is invalid.",
+        "workspace-in-use": "This workspace is already open in another Labloom window."
     },
     "startup": {
         "brand": "Labloom",

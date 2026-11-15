@@ -479,7 +479,7 @@ test("temporary failures retry after 30 seconds, 2 minutes and 10 minutes, then 
     const source = () => service.getState({}).sources[0];
     const start = clock.now;
     assert.deepEqual([source().nextRefresh, source().lastRefreshed, source().lastChecked], [start + 120 * minute, start, start]);
-    await service.refreshDue();
+    await service.checkDue();
     assert.equal(calls, 1, "a source is not fetched before it is due");
 
     outcome = "down";
@@ -489,7 +489,7 @@ test("temporary failures retry after 30 seconds, 2 minutes and 10 minutes, then 
     const waits = [];
     for (let attempt = 0; attempt < 5; attempt++) {
         clock.now = source().nextRefresh;
-        await service.refreshDue();
+        await service.checkDue();
         waits.push(source().nextRefresh - clock.now);
     }
     assert.deepEqual(waits, [30000, 2 * minute, 10 * minute, 120 * minute, 120 * minute]);
@@ -502,11 +502,11 @@ test("temporary failures retry after 30 seconds, 2 minutes and 10 minutes, then 
     // The source's own Retry-After outlasts a shorter local delay, and a success starts over.
     outcome = "ok";
     clock.now = source().nextRefresh;
-    await service.refreshDue();
+    await service.checkDue();
     assert.deepEqual([source().error, source().nextRefresh - clock.now], [null, 120 * minute]);
     outcome = "limited";
     clock.now = source().nextRefresh;
-    await service.refreshDue();
+    await service.checkDue();
     assert.equal(source().nextRefresh - clock.now, 45 * minute);
 
     // Errors that will not fix themselves are not retried early.
@@ -514,7 +514,7 @@ test("temporary failures retry after 30 seconds, 2 minutes and 10 minutes, then 
     await service.refresh(id);
     outcome = "gone";
     clock.now = source().nextRefresh;
-    await service.refreshDue();
+    await service.checkDue();
     assert.equal(source().nextRefresh - clock.now, 120 * minute);
     assert.deepEqual(source().error, { kind: "feed-address-missing", status: 404 });
 
@@ -523,7 +523,7 @@ test("temporary failures retry after 30 seconds, 2 minutes and 10 minutes, then 
     await service.refresh(id);
     outcome = "broken";
     clock.now = source().nextRefresh;
-    await service.refreshDue();
+    await service.checkDue();
     assert.deepEqual([source().error, source().nextRefresh - clock.now], [{ kind: "unexpected", diagnostic: "页面结构可能已变化" }, 120 * minute]);
 });
 
@@ -545,13 +545,13 @@ test("only sources that are due, enabled and automatic are refreshed in the back
     requested.length = 0;
 
     clock.now += 14 * minute;
-    await service.refreshDue();
+    await service.checkDue();
     assert.deepEqual(requested, []);
     clock.now += minute;
-    await service.refreshDue();
+    await service.checkDue();
     assert.deepEqual(requested, ["/quick"]);
     clock.now += 45 * minute;
-    await service.refreshDue();
+    await service.checkDue();
     assert.deepEqual(requested.sort(), ["/hourly", "/quick", "/quick"]);
 
     // A manual refresh covers every enabled source and leaves paused and cancelled ones alone.
@@ -564,7 +564,7 @@ test("only sources that are due, enabled and automatic are refreshed in the back
     requested.length = 0;
     service.setSourceStatus(paused, "resume");
     assert.deepEqual([byId(paused).status, byId(paused).nextRefresh], ["enabled", clock.now]);
-    await service.refreshDue();
+    await service.checkDue();
     assert.deepEqual(requested, ["/paused"]);
 
     // A shorter interval takes effect from the last check, not from the next success.
@@ -590,7 +590,7 @@ test("stored validators make refreshes conditional, and an unchanged source keep
     service.setRead(item.id, true);
     changed = false;
     clock.now += 60 * minute;
-    await service.refreshDue();
+    await service.checkDue();
     assert.deepEqual(requests[1], { etag: "\"v1\"", lastModified: "Wed, 07 Oct 2026 10:00:00 GMT", discover: false });
     const state = service.getState({});
     const [source] = state.sources;
@@ -667,7 +667,7 @@ test("a few sources are fetched at a time, and those waiting their turn already 
         const first = ids.slice(0, 4).map(id => service.refresh(id));
         const all = service.refresh();
         const again = service.refresh(ids[5]);
-        const due = service.refreshDue();
+        const due = service.checkDue();
         await new Promise(resolve => setImmediate(resolve));
         assert.equal(service.getState({}).sources.filter(source => source.refreshing).length, 7);
         assert.deepEqual([started.length, inFlight], [4, 4]);

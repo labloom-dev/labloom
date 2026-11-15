@@ -1,25 +1,32 @@
-import { diagnostic, toFailureInfo } from "../../shared/failure";
+import { diagnostic, LabloomError, toFailureInfo } from "../../shared/failure";
 import { type StartupState, type WorkspaceAction } from "../../shared/types/startup";
-import { type AppStorage } from "../storage/app";
+import * as settings from "../settings/store";
 import { setLocale } from "../ui/i18n";
 import * as session from "../session";
 
 export let state: StartupState = { status: "needs-workspace", lastWorkspace: null, canChoose: false };
-let storage: AppStorage;
-export function initialize(value: AppStorage): void {
-    storage = value;
-    session.configureStorage(value);
+let root: string;
+let settingsLoaded = false;
+let notice: Extract<StartupState, { status: "needs-workspace" }>["notice"];
+export function initialize(value: string): void {
+    root = value;
+    settingsLoaded = false; notice = undefined;
     state = { status: "needs-workspace", lastWorkspace: null, canChoose: false };
 }
 export function restore(): StartupState {
     if (state.status === "ready") return state;
     state = { status: "needs-workspace", lastWorkspace: null, canChoose: false };
     try {
-        const config = storage.load();
-        setLocale(storage.getAppearance().language);
+        if (!settingsLoaded) {
+            notice = settings.initialize(root).notice;
+            settingsLoaded = true;
+        }
+        const config = { lastWorkspace: settings.get().settings.lastWorkspace, notice };
+        setLocale(settings.get().settings.appearance.language);
         state = { status: "needs-workspace", canChoose: true, ...config };
         if (config.lastWorkspace) {
             const workspace = session.open(config.lastWorkspace.path, "open", undefined, config.lastWorkspace.id);
+            settings.update({ lastWorkspace: workspace.info });
             state = { status: "ready", workspace: workspace.info };
         }
     }
@@ -39,7 +46,8 @@ export function choose(path: string, action: WorkspaceAction): StartupState {
     try {
         const workspace = session.open(path, action);
         created = true;
-        storage.remember(workspace.info);
+        const update = settings.update({ lastWorkspace: workspace.info });
+        if (!update.success) throw new LabloomError(update.error);
         state = { status: "ready", workspace: workspace.info };
     }
     catch (error) {

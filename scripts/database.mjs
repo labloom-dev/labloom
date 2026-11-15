@@ -49,14 +49,14 @@ try {
         }
         else {
             await checkBaseline(root);
-            const { createWorkspace } = await import("../main/storage/workspace.ts");
+            const { createWorkspace, closeWorkspace } = await import("../main/storage/workspace.ts");
             await mkdir(path, { recursive: true });
             const workspace = createWorkspace(path);
             try {
                 console.log(`Created: ${path}\nWorkspace version: ${workspace.database.pragma("user_version", { simple: true })}`);
             }
             finally {
-                workspace.database.close();
+                closeWorkspace(workspace);
             }
         }
     }

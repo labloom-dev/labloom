@@ -5,8 +5,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fixture } from "./fixture";
-import { AppStorage } from "../../main/storage/app";
-import { registerAppearanceIPCs } from "../../main/appearance/ipc";
+import { registerSettingsIPCs } from "../../main/settings/ipc";
 import { registerFeedIPCs } from "../../main/feed/ipc";
 import { registerKnowledgeIPCs } from "../../main/knowledge/ipc";
 import { registerStartupIPCs } from "../../main/startup/ipc";
@@ -200,14 +199,14 @@ f.sql.prepare("UPDATE workspace_meta SET settings=?").run(JSON.stringify({ tabs:
 session.close();
 void app.whenReady().then(async () => {
     const deadline = setTimeout(() => app.exit(1), 240000);
-    const storage = new AppStorage(join(root, "storage")), startup = startupServices(storage);
+    const startup = startupServices(join(root, "storage"));
     startup.restore(); startup.choose(path, "open");
     const window = new BrowserWindow({ show: false, width: 1280, height: 860, titleBarStyle: "hidden", titleBarOverlay: { height: 32 }, webPreferences: { preload: join(__dirname, "preload.cjs"), sandbox: true, backgroundThrottling: false } });
     try {
         window.webContents.on("console-message", details => {
             if (details.level === "error") console.error(details.message);
         });
-        registerStartupIPCs(window); registerAppearanceIPCs(window, storage);
+        registerStartupIPCs(window); registerSettingsIPCs(window);
         registerKnowledgeIPCs(window); registerFeedIPCs(window);
         window.webContents.debugger.attach();
         const sidebar: number[] = [], library: number[] = [];

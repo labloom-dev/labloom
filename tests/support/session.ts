@@ -14,7 +14,6 @@ import * as commit from "../../main/knowledge/commit";
 import * as feed from "../../main/feed/service";
 import * as events from "../../main/knowledge/events";
 import * as startup from "../../main/startup/startup";
-import { type AppStorage } from "../../main/storage/app";
 import { type FeedLoader } from "../../main/feed/service";
 import { type SessionOptions } from "../../main/session";
 import { type TestContext } from "node:test";
@@ -74,8 +73,8 @@ export function knowledgeServices(): Knowledge {
         transaction: <T>(action: () => T): T => commit.run({ sourceTab: "", history: false }, action)
     };
 }
-export function feedServices(): typeof feed & { knowledge: Knowledge } {
-    return { ...feed, knowledge: knowledgeServices() };
+export function feedServices(): typeof feed & { knowledge: Knowledge; checkDue: typeof scheduler.check } {
+    return { ...feed, knowledge: knowledgeServices(), checkDue: scheduler.check };
 }
 export function historyServices(): typeof history {
     return history;
@@ -86,8 +85,8 @@ export function paperServices(): typeof papers {
 export function purgeServices(): typeof purge {
     return purge;
 }
-export function startupServices(storage: AppStorage): typeof startup {
-    startup.initialize(storage);
+export function startupServices(root: string): typeof startup {
+    startup.initialize(root);
     return startup;
 }
 export function watchKnowledge(listener: (change: import("../../shared/types/content").KnowledgeChange) => void): () => void {

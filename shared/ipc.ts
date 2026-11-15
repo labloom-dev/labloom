@@ -1,5 +1,7 @@
 export const appChannels = {
-    openDevTools: "window:open-devtools"
+    openDevTools: "window:open-devtools",
+    beforeQuit: "app:before-quit",
+    beforeQuitResult: "app:before-quit-result"
 } as const;
 
 export const knowledgeChannels = {
@@ -44,13 +46,12 @@ export const knowledgeChannels = {
     readNotice: "knowledge:readNotice"
 } as const;
 export const knowledgeChanged = "knowledge:changed";
-export const saveBeforeClose = "knowledge:before-close";
-export const saveBeforeCloseReply = "knowledge:close-reply";
 
-export const appearanceChannels = {
-    get: "appearance:get",
-    save: "appearance:save",
-    changed: "appearance:changed"
+export const settingsChannels = {
+    get: "settings:get",
+    update: "settings:update",
+    flush: "settings:flush",
+    changed: "settings:changed"
 } as const;
 
 export const startupChannels = {

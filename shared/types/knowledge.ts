@@ -47,5 +47,4 @@ export type KnowledgeAPI = {
     timers(pageId: string): Promise<Record<string, number[]>>;
     setTimer(pageId: string, attrId: string, leadSeconds: number, enabled: boolean, tabId: string): Promise<void>;
     onChanged(listener: (change: KnowledgeChange) => void): () => void;
-    onCloseRequested(listener: () => Promise<boolean>): () => void;
 };

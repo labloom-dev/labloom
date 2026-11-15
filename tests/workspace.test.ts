@@ -9,7 +9,7 @@ import Database from "better-sqlite3";
 import { rebuildSyncRefs, workspaceFormatVersion } from "../main/storage/schema";
 import { createWorkspace, openWorkspace, type OpenWorkspace } from "./support/session";
 import { createWorkspaceDatabase } from "../main/storage/database";
-import { AppStorage } from "../main/storage/app";
+import { defaultSettings } from "../shared/settings/defaults";
 
 const testRoot = process.env.LABLOOM_TEST_ROOT;
 if (!testRoot) throw new Error("Run these tests with node tests/run-workspace.mjs.");
@@ -99,7 +99,7 @@ test("new workspaces contain the core and feed tables and reopen without changin
 const incompatible = { kind: "workspace-incompatible" };
 
 function files(root: string): Record<string, Buffer> {
-    return Object.fromEntries(readdirSync(root, { recursive: true, withFileTypes: true }).filter(entry => entry.isFile())
+    return Object.fromEntries(readdirSync(root, { recursive: true, withFileTypes: true }).filter(entry => entry.isFile() && !(entry.name === "workspace.lock" && entry.parentPath === root))
         .map(entry => [join(entry.parentPath, entry.name), readFileSync(join(entry.parentPath, entry.name))]));
 }
 
@@ -152,10 +152,9 @@ test("startup shows the incompatible workspace message on restore and manual ope
     const { database, info } = fresh(t);
     database.exec("ALTER TABLE blocks ADD COLUMN obsolete TEXT");
     session.close();
-    const storage = new AppStorage(directory());
-    storage.load();
-    storage.remember(info);
-    const startup = startupServices(storage);
+    const root = directory();
+    writeFileSync(join(root, "settings.json"), JSON.stringify({ ...defaultSettings, lastWorkspace: info }));
+    const startup = startupServices(root);
     t.after(() => startup.close());
     const before = files(info.path);
     for (const state of [startup.restore(), startup.choose(info.path, "open")]) {

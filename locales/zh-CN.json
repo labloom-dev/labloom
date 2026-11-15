@@ -203,7 +203,9 @@
         "workspace-close-unsaved": "还有页面未保存，已取消关闭。请处理页面错误后再关闭。",
         "pdf-password-cancelled": "已取消打开：此 PDF 需要密码。",
         "pdf-download-failed": "PDF 下载失败，请检查网络后重试。",
-        "block-missing": "找不到页面中的块：{{blockId}}"
+        "block-missing": "找不到页面中的块：{{blockId}}",
+        "settings-invalid-update": "设置内容无效。",
+        "workspace-in-use": "这个工作区已在另一个 Labloom 窗口中打开。"
     },
     "startup": {
         "brand": "知织",

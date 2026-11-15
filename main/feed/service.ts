@@ -14,9 +14,9 @@ import * as edits from "../knowledge/edits";
 import * as events from "../knowledge/events";
 import * as papers from "../knowledge/papers";
 import * as knowledge from "../knowledge/records";
-import * as timers from "../knowledge/timers";
-import { feedItems, workspaceMeta } from "../storage/tables";
+import { feedItems } from "../storage/tables";
 import * as workspace from "../workspace-state";
+import * as workspaceSettings from "../workspace-settings";
 import { type WorkspaceState } from "../workspace-state";
 import { FeedError, type FeedRequest, type FeedResult } from "./parser";
 
@@ -37,7 +37,6 @@ type ItemRow = typeof feedItems.$inferSelect;
 // Temporary failures are retried three times before waiting for the next interval.
 const retryDelays = [30 * 1000, 2 * 60 * 1000, 10 * 60 * 1000];
 const concurrency = 4;
-const maxKeywords = 50;
 const abstractLimit = 4000;
 
 /** Identifies an entry that has neither an identifier nor an address of its own. */
@@ -213,26 +212,7 @@ export function setPosition(id: string, progress: number): void {
 }
 
 export function setKeywords(keywords: string[]): string[] {
-    workspace.requireWorkspace();
-    return commit.run({ sourceTab: "", feed: true, history: false, updateModified: false }, () => {
-        if (!Array.isArray(keywords) || keywords.some(word => typeof word !== "string")) throw new LabloomError({ kind: "feed-invalid-keywords" });
-        const unique = new Map<string, string>();
-        for (const word of keywords) {
-            const text = word.trim().replace(/\s+/g, " ");
-            if (text.length > 100) throw new LabloomError({ kind: "feed-keyword-too-long" });
-            if (text && !unique.has(text.toLowerCase())) unique.set(text.toLowerCase(), text);
-        }
-        if (unique.size > maxKeywords) throw new LabloomError({ kind: "feed-too-many-keywords" });
-        const saved = [...unique.values()];
-        workspace.database().transaction(() => {
-            const meta = workspace.database().select().from(workspaceMeta).get();
-            if (!meta) throw new LabloomError({ kind: "workspace-not-ready" });
-            const feed = (meta.settings.feed ?? {}) as Record<string, unknown>;
-            workspace.database().update(workspaceMeta).set({ settings: { ...meta.settings, feed: { ...feed, keywords: saved } } }).where(eq(workspaceMeta.id, meta.id)).run();
-        });
-        return saved;
-
-    });
+    return workspaceSettings.update({ feedKeywords: keywords }).feedKeywords;
 }
 
 export function importItem(id: string, replace = false): string {
@@ -275,8 +255,7 @@ export function itemURL(id: string): string {
 }
 
 function keywords(): string[] {
-    const feed = workspace.database().select({ settings: workspaceMeta.settings }).from(workspaceMeta).get()?.settings.feed as { keywords?: unknown } | undefined;
-    return Array.isArray(feed?.keywords) ? feed.keywords.filter((word): word is string => typeof word === "string") : [];
+    return workspaceSettings.get().feedKeywords;
 }
 
 function savedFailure(value: AttributeValue): FailureInfo | null {
@@ -416,13 +395,6 @@ function merge(source: SourceRow, entries: FeedEntry[]): number {
         }).where(eq(feedItems.id, saved.id)).run();
     }
     return added;
-}
-export async function refreshDue(): Promise<void> {
-    const session = workspace.requireWorkspace();
-    for (const id of await timers.check()) {
-        if (!workspace.isCurrent(session)) return;
-        await refresh(id);
-    }
 }
 /** One download attempt per item in the current session. */
 export function fetchPDF(id: string): Promise<void> {

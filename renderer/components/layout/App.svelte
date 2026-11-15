@@ -92,7 +92,9 @@
 
     onMount(() => {
         const stopAppearance = initializeAppearance();
-        const keyboard = (event: KeyboardEvent): void => { if (startup?.status === "ready") globalShortcut(event); };
+        const keyboard = (event: KeyboardEvent): void => {
+            if (startup?.status === "ready") globalShortcut(event);
+        };
         window.addEventListener("keydown", keyboard);
         tabLifecycle.close = async id => {
             try {
@@ -115,16 +117,16 @@
         }
         window.addEventListener("blur", blur);
         window.addEventListener("focus", focus);
-        const stopClose = window.api.knowledge.onCloseRequested(async () => {
+        const stopClose = window.api.beforeQuit(async () => {
             if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
             if (!await saveAll()) {
-                knowledgeState.error = { kind: "workspace-close-unsaved" }; return false;
+                knowledgeState.error = { kind: "workspace-close-unsaved" }; return true;
             }
             try {
-                await persistTabs(); return true;
+                await persistTabs(); return false;
             }
             catch (error) {
-                knowledgeState.error = failure(error); return false;
+                knowledgeState.error = failure(error); return true;
             }
         });
         void run(() => window.api.startup.getState());

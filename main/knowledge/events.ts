@@ -1,4 +1,3 @@
-import { type Appearance } from "../../shared/types/appearance";
 import { type KnowledgeChange, type PageKind } from "../../shared/types/content";
 import { type Notice } from "../../shared/types/knowledge";
 import * as workspace from "../workspace-state";
@@ -7,8 +6,7 @@ import * as data from "./records";
 export type Event =
     | { type: "knowledge"; change: KnowledgeChange }
     | { type: "feed" }
-    | { type: "reminder"; notice: Notice; body: string }
-    | { type: "appearance"; appearance: Appearance };
+    | { type: "reminder"; notice: Notice; body: string };
 const listeners = new Set<(event: Event) => void>();
 
 export function subscribe(listener: (event: Event) => void): () => void {
@@ -46,7 +44,4 @@ export function feedChanged(): void {
 export function reminder(notice: Notice, body: string): void {
     workspace.requireWorkspace();
     emit({ type: "reminder", notice, body });
-}
-export function appearanceChanged(appearance: Appearance): void {
-    emit({ type: "appearance", appearance });
 }

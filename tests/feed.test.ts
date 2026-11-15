@@ -41,7 +41,7 @@ test("feed pages own settings and timers while refresh preserves item state and 
     const requested: string[] = [];
     const service = feedServices();
     const modified = knowledge.get(source.id).attributes.modified_at;
-    await service.refreshDue(); assert.deepEqual(requested.sort(), [source.attributes.feed_url, never.attributes.feed_url].sort());
+    await service.checkDue(); assert.deepEqual(requested.sort(), [source.attributes.feed_url, never.attributes.feed_url].sort());
     const state = service.getState({}); assert.deepEqual([state.total, state.unreadCount], [3, 2]);
     assert.deepEqual(state.sources.map(row => [row.name, row.lastAdded, row.error]), [["Never fetched", 0, null], ["Saved feed", 1, null]]);
     assert.deepEqual([service.getItem("read").isRead, service.getItem("read").content], [true, "<p>Body</p>"]);
@@ -214,7 +214,7 @@ test("manual and scheduled refreshes in one session share an in-flight source re
     };
     const first = feedServices(), id = await first.saveSource({ name: "A", url: "https://example.org/feed" }), second = first;
     slow = true; clock.now += 3600000;
-    const a = first.refreshDue(); await Promise.resolve(); const b = second.refresh(id);
+    const a = first.checkDue(); await Promise.resolve(); const b = second.refresh(id);
     assert.equal(calls, 2); release(); await Promise.all([a, b]);
     assert.equal(calls, 2); assert.equal(second.getState({}).sources[0].refreshing, false);
     assert.equal(ws.database.prepare("SELECT due_at FROM timers WHERE page_id=?").pluck().get(id), Math.floor(clock.now / 1000) + 3600);

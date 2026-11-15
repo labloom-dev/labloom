@@ -8,6 +8,7 @@ import { createWorkspaceSchema, validateWorkspaceSchema } from "./schema";
 import { initializeBuiltinAttrs, validateBuiltinAttrs } from "./builtin-attrs";
 import { createWorkspaceDatabase, type WorkspaceDatabase } from "./database";
 import { workspaceMeta } from "./tables";
+import * as locks from "./workspace-lock";
 import { diagnostic, toFailureInfo } from "../../shared/failure";
 
 const applicationId = 0x4c424c4d;
@@ -16,6 +17,7 @@ export type OpenWorkspace = {
     info: Workspace;
     database: Database.Database;
     db: WorkspaceDatabase;
+    lock: locks.WorkspaceLock;
 };
 
 function directoryPath(path: string): string {
@@ -39,11 +41,13 @@ export function createWorkspace(path: string): OpenWorkspace {
 
     const databasePath = join(root, "workspace.sqlite");
     const attachmentsPath = join(root, "attachments");
-    // Reserve the database name exclusively; never overwrite an existing file.
-    closeSync(openSync(databasePath, "wx"));
+    const lock = locks.acquire(root);
     let database: Database.Database | undefined;
-    let createdAttachments = false;
+    let createdAttachments = false, createdDatabase = false;
     try {
+        // Reserve the database name exclusively; never overwrite an existing file.
+        closeSync(openSync(databasePath, "wx"));
+        createdDatabase = true;
         database = new Database(databasePath, { fileMustExist: true });
         database.pragma("foreign_keys = ON");
         const db = createWorkspaceDatabase(database);
@@ -61,13 +65,18 @@ export function createWorkspace(path: string): OpenWorkspace {
                 throw new LabloomError({ kind: "workspace-foreign-key-check" });
             }
         })();
-        return { info, database, db };
+        return { info, database, db, lock };
     }
     catch (error) {
-        database?.close();
-        // Only remove files created by this attempt; never recursively delete a folder.
-        unlinkSync(databasePath);
-        if (createdAttachments) rmdirSync(attachmentsPath);
+        try {
+            database?.close();
+            // Only remove files created by this attempt; never recursively delete a folder.
+            if (createdDatabase) unlinkSync(databasePath);
+            if (createdAttachments) rmdirSync(attachmentsPath);
+        }
+        finally {
+            locks.release(lock, true);
+        }
         throw error;
     }
 }
@@ -82,24 +91,40 @@ export function openWorkspace(path: string, expectedId?: string): OpenWorkspace 
         if ((error as NodeJS.ErrnoException)?.code === "ENOENT") throw new LabloomError({ kind: "workspace-not-workspace", path: root });
         throw new LabloomError(toFailureInfo(error), { cause: error });
     }
-    // Reject incompatible workspaces before opening a writable connection.
-    const reader = new Database(databasePath, { readonly: true, fileMustExist: true });
+    const lock = locks.acquire(root);
+    let database: Database.Database | undefined;
     try {
-        validateWorkspace(reader, root, expectedId);
-    }
-    finally {
-        reader.close();
-    }
-    const database = new Database(databasePath, { fileMustExist: true });
-    try {
+        // Reject incompatible workspaces before opening a writable connection.
+        const reader = new Database(databasePath, { readonly: true, fileMustExist: true });
+        try {
+            validateWorkspace(reader, root, expectedId);
+        }
+        finally {
+            reader.close();
+        }
+        database = new Database(databasePath, { fileMustExist: true });
         const info = validateWorkspace(database, root, expectedId);
         const db = createWorkspaceDatabase(database);
         database.pragma("foreign_keys = ON");
-        return { info, database, db };
+        return { info, database, db, lock };
     }
     catch (error) {
-        database.close();
+        try {
+            database?.close();
+        }
+        finally {
+            locks.release(lock, true);
+        }
         throw error;
+    }
+}
+
+export function closeWorkspace(workspace: OpenWorkspace, failed = false): void {
+    try {
+        if (workspace.database.open) workspace.database.close();
+    }
+    finally {
+        locks.release(workspace.lock, failed);
     }
 }
 

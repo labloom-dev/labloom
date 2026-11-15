@@ -1,12 +1,24 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { AppAPI } from "../shared/app";
 import type { BridgeAPI } from "../shared/failure";
-import { appChannels, appearanceChannels, feedChanged, feedChannels, startupChannels } from "../shared/ipc";
-import { knowledgeChannels, knowledgeChanged, saveBeforeClose, saveBeforeCloseReply } from "../shared/ipc";
+import { appChannels, settingsChannels, feedChanged, feedChannels, startupChannels } from "../shared/ipc";
+import { knowledgeChannels, knowledgeChanged } from "../shared/ipc";
 
 // The renderer only gets this typed bridge, never ipcRenderer itself.
 const api: BridgeAPI<AppAPI> = {
     openDevTools: () => ipcRenderer.send(appChannels.openDevTools),
+    beforeQuit(check) {
+        const listener = (_event: unknown, id: string): void => {
+            Promise.resolve().then(check).then(block => ipcRenderer.send(appChannels.beforeQuitResult, id, block !== false))
+                .catch(error => {
+                    console.error(error); ipcRenderer.send(appChannels.beforeQuitResult, id, true);
+                });
+        };
+        ipcRenderer.on(appChannels.beforeQuit, listener);
+        return () => {
+            ipcRenderer.removeListener(appChannels.beforeQuit, listener);
+        };
+    },
     knowledge: {
         list: (...args) => ipcRenderer.invoke(knowledgeChannels.list, ...args),
         listUpdates: (...args) => ipcRenderer.invoke(knowledgeChannels.listUpdates, ...args),
@@ -51,22 +63,16 @@ const api: BridgeAPI<AppAPI> = {
             const handler = (_event: unknown, change: Parameters<typeof listener>[0]): void => listener(change);
             ipcRenderer.on(knowledgeChanged, handler);
             return () => ipcRenderer.removeListener(knowledgeChanged, handler);
-        },
-        onCloseRequested: listener => {
-            const handler = (_event: unknown, nonce: string): void => {
-                void listener().then(saved => ipcRenderer.send(saveBeforeCloseReply, nonce, saved), () => ipcRenderer.send(saveBeforeCloseReply, nonce, false));
-            };
-            ipcRenderer.on(saveBeforeClose, handler);
-            return () => ipcRenderer.removeListener(saveBeforeClose, handler);
         }
     },
-    appearance: {
-        get: () => ipcRenderer.invoke(appearanceChannels.get),
-        save: value => ipcRenderer.invoke(appearanceChannels.save, value),
+    settings: {
+        get: () => ipcRenderer.invoke(settingsChannels.get),
+        update: patch => ipcRenderer.invoke(settingsChannels.update, patch),
+        flush: revision => ipcRenderer.invoke(settingsChannels.flush, revision),
         onChanged: listener => {
             const handler = (_event: unknown, value: Parameters<typeof listener>[0]): void => listener(value);
-            ipcRenderer.on(appearanceChannels.changed, handler);
-            return () => ipcRenderer.removeListener(appearanceChannels.changed, handler);
+            ipcRenderer.on(settingsChannels.changed, handler);
+            return () => ipcRenderer.removeListener(settingsChannels.changed, handler);
         }
     },
     feed: {

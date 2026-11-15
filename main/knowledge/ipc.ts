@@ -1,15 +1,12 @@
-import { eq } from "drizzle-orm";
 import { type BrowserWindow, dialog, shell } from "electron";
-import { randomUUID } from "node:crypto";
-import { record } from "../../shared/attrs/values";
 import { LabloomError } from "../../shared/failure";
-import { knowledgeChannels as channels, saveBeforeClose, saveBeforeCloseReply } from "../../shared/ipc";
+import { knowledgeChannels as channels } from "../../shared/ipc";
 import { type AttributeDefinition, type AttributeValue } from "../../shared/types/attributes";
 import { type BlockDeletion, type EditCommit, type PageKind, type PageQuery, type Placement, type Target } from "../../shared/types/content";
 import { type AnnotationInput, type ReadingPosition } from "../../shared/types/papers";
-import { handle, on } from "../ipc";
-import * as session from "../session";
-import { workspaceMeta } from "../storage/tables";
+import { handle } from "../ipc";
+import * as workspaceSettings from "../workspace-settings";
+import * as lifecycle from "../lifecycle";
 import { t } from "../ui/i18n";
 import * as attributes from "./attributes";
 import * as edits from "./edits";
@@ -25,7 +22,6 @@ function string(value: unknown): string {
     return value;
 }
 export function registerKnowledgeIPCs(window: BrowserWindow): void {
-    let editorStarted = false;
     const ipc = (channel: string, fn: (...args: unknown[]) => unknown): void => handle(window.webContents, channel, fn);
     const optional = (value: unknown): string | undefined => value === undefined ? undefined : string(value);
     const tab = (id: unknown): string => {
@@ -62,14 +58,10 @@ export function registerKnowledgeIPCs(window: BrowserWindow): void {
     });
     ipc(channels.closeTab, id => history.close(tab(id)));
     ipc(channels.loadTabs, () => {
-        editorStarted = true;
-        return session.getDatabase().select().from(workspaceMeta).get()?.settings.tabs ?? null;
+        lifecycle.editorStarted(window.webContents);
+        return workspaceSettings.loadTabs();
     });
-    ipc(channels.saveTabs, value => {
-        if (!record(value) || JSON.stringify(value).length > 1000000 || !Array.isArray(value.groups) || value.groups.length > 32 || !record(value.layout) || typeof value.focusedGroupId !== "string") throw new LabloomError({ kind: "tabs-invalid-layout" });
-        const db = session.getDatabase(), meta = db.select().from(workspaceMeta).get()!;
-        db.update(workspaceMeta).set({ settings: { ...meta.settings, tabs: value } }).where(eq(workspaceMeta.id, meta.id)).run();
-    });
+    ipc(channels.saveTabs, value => workspaceSettings.saveTabs(value));
     ipc(channels.importPDF, async (id, source) => {
         const pageId = optional(id), sourceTab = optional(source) ?? "";
         const selection = await dialog.showOpenDialog(window, { properties: ["openFile"], filters: [{ name: t("dialog.pdfFilter"), extensions: ["pdf"] }] });
@@ -103,31 +95,4 @@ export function registerKnowledgeIPCs(window: BrowserWindow): void {
     ipc(channels.setTimer, (id, attr, lead, enabled, source) => timers.set(string(id), string(attr), lead as number, enabled as boolean, tab(source)));
     ipc(channels.readNotice, (id, attr, lead, source) => timers.read(string(id), string(attr), lead as number, tab(source)));
 
-    let closeAllowed = false, closeNonce: string | null = null;
-    let deadline: ReturnType<typeof setTimeout> | undefined;
-    on(window.webContents, saveBeforeCloseReply, (nonce, saved) => {
-        if (nonce !== closeNonce) return;
-        clearTimeout(deadline);
-        closeNonce = null;
-        if (saved === true) {
-            closeAllowed = true;
-            window.close();
-        }
-    });
-    window.on("close", event => {
-        if (closeAllowed || !editorStarted || !session.ready()) return;
-        event.preventDefault();
-        if (closeNonce) return;
-        closeNonce = randomUUID();
-        window.webContents.send(saveBeforeClose, closeNonce);
-        deadline = setTimeout(() => {
-            closeNonce = null;
-            void dialog.showMessageBox(window, { type: "warning", message: t("dialog.closeTimeout"), detail: t("dialog.closeTimeoutDetail"), buttons: [t("dialog.stay"), t("dialog.closeAnyway")], defaultId: 0, cancelId: 0 }).then(({ response }) => {
-                if (response === 1) {
-                    closeAllowed = true;
-                    window.close();
-                }
-            });
-        }, 15000);
-    });
 }
