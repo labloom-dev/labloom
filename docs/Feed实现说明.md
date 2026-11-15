@@ -1,6 +1,6 @@
 # Feed 实现说明
 
-Feed 用于追踪论文和实验室博客，完成“添加来源 → 自动抓取更新 → 阅读正文或摘要 → 加入文献库”的流程。支持 RSS、Atom、JSON Feed、arXiv 查询以及 Anthropic 官网列表页，内容和阅读状态保存在工作区的 SQLite 数据库中。
+Feed 用于追踪论文和实验室博客，完成“添加来源 → 自动抓取更新 → 阅读正文或摘要 → 加入文献库”的流程。支持 RSS、Atom、JSON Feed、arXiv 查询以及 Anthropic 官网列表页，内容和阅读状态保存在工作区的 SQLite 数据库中。每个来源是工作区里的一个订阅源页面，抓到的文章保存在单独的条目表里。
 
 本模块对应[板块 1 用户需求](用户需求/LB-USR-1.md)的 LB-USR-1-1 至 1-22、1-28 和 1-29，订阅分组（LB-USR-1-4）除外。数据结构和流程依据《系统概要设计说明书》1.2 版的 6.4.5 节和表 7.4。
 
@@ -21,7 +21,7 @@ Feed 用于追踪论文和实验室博客，完成“添加来源 → 自动抓�
 
 “10 篇”是单次抓取的导入上限，已保存的文章会继续累积。arXiv 的查询条件见[下文](#arxiv)。
 
-每个来源可以单独设置是否自动刷新和刷新间隔（15 分钟至 24 小时，默认 1 小时）。来源有三种状态：
+每个来源可以单独设置是否自动刷新和刷新间隔（15 分钟至 24 小时，默认 1 小时）。不自动刷新的来源只在手动刷新时抓取。来源有三种状态：
 
 | 状态 | 抓取 | 内容 |
 | --- | --- | --- |
@@ -33,7 +33,16 @@ Feed 用于追踪论文和实验室博客，完成“添加来源 → 自动抓�
 
 打开条目会标为已读，可以改回未读，也可以把某个来源或全部来源标为已读。阅读区显示来源提供的正文（含图片和链接）；来源只给摘要时会注明。可以调整正文字号、切换上一篇和下一篇、在浏览器中打开原文，再次打开同一条目时回到上次的阅读位置。
 
-“加入文献库”为条目创建文献页，条目显示“已入库”并可直接打开该页。
+“加入文献库”为条目创建文献页，条目显示“已入库”并可直接打开该页。来源提供了 PDF 地址时，入库后会在后台下载 PDF，挂到文献的“附件”上，详见[加入文献库](#加入文献库)。
+
+### 来源即页面
+
+订阅源是一种页面类型，来源名称就是页面标题，订阅地址、状态、刷新间隔和刷新结果都是它的属性：
+
+- 订阅源页面和其他页面一样出现在知识库的列表和搜索中，类型筛选里有“订阅源”。在标签页里打开它，显示订阅视图并选中这个来源，不显示编辑器。正文不能写内容。
+- 删除来源就是把页面移进回收站：它不再刷新，它和它的条目也不在 Feed 中显示。从回收站恢复后，照原来的设置继续。
+- 永久删除来源页面时，它的条目一并删除；已经加入文献库的文献不受影响。
+- 订阅地址在所有没被永久删除的来源之间唯一，回收站里的也算。重新添加一个“已取消”来源的地址，会恢复那个来源。
 
 ## 模块组织
 
@@ -41,8 +50,9 @@ Feed 用于追踪论文和实验室博客，完成“添加来源 → 自动抓�
 flowchart TD
     UI[FeedView 和 SourceForm] --> API[window.api.feed]
     API --> IPC[preload 与 feed IPC]
-    Timer[主进程定时检查] --> Service
-    IPC --> Service[FeedService]
+    Timer[会话内的定时检查] --> Timers[定时表]
+    Timers -- 到期的来源 --> Service
+    IPC --> Service[订阅服务模块]
     Service --> Fetch[fetchFeed]
     Fetch --> XML[RSS 和 Atom]
     Fetch --> JSON[JSON Feed]
@@ -51,9 +61,12 @@ flowchart TD
     JSON --> Entry
     Web --> Entry
     Entry --> Merge[归并到已保存条目]
-    Merge --> DB[(SQLite)]
-    Service --> Library[文献库]
-    Service -- feed:changed --> UI
+    Merge --> Commit[统一提交入口]
+    Service --> Library[文献模块]
+    Library --> Commit
+    Commit --> DB[(SQLite)]
+    Commit --> Events[改动通知]
+    Events -- feed:changed --> UI
 ```
 
 | 文件 | 职责 |
@@ -64,12 +77,18 @@ flowchart TD
 | [labels.ts](../renderer/components/Feed/labels.ts) | 时间、间隔和来源状态的文字 |
 | [shared/utils/feed.ts](../shared/utils/feed.ts) | URL 校验、原文地址规范化和 arXiv 地址生成 |
 | [shared/types/feed.ts](../shared/types/feed.ts) | 前后端共享的数据结构和 `FeedAPI` 接口 |
-| [main/feed/ipc.ts](../main/feed/ipc.ts) | 注册桌面端接口，启动定时检查，向窗口广播变化 |
-| [main/feed/service.ts](../main/feed/service.ts) | 来源管理、刷新调度、条目归并、查询、阅读状态和入库 |
-| [main/feed/parser.ts](../main/feed/parser.ts) | 网络请求、格式识别与解析、错误分类及 arXiv 请求排队 |
+| [main/feed/ipc.ts](../main/feed/ipc.ts) | 注册桌面端接口：校验参数后调用订阅服务 |
+| [main/feed/service.ts](../main/feed/service.ts) | 来源管理、刷新排队、条目归并、查询、阅读状态、入库和 PDF 下载 |
+| [main/feed/schedule.ts](../main/feed/schedule.ts) | 按来源的状态和刷新间隔维护它在定时表里的那一行 |
+| [main/feed/parser.ts](../main/feed/parser.ts) | 网络请求、格式识别与解析、PDF 地址识别、错误分类及 arXiv 请求排队 |
 | [main/feed/anthropic.ts](../main/feed/anthropic.ts) | Anthropic News 和 Engineering 页面适配 |
+| [main/feed/pdf.ts](../main/feed/pdf.ts) | 下载并校验条目的 PDF |
+| [main/knowledge/scheduler.ts](../main/knowledge/scheduler.ts) | 每 15 秒检查一次定时表，由工作区会话启停 |
+| [main/knowledge/events.ts](../main/knowledge/events.ts) | 统一的改动通知，订阅相关的改动在这里发出 `feed:changed` |
 
-`FeedView` 接受一个 `FeedAPI` 参数，桌面端默认使用 `window.api.feed`。`pnpm dev:feed` 启动的浏览器预览传入使用 HTTP 的实现，与桌面端复用同一套页面和服务逻辑；预览不接文献库，“加入文献库”不可用。
+订阅服务是一个单例模块，属于当前打开的工作区会话（[main/session.ts](../main/session.ts)）。关闭工作区时，排队和进行中的抓取、PDF 下载都被中止，返回的结果不会写进库。所有写入都经过知识库的统一提交入口，订阅自己的写入不进撤销历史，也不改页面的修改时间。
+
+`FeedView` 接受一个 `FeedAPI` 参数，桌面端默认使用 `window.api.feed`。`pnpm dev:feed` 启动的浏览器预览传入使用 HTTP 的实现，与桌面端复用同一套页面和服务逻辑。预览在 `.local/feed-preview/workspace` 打开一个完整的工作区，所以“加入文献库”和 PDF 下载也能用；页面靠轮询一个版本号代替桌面端的变化通知。
 
 ## 抓取与解析
 
@@ -140,22 +159,44 @@ flowchart TD
 
 ## 数据保存与刷新
 
-两张表由版本化迁移管理，当前结构来自迁移 15：
+表结构由工作区的唯一基线定义，没有迁移。
 
-| 表 | 主要字段 |
+**来源**是 `feed` 类型的页面，名称是页面标题，其余都是内置属性：
+
+| 属性 | 类型 | 作用 |
+| --- | --- | --- |
+| `feed_url` | 网址 | 订阅地址 |
+| `feed_status` | 单选 | 启用、暂停、已取消 |
+| `feed_refresh` | 重复 | 刷新间隔，例如“每 60 分钟”；为空表示只手动刷新 |
+| `feed_last_refreshed`、`feed_last_checked` | 时间（分） | 上次成功刷新、上次尝试刷新 |
+| `feed_last_added` | 数字 | 上次新增的条目数 |
+| `feed_error`、`feed_failures` | 文本、数字 | 上次失败的原因、连续失败次数 |
+| `feed_etag`、`feed_last_modified` | 文本 | 条件请求用的 `ETag` 和 `Last-Modified` |
+
+除了地址、状态和间隔，其余属性都是隐藏、只读的，由刷新写入。
+
+**条目**保存在 `feed_items` 表：
+
+| 分组 | 字段 |
 | --- | --- |
-| `feed_sources` | `id`、`name`、唯一的 `url`；`subscription_status`、`auto_refresh`、`interval_minutes`；`last_refreshed`（上次成功）、`last_checked`（上次尝试）、`next_refresh`、`failures`、`last_added`、`error`；`etag`、`last_modified` |
-| `feed_items` | `id`、`source_id`、`external_id`、`title`、`url`、`normalized_url`、`content_fingerprint`、`authors`、`summary`、`raw_content`、`has_full_content`、`published_at`、`origin_snapshot`、`is_read`、`reading_position`、`paper_id` |
+| 归属 | `id`；`source_id` 指向来源页面，永久删除来源时级联删除 |
+| 判断是否同一篇 | `external_id`、`normalized_url`、`content_fingerprint` |
+| 来源给的内容 | `title`、`url`、`authors`、`summary`、`raw_content`、`has_full_content`、`published_at`、`pdf_url` |
+| 个人状态，刷新不覆盖 | `is_read`、`reading_position`、`paper_id` |
 
-来源的外键不再级联删除，条目不会随来源消失。关注关键词保存在 `workspace_meta.settings.feed.keywords`，最多 50 个。
+`paper_id` 故意不加外键：文献被永久删除后，条目仍能显示“已删除”并允许重新入库。关注关键词保存在 `workspace_meta.settings.feed.keywords`，最多 50 个。
 
 ### 自动刷新
 
-主进程每 30 秒检查一次，抓取状态为启用、开启自动刷新且 `next_refresh` 已到的来源。应用关闭期间到期的来源在启动后几秒内补抓。手动“刷新全部”抓取所有启用的来源，不看是否到期。
+自动刷新和提醒共用工作区的定时表。来源处于启用状态、刷新间隔不为空、页面不在回收站时，定时表里有一行 `(来源页面, feed_refresh, 0)`，它的 `due_at` 就是下次刷新的时间。暂停、取消、清空间隔或删除来源时，这一行被删掉；恢复时重新加上。
+
+工作区会话里的定时检查每 15 秒运行一次，取出到期的行：提醒照常派发，到期的来源交给订阅服务抓取。打开工作区时，如果已有到期的行，立即检查一次，所以应用关闭期间到期的来源会在打开后马上补抓。手动“刷新全部”抓取所有启用的来源，不看是否到期。
+
+抓取成功后，下次刷新时间是“现在 + 间隔”；失败时按上文的重试规则写回。
 
 手动和自动刷新共用一个队列，最多同时抓取 4 个来源；排队中的来源在界面上同样显示为刷新中。同一来源的并发刷新共用一个请求。
 
-请求在事务外进行。结果返回时如果来源已被暂停、取消或改了地址，结果作废。
+请求在事务外进行。排队中的来源轮到它时、以及结果返回时，都会重新检查：来源已被暂停、取消、删除或改了地址，就跳过或作废这次结果。
 
 ### 条目归并
 
@@ -167,7 +208,7 @@ flowchart TD
 
 两个条目的标识都存在且不同时，视为不同条目，不再比较地址和指纹。
 
-更新已有条目时补全或采用来源的最新标题、地址、作者、摘要和正文；本地 UUID、已读状态、阅读位置、文献关联和首次记录的发布时间保持不变。`origin_snapshot` 记录条目首次抓取时的订阅地址和来源标识。去重以来源为单位，同一文章出现在两个来源中时仍会保存两份。
+更新已有条目时补全或采用来源的最新标题、地址、作者、摘要、正文和 PDF 地址；本地 UUID、已读状态、阅读位置、文献关联和首次记录的发布时间保持不变。导入文献时，来源记录使用订阅源当前的地址，以及条目的 `external_id`。去重以来源为单位，同一文章出现在两个来源中时仍会保存两份。
 
 修改来源地址时先抓取新地址校验，成功后在同一事务中保存，失败不会替换原有配置；已保存的条目全部保留。只修改名称或刷新设置时不重新抓取。
 
@@ -188,13 +229,24 @@ flowchart TD
 
 ## 加入文献库
 
-入库为条目创建一个文献页，写入作者、原文地址、摘要（最多 4000 字符）和发布日期，并在 `source_snapshot` 隐藏属性中记录来源信息。文献页的创建和条目 `paper_id` 的写入在同一事务中完成。当前只保存书目信息和链接，不下载 PDF。
+入库为条目创建一个文献页，写入作者、原文地址、摘要（最多 4000 字符）和发布日期，并在 `source_snapshot` 隐藏属性中记录来源信息：条目和来源的 id、来源名称、来源当前的订阅地址、条目的 `external_id` 和原文地址。文献页的创建和条目 `paper_id` 的写入在同一次提交中完成。
 
 `paper_id` 是条目到文献页的唯一关联。已入库的条目再次入库或被重新抓到时，仍指向原来的文献页。文献页进入回收站或不存在时，条目会提示，用户确认后才重新创建，不按标题猜测。
 
+### PDF
+
+解析时会识别条目的 PDF 地址，存进 `pdf_url`：
+
+- arXiv 的摘要页地址（`/abs/<编号>`）换算成 `https://arxiv.org/pdf/<编号>`；
+- 其他来源取类型为 `application/pdf` 的第一个附件：RSS 的 `enclosure`、Atom 的 `link`、JSON Feed 的 `attachments`。
+
+条目有 PDF 地址时，入库后在后台下载，作为一个新的附件追加到文献的“附件”属性上。每次下载都是独立的新附件，不和已有文件比对。下载超时 30 秒，最大 50 MB，内容必须以 `%PDF` 开头。
+
+阅读区显示下载状态：下载中、已保存、失败（附原因）。失败时可以“重新获取 PDF”；用户把 PDF 从文献的附件里移除后，同样可以重新获取。同一条目同时只有一个下载。
+
 ## 前后端接口
 
-接口定义在 `FeedAPI` 中，由 preload 映射到 `feed:*` IPC 通道。主进程校验调用来自应用窗口的主框架，业务参数由服务层检查。
+接口定义在 `FeedAPI` 中，由 preload 映射到 `feed:*` IPC 通道。主进程校验调用来自应用窗口的主框架，业务参数由订阅服务检查。
 
 | API | 作用 |
 | --- | --- |
@@ -206,14 +258,15 @@ flowchart TD
 | `setRead(id, isRead)`、`markAllRead(sourceId?)` | 保存已读或未读状态 |
 | `setPosition(id, progress)` | 保存条目的阅读位置 |
 | `setKeywords(keywords)` | 保存关注关键词 |
-| `importItem(id, replace?)` | 加入文献库，返回文献页 ID |
+| `importItem(id, replace?)` | 加入文献库，返回文献页 ID；条目有 PDF 地址时开始后台下载 |
+| `fetchPDF(id)` | 为已入库的条目下载或重新获取 PDF |
 | `openItem(id)` | 从数据库读取原文地址，校验后调用系统浏览器 |
-| `onChanged(listener)` | 订阅 `feed:changed` 通知。后台刷新和其他窗口的修改通过它让页面重新读取 |
+| `onChanged(listener)` | 订阅 `feed:changed` 通知。后台刷新、PDF 下载和在别处对来源页面的修改通过它让页面重新读取 |
 
 ## 测试
 
-- `pnpm test:feed`：解析、编码、条件请求、网页发现、错误分类、重试间隔、调度与排队、归并、筛选和入库规则。
-- `pnpm test:db` 中的 `tests/feed.test.ts`：旧工作区升级到迁移 15 后数据保留，以及与真实文献库的入库对接。
+- `pnpm test:feed`：解析、编码、条件请求、网页发现、PDF 地址识别与下载、错误分类、重试间隔、调度与排队、归并、筛选和入库规则。
+- `pnpm test:db` 中的 `tests/feed.test.ts`：订阅源页面、定时行和条目在工作区里的保存，以及与真实文献库的入库对接。
 
 ## 当前限制
 
@@ -222,5 +275,5 @@ flowchart TD
 - 只显示来源自己提供的正文，不抓取原文网页提取全文。只支持 HTTPS 图片。
 - Anthropic 适配器随官网页面结构变化而失效，届时该来源会报“未找到 Anthropic 文章”，需要更新适配器。
 - 调度只使用用户设置的间隔，不读取来源的 `Cache-Control` 或 `ttl`；来源永久重定向后不会自动改写保存的地址。
-- 入库不下载 PDF，也不与其他来源或已有文献比对重复。
+- 只为来源提供了 PDF 地址的条目下载 PDF，不从原文网页里找 PDF。入库不与其他来源或已有文献比对重复。
 - 订阅条目尚未接入全局搜索。
