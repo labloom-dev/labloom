@@ -241,7 +241,7 @@
     async function importPDF(): Promise<void> {
         busy = true;
         try {
-            const result = await writeFromTab(tabId, () => window.api.papers.importPDF(undefined, tabId));
+            const result = await writeFromTab(tabId, () => window.api.papers.importPDF(undefined, { tabId, source: { kind: "workspace" } }));
             if (result) {
                 info = "PDF 已复制到工作区。";
                 openPage(result.pageId);
@@ -258,7 +258,7 @@
         busy = true;
         try {
             const ids = [...selected];
-            if (await writeFromTab(tabId, () => confirmed(token => view === "trash" ? window.api.pages.restore(ids, tabId) : window.api.pages.trash(ids, tabId, token)))) selected = [];
+            if (await writeFromTab(tabId, () => confirmed(token => view === "trash" ? window.api.pages.restore(ids, tabId, { kind: "workspace" }) : window.api.pages.trash(ids, tabId, { kind: "workspace" }, token)))) selected = [];
         }
         catch (problem) {
             error = failure(problem);

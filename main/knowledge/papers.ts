@@ -1,3 +1,4 @@
+import type { HistoryOrigin, HistorySource } from "../../shared/history/ipc";
 import { eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
@@ -188,36 +189,36 @@ function importing<T>(action: (store: (path: string) => Attachment) => T, source
     }
 }
 
-function append(pageId: string, attributeId: string, files: Attachment[], tabId?: string): void {
+function append(pageId: string, attributeId: string, files: Attachment[], origin?: HistoryOrigin): void {
     const definition = attributes.definition(attributeId), page = data.get(pageId);
     if (definition.type !== "file" && definition.type !== "files") throw new LabloomError({ kind: "attribute-file-required" });
     if (definition.type === "file" && files.length !== 1) throw new LabloomError({ kind: "attribute-single-file" });
     const current = page.attributes[attributeId];
     const value = definition.type === "file" ? files[0].id : [...new Set([...(Array.isArray(current) ? current as string[] : []), ...files.map(file => file.id)])];
-    const result = edits.commitEdit({ pageId, tabId: tabId ?? "file-import", batch: 0, blocks: [], attributes: { [attributeId]: value } });
+    const result = edits.commitEdit({ pageId, tabId: origin?.tabId ?? "file-import", batch: 0, blocks: [], attributes: { [attributeId]: value } }, origin?.source ?? false);
     if (result.status !== "saved") throw new LabloomError({ kind: "attachment-write-failed" });
-    if (!tabId) commit.invalidate(["page:" + pageId]);
+    if (!origin) commit.invalidate(["page:" + pageId]);
 }
 
-export function attachFiles(paths: string[], pageId: string, attributeId: string, tabId?: string): Attachment[] {
+export function attachFiles(paths: string[], pageId: string, attributeId: string, origin?: HistoryOrigin): Attachment[] {
     workspace.requireWorkspace();
     if (!Array.isArray(paths) || !paths.length) throw new LabloomError({ kind: "attachment-selection-required" });
     return importing(store => {
         const localFiles = paths.map(store);
-        append(pageId, attributeId, localFiles, tabId);
+        append(pageId, attributeId, localFiles, origin);
         return localFiles;
-    }, tabId);
+    }, origin?.tabId);
 }
 
-export function importFile(path: string, pageId?: string, tabId?: string): PaperImport {
+export function importFile(path: string, pageId?: string, origin?: HistoryOrigin): PaperImport {
     workspace.requireWorkspace();
     if (pageId) paper(pageId, true);
     return importing(store => {
         const file = store(path);
         const page = pageId ? paper(pageId, true) : edits.createPage("paper", basename(path, extname(path)), { source_snapshot: { originalName: basename(path) } });
-        append(page.id, "paper_files", [file], tabId);
+        append(page.id, "paper_files", [file], origin);
         return { pageId: page.id };
-    }, tabId);
+    }, origin?.tabId);
 }
 
 export function read(id: string): Uint8Array {
@@ -306,20 +307,20 @@ async function prepareAnnotation(pageId: string, value: AnnotationInput): Promis
     return { fileId: value.fileId, pageNumber: value.pageNumber, rectangles, quote, context: quote, extractorVersion: PDF_EXTRACTOR_VERSION };
 }
 
-export function changeAnnotation(id: string, color: string, tabId: string): CommitResult {
+export function changeAnnotation(id: string, color: string, tabId: string, source: HistorySource): CommitResult {
     workspace.requireWorkspace();
     if (!Object.hasOwn(annotationColors, color)) throw new LabloomError({ kind: "annotation-invalid-color" });
     if (data.header(id).kind !== "annotation") throw new LabloomError({ kind: "annotation-unavailable" });
-    return edits.commitEdit({ pageId: id, tabId, batch: 0, blocks: [], attributes: { annotation_color: color } });
+    return edits.commitEdit({ pageId: id, tabId, batch: 0, blocks: [], attributes: { annotation_color: color } }, source);
 }
 
-export function deleteAnnotation(id: string, tabId: string, confirmation?: string): CommitResult {
+export function deleteAnnotation(id: string, tabId: string, source: HistorySource, confirmation?: string): CommitResult {
     workspace.requireWorkspace();
     if (data.header(id).kind !== "annotation") throw new LabloomError({ kind: "annotation-unavailable" });
-    return edits.trash([id], tabId, confirmation);
+    return edits.trash([id], tabId, source, confirmation);
 }
 
-export async function annotate(pageId: string, input: AnnotationInput | string, tabId: string, color = "yellow"): Promise<string> {
+export async function annotate(pageId: string, input: AnnotationInput | string, tabId: string, source: HistorySource, color = "yellow"): Promise<string> {
     const session = workspace.requireWorkspace();
     if (!Object.hasOwn(annotationColors, color)) throw new LabloomError({ kind: "annotation-invalid-color" });
     if (typeof input === "string") {
@@ -338,7 +339,7 @@ export async function annotate(pageId: string, input: AnnotationInput | string, 
         return edits.createPage("annotation", [...prepared.quote].slice(0, 70).join(""), {
             annotation_file: prepared.fileId, annotation_position: localPosition, annotation_color: color,
             annotation_quote: prepared.quote, annotation_context: prepared.context, annotation_extractor: PDF_EXTRACTOR_VERSION
-        }, pageId, tabId).id;
+        }, pageId, { tabId, source }).id;
     });
 }
 

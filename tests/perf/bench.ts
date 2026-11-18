@@ -1,3 +1,6 @@
+import * as history from "../../main/knowledge/history";
+import * as settings from "../../main/settings/store";
+import { pageHistory } from "../support/history";
 import { session, type Knowledge } from "../support/session";
 import { fixture, seedLargePage, type SeedPage } from "./fixture";
 import assert from "node:assert/strict";
@@ -28,12 +31,12 @@ function measure(label: string, limit: number, prepare: (round: number) => Sampl
 function prepareText(service: Knowledge, pageId: string, round: number) {
     const page = service.get(pageId), block = page.blocks[page.children[0]];
     const value = { ...block, payload: payload("paragraph", "Edited " + round) };
-    return (token?: string): CommitResult => service.commitEdit({ pageId, tabId: "perf", batch: round, blocks: [value] }, token);
+    return (token?: string): CommitResult => service.commitEdit({ pageId, tabId: "perf", batch: round, blocks: [value] }, pageHistory(pageId), token);
 }
 
 function prepareDeletion(service: Knowledge, pageId: string) {
     const page = service.get(pageId), blockId = page.children[0];
-    return (token?: string): CommitResult => service.deleteBlock({ pageId, blockId, tabId: "perf" }, token);
+    return (token?: string): CommitResult => service.deleteBlock({ pageId, blockId, tabId: "perf" }, pageHistory(pageId), token);
 }
 
 function confirmed(operation: (token?: string) => CommitResult, recycled: number): Sample {
@@ -105,6 +108,45 @@ function largePage(): void {
     }
 }
 
+function historyScale(): void {
+    const { sql, service, makePage } = fixture();
+    try {
+        settings.initialize(session.getPath());
+        const pages = sql.transaction(() => Array.from({ length: 100 }, (_, index) => makePage(index === 0 ? 10000 : 2, "History")))();
+        const edits = pages.map(page => {
+            const block = service.readObjects(page.id, [page.children[0]]).blocks[0], source = pageHistory(page.id);
+            return (round: number): CommitResult => service.commitEdit({ pageId: page.id, tabId: "perf", batch: round,
+                blocks: [{ ...block, payload: payload("paragraph", "History " + round) }] }, source);
+        });
+        for (let i = 0; i < 10000; i++) assert.equal(edits[i % 100](i).status, "saved");
+        const source = pageHistory(pages[0].id);
+        measure("History | edit one block on a 10000-block page with 10000 records", 30, round =>
+            () => assert.equal(edits[0](10000 + round).status, "saved"));
+        measure("History | undo one block on the same page", 30, () =>
+            () => assert.equal(history.apply(source, "undo").status, "saved"));
+        const start = performance.now();
+        const result = settings.update({ history: { limit: 100 } });
+        const elapsed = performance.now() - start;
+        assert.ok(result.success);
+        console.log("History | trim to 100 records", elapsed.toFixed(2), "ms | limit 50", elapsed <= 50 ? "PASS" : "FAIL");
+        if (elapsed > 50) exceeded = true;
+        // The 21 undone commits form one redo branch. Count every retained node by
+        // walking to the tip and then undoing to the root of each independent page.
+        let retained = 0;
+        for (const page of pages) {
+            const tree = pageHistory(page.id);
+            while (history.state(tree).redo.length) history.apply(tree, "redo");
+            while (history.state(tree).canUndo) {
+                history.apply(tree, "undo"); retained++;
+            }
+        }
+        assert.equal(retained, 100);
+    }
+    finally {
+        session.close();
+    }
+}
+
 function retentionGraph(): void {
     const { sql, service, makePage, attr } = fixture();
     try {
@@ -153,6 +195,7 @@ console.log(platform(), release(), cpus()[0].model, "Electron", process.versions
 console.log("Warm database | 1 warm-up +", samples, "samples per measurement | nearest-rank percentiles | timings exclude fixture creation and the confirmation dialog/preview.");
 workspaceScale();
 largePage();
+historyScale();
 retentionGraph();
 probes();
 if (exceeded) process.exitCode = 1;

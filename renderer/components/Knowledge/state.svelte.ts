@@ -1,3 +1,5 @@
+import { historySource, watchHistory } from "./history";
+import type { HistorySource } from "../../../shared/history/ipc";
 import { PageWrites, fallbackFields, fields, reviewEdit, type Fields } from "./page-writes";
 import { confirmationText } from "../../../shared/content/confirmation";
 import { changedUses, references } from "../../../shared/content/blocks";
@@ -53,7 +55,7 @@ class PageState {
 }
 export type PageSession = {
     state: PageState; refresh(): Promise<void>; reread(ids: string[]): Promise<void>; objects(ids: string[]): Promise<void>;
-    tabId: string; input: PendingInput; release(): void;
+    tabId: string; source: HistorySource; input: PendingInput; release(): void;
     flush(): Promise<boolean>; stage(edit: Fields): void;
     review(edit: Fields, rollback: () => void, accept: (saved: boolean) => void, finish: () => void): void;
     action(commit: (token?: string) => Promise<CommitResult>): Promise<void>;
@@ -66,7 +68,6 @@ type Listener = (ids: string[], whole: boolean) => void;
 // This registry is not rendered; each session carries its own reactive state.
 // eslint-disable-next-line svelte/prefer-svelte-reactivity
 const sessions = new Map<string, PageSession>();
-let historyEpoch = 0;
 // Page views share a tab visit and history, while retaining separate page buffers.
 // eslint-disable-next-line svelte/prefer-svelte-reactivity
 const sessionViews = new Map<string, { views: SessionViews; release: () => void }>();
@@ -117,6 +118,10 @@ export function registerList(tabId: string, intersection: TabView["intersection"
 
 function makeSession(tabId: string, pageId: string): PageSession {
     const state = new PageState(), api = window.api, input = new PendingInput();
+    const source = historySource(tabId);
+    const stopHistory = watchHistory(source, value => {
+        state.history = value;
+    });
     // Unacknowledged container edits may change a sync border in another page.
     // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const pendingUses = new Set<string>();
@@ -163,9 +168,6 @@ function makeSession(tabId: string, pageId: string): PageSession {
         };
     }
     function ownChange(change: KnowledgeChange): void {
-        void history().catch(error => {
-            knowledgeState.error = failure(error);
-        });
         for (const id of [...(change.summaryPages ?? change.pages), ...change.blocks]) {
             for (const [read, own] of observers.get(id) ?? []) if (own || change.highlightPages?.includes(id)) void perform(read);
         }
@@ -179,10 +181,6 @@ function makeSession(tabId: string, pageId: string): PageSession {
     let timer: ReturnType<typeof setTimeout> | undefined, composing = false;
     let reviewing: Promise<void> | undefined, load = 0;
     const prompt = (p: ChangePreview): Promise<boolean> => ask(() => t("dialog.change"), () => confirmationText(p, t));
-    const history = async (): Promise<void> => {
-        const epoch = historyEpoch, value = await api.history.state(tabId);
-        if (epoch === historyEpoch) state.history = value;
-    };
     function updateCounts(ids: string[], uses: Record<string, number>): void {
         if (!ids.length || !state.page) return;
         const counts = state.page.sharedUses ??= {};
@@ -196,7 +194,7 @@ function makeSession(tabId: string, pageId: string): PageSession {
         if (changed) for (const listener of listeners) listener([], false);
     }
     const writes = new PageWrites(tabId, pageId, async input => {
-        let result = await api.pages.commitEdit(input);
+        let result = await api.pages.commitEdit(input, source);
         while (result.status === "confirmation") {
             // Retention can change between preview and commit. Restore only the disputed fields.
             const causes = new Set(result.preview.causes);
@@ -210,7 +208,7 @@ function makeSession(tabId: string, pageId: string): PageSession {
                 writes.retain(fields(safe));
                 return;
             }
-            result = await api.pages.commitEdit(input, result.preview.token);
+            result = await api.pages.commitEdit(input, source, result.preview.token);
             if (result.status === "saved") {
                 for (const key of proposed.keys()) if (!writes.current(key)) proposed.delete(key);
                 apply(fields(proposed));
@@ -219,9 +217,6 @@ function makeSession(tabId: string, pageId: string): PageSession {
         }
         input.blocks.forEach(block => newBlocks.delete(block.id));
         updateCounts(result.changed.blocks, result.sharedUses ?? {});
-        await history().catch(e => {
-            knowledgeState.error = failure(e);
-        });
     });
     function notify(ids: string[], whole = false): void {
         for (const listener of listeners) listener(ids, whole);
@@ -316,16 +311,12 @@ function makeSession(tabId: string, pageId: string): PageSession {
         if (!await flush()) return;
         state.loading = true;
         try {
-            const epoch = historyEpoch;
-            const [page, undo] = await Promise.all([api.pages.get(pageId).then(record => {
-                performance.clearMarks("labloom:page-read");
-                performance.mark("labloom:page-read", { detail: pageId });
-                return record;
-            }), api.history.state(tabId)]);
+            const page = await api.pages.get(pageId);
+            performance.clearMarks("labloom:page-read");
+            performance.mark("labloom:page-read", { detail: pageId });
             if (request !== load) return;
             newBlocks.clear();
             state.page = page;
-            if (epoch === historyEpoch) state.history = undo;
             state.error = "";
             notify([], true);
         }
@@ -371,7 +362,6 @@ function makeSession(tabId: string, pageId: string): PageSession {
         await objects(ids, true);
         state.page = { ...state.page };
         notify(ids);
-        await history();
     }
     function review(edit: Fields, rollback: () => void, accept: (saved: boolean) => void, finish: () => void): void {
         clearTimeout(timer);
@@ -384,7 +374,7 @@ function makeSession(tabId: string, pageId: string): PageSession {
             try {
                 let savedResult: Extract<CommitResult, { status: "saved" }> | undefined;
                 await reviewEdit(input, value => api.pages.previewEdit(value), prompt, async (value, token) => {
-                    const result = await api.pages.commitEdit(value, token);
+                    const result = await api.pages.commitEdit(value, source, token);
                     if (result.status === "saved") savedResult = result;
                     return result;
                 }, rollback, saved => {
@@ -395,9 +385,6 @@ function makeSession(tabId: string, pageId: string): PageSession {
                     accept(saved);
                     if (savedResult) {
                         updateCounts(savedResult.changed.blocks, savedResult.sharedUses ?? {});
-                        void history().catch(e => {
-                            knowledgeState.error = failure(e);
-                        });
                     }
                 });
             }
@@ -422,7 +409,7 @@ function makeSession(tabId: string, pageId: string): PageSession {
             return result;
         }) && changed) {
             const ids = [...changed.pages, ...changed.blocks];
-            // An undo belongs to the tab, and may target its now-closed annotation.
+            // A paper and its open annotation can both display rows from this commit.
             for (const value of sessions.values()) if (value.tabId === tabId) {
                 const page = value.state.page;
                 if (page) await value.reread(ids.filter(id => id === page.id || Object.hasOwn(page.blocks, id)));
@@ -431,7 +418,10 @@ function makeSession(tabId: string, pageId: string): PageSession {
         }
     }
     const trackedAction = (commit: (token?: string) => Promise<CommitResult>): Promise<void> => trackWrite(tabId, action(commit));
-    const undo = (direction: "undo" | "redo", branch?: string): Promise<void> => trackedAction(token => api.history.apply(tabId, direction, branch, token));
+    const undo = (direction: "undo" | "redo", branch?: string): Promise<void> => {
+        if (readingTabs.has(tabId)) return Promise.resolve();
+        return trackedAction(token => api.history.apply(source, direction, branch, token));
+    };
     let definitionsDirty = false;
     const intersection = (change: TabChange): string[] => [
         ...change.pages.filter(id => id === pageId),
@@ -494,7 +484,9 @@ function makeSession(tabId: string, pageId: string): PageSession {
         }
     });
     return {
-        tabId, input, release, state, refresh, reread, objects, flush, stage, review, action: trackedAction, undo, composition, watchObject, ownChange,
+        tabId, source, input, release() {
+            stopHistory(); release();
+        }, state, refresh, reread, objects, flush, stage, review, action: trackedAction, undo, composition, watchObject, ownChange,
         attr: (id: string, value: AttributeValue) => stage({ blocks: [], attributes: { [id]: copyData(value) } }),
         detach: (id: string) => stage({ blocks: [], detach: [id] }),
         listen(fn: Listener) {
@@ -513,10 +505,6 @@ export function session(tabId: string, pageId: string): PageSession {
     return value;
 }
 export function receiveChange(change: KnowledgeChange): void {
-    if (change.purged && (change.purged.length || change.blocks.length)) {
-        historyEpoch++;
-        for (const value of sessions.values()) value.state.history = { canUndo: false, redo: [] };
-    }
     visits.changed(change);
     for (const value of sessions.values()) if (value.tabId === change.sourceTab) value.ownChange(change);
     knowledgeState.change = { ...change, seq: knowledgeState.change.seq + 1 };
@@ -556,7 +544,6 @@ export async function closeSession(tabId: string): Promise<boolean> {
         return false;
     }
     await Promise.all(otherWrites(tabId));
-    await window.api.history.closeTab(tabId);
     for (const [key, value] of sessions) if (value.tabId === tabId) {
         value.release();
         sessions.delete(key);

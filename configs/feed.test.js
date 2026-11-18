@@ -674,8 +674,8 @@ test("a few sources are fetched at a time, and those waiting their turn already 
         assert.ok(!started.includes("/6"), "the source under test is definitely queued");
         if (action === "pause") service.setSourceStatus(ids[6], "pause");
         else if (action === "delete") {
-            const result = service.knowledge.trash([ids[6]], "queue-test");
-            if (result.status === "confirmation") service.knowledge.trash([ids[6]], "queue-test", result.preview.token);
+            const result = service.knowledge.trash([ids[6]], "queue-test", { kind: "workspace" });
+            if (result.status === "confirmation") service.knowledge.trash([ids[6]], "queue-test", { kind: "workspace" }, result.preview.token);
         }
         else service.knowledge.attributes.write(ids[6], { feed_url: "https://example.org/changed" });
         while (releases.length) {
@@ -803,8 +803,8 @@ test("an item becomes a real paper and only replaces a recycled or missing paper
     assert.equal(knowledge.get(current).attributes.source_snapshot.feedURL, "https://rss.arxiv.org/atom/cs.LG");
     assert.equal(service.importItem(item.id), current);
     for (const state of ["recycled", "missing"]) {
-        const trash = knowledge.trash([current], "trash");
-        knowledge.trash([current], "trash", trash.preview.token);
+        const trash = knowledge.trash([current], "trash", { kind: "workspace" });
+        knowledge.trash([current], "trash", { kind: "workspace" }, trash.preview.token);
         if (state === "missing") {
             const preview = purge.purge([current], "purge");
             purge.purge([current], "purge", preview.token);

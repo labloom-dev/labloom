@@ -1,9 +1,11 @@
+import type { HistorySource } from "../../shared/history/ipc";
 import { type KnowledgeChange, type PageKind } from "../../shared/types/content";
 import { type Notice } from "../../shared/types/knowledge";
 import * as workspace from "../workspace-state";
 import * as data from "./records";
 
 export type Event =
+    | { type: "history"; sources: HistorySource[] }
     | { type: "knowledge"; change: KnowledgeChange }
     | { type: "feed" }
     | { type: "reminder"; notice: Notice; body: string };
@@ -19,7 +21,7 @@ function emit(event: Event): void {
     for (const listener of listeners) listener(event);
 }
 /** Every writer uses the same owner expansion and page-kind calculation. */
-export function publish(input: KnowledgeChange, feed = false): void {
+export function expand(input: KnowledgeChange): KnowledgeChange {
     workspace.requireWorkspace();
     const change = { ...input };
     if (change.blocks.length) {
@@ -34,6 +36,12 @@ export function publish(input: KnowledgeChange, feed = false): void {
         const rows = data.statement("SELECT id,kind FROM pages WHERE id IN (SELECT value FROM json_each(?))").all(JSON.stringify(pages)) as { id: string; kind: PageKind }[];
         change.kinds = Object.fromEntries(rows.map(row => [row.id, row.kind]));
     }
+    return change;
+}
+export function historyChanged(sources: HistorySource[]): void {
+    if (sources.length) emit({ type: "history", sources });
+}
+export function publish(change: KnowledgeChange, feed: boolean): void {
     emit({ type: "knowledge", change });
     if (feed || Object.values(change.kinds ?? {}).includes("feed") || change.purged?.length) emit({ type: "feed" });
 }

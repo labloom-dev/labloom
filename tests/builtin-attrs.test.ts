@@ -1,3 +1,4 @@
+import { pageHistory } from "./support/history";
 import { knowledgeServices, session, type Knowledge } from "./support/session";
 import { hasFailure } from "./failures";
 import assert from "node:assert/strict";
@@ -70,12 +71,12 @@ test("direct writes, edits and creation share builtin permissions and canonical 
     service.setDefinition(boolean.id, boolean, "manager");
     for (const values of [{ pinned: 2 }, { [boolean.id]: 2 }, { [custom.id]: null }]) {
         assert.throws(() => service.attributes.write(page.id, values));
-        assert.throws(() => service.commitEdit({ pageId: page.id, tabId: "edit", batch: 1, blocks: [], attributes: values }));
+        assert.throws(() => service.commitEdit({ pageId: page.id, tabId: "edit", batch: 1, blocks: [], attributes: values }, pageHistory(page.id)));
         assert.throws(() => service.create("editable", "B", values));
     }
     assert.equal(service.get(page.id).attributes.pinned, false);
     assert.throws(() => service.attributes.detach(page.id, ["tags"]), hasFailure("attribute-invalid-detach"));
-    assert.throws(() => service.commitEdit({ pageId: page.id, tabId: "edit", batch: 1, blocks: [], detach: ["tags"] }), hasFailure("attribute-invalid-detach"));
+    assert.throws(() => service.commitEdit({ pageId: page.id, tabId: "edit", batch: 1, blocks: [], detach: ["tags"] }, pageHistory(page.id)), hasFailure("attribute-invalid-detach"));
     assert.throws(() => service.attributes.write(page.id, { created_at: 0 }), hasFailure("attribute-readonly"));
     assert.throws(() => service.attributes.write(page.id, { task_status: "todo" }), hasFailure("attribute-unsupported-builtin"));
 });
@@ -110,7 +111,7 @@ test("editable tag options persist, rename searchable values and never store the
     const { service, database, info } = fixture(t), page = service.create("editable", "A"), tags = service.attributes.definition("tags");
     tags.metadata.options = [{ id: "paper", name: "论文" }];
     service.setDefinition("tags", tags, "manager");
-    service.commitEdit({ pageId: page.id, tabId: "edit", batch: 1, blocks: [], attributes: { tags: ["paper"] } });
+    service.commitEdit({ pageId: page.id, tabId: "edit", batch: 1, blocks: [], attributes: { tags: ["paper"] } }, pageHistory(page.id));
     assert.equal(service.list({ keyword: "论文" }).total, 1);
     tags.metadata.options[0].name = "研究";
     service.setDefinition("tags", tags, "manager");

@@ -10,13 +10,13 @@ type Args<Key extends keyof typeof papersChannels> = Parameters<PapersAPI[Key]>;
 
 export function registerPapersIPCs(window: BrowserWindow): void {
     const routes = {
-        importPDF: route(typia.createAssert<Args<"importPDF">>(invalid), async (...[pageId, tabId]) => {
+        importPDF: route(typia.createAssert<Args<"importPDF">>(invalid), async (...[pageId, origin]) => {
             const path = await dialogs.selectPDF(window);
-            return path ? papers.importFile(path, pageId, tabId) : null;
+            return path ? papers.importFile(path, pageId, origin) : null;
         }),
-        importFiles: route(typia.createAssert<Args<"importFiles">>(invalid), async (pageId, attributeId, tabId) => {
+        importFiles: route(typia.createAssert<Args<"importFiles">>(invalid), async (pageId, attributeId, tabId, source) => {
             const paths = await dialogs.selectFiles(window, papers.fileSelection(attributeId));
-            return paths.length ? papers.attachFiles(paths, pageId, attributeId, tabId) : null;
+            return paths.length ? papers.attachFiles(paths, pageId, attributeId, { tabId, source }) : null;
         }),
         files: route(typia.createAssert<Args<"files">>(invalid), papers.files),
         openFile: route(typia.createAssert<Args<"openFile">>(invalid), async id => {

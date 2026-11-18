@@ -102,7 +102,7 @@
         try {
             const current = session;
             await writeFromTab(current.tabId, async () => {
-                if (await window.api.papers.importFiles(current.state.page!.id, definition.id, current.tabId)) await current.reread([current.state.page!.id]);
+                if (await window.api.papers.importFiles(current.state.page!.id, definition.id, current.tabId, current.source)) await current.reread([current.state.page!.id]);
             });
             error = "";
         }

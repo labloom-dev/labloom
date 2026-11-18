@@ -1,3 +1,4 @@
+import { pageHistory, workspaceHistory } from "./support/history";
 import { knowledgeServices, session, type Knowledge } from "./support/session";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -64,7 +65,7 @@ function checkEdit(service: Knowledge, graph: Graph, item: GraphPage, change: Ch
     assert.deepEqual(preview?.recycled.map(p => p.id).sort() ?? [], expected, description);
     const deleted = service.db.$client.prepare("SELECT page_id FROM page_attrs WHERE attr_id = 'deleted' AND value = 1 ORDER BY page_id").pluck();
     assert.deepEqual(deleted.all(), graph.pages.filter(p => p.attributes.deleted).map(p => p.id).sort(), description + " preview wrote data");
-    assert.equal(service.commitEdit(edit, preview?.token).status, "saved");
+    assert.equal(service.commitEdit(edit, pageHistory(edit.pageId), preview?.token).status, "saved");
     for (const p of graph.pages) if (expected.includes(p.id)) p.attributes.deleted = true;
     assert.deepEqual(deleted.all(), graph.pages.filter(p => p.attributes.deleted).map(p => p.id).sort(), description + " commit");
     const sync = service.sql.prepare("SELECT * FROM sync_refs ORDER BY container_kind,container_id,slot,position");
@@ -80,13 +81,13 @@ function checkEdit(service: Knowledge, graph: Graph, item: GraphPage, change: Ch
 function replaceBody(service: Knowledge, pageId: string, target: Target, inline: boolean): ContentBlock {
     const page = service.get(pageId);
     const block = { ...reference(target, inline), id: page.children[0] };
-    const result = service.commitEdit({ pageId, tabId: "setup", batch: 1, blocks: [block] });
+    const result = service.commitEdit({ pageId, tabId: "setup", batch: 1, blocks: [block] }, pageHistory(pageId));
     assert.equal(result.status, "saved");
     return block;
 }
 
 function changeAttributes(service: Knowledge, pageId: string, attributes: GraphPage["attributes"]): void {
-    assert.equal(service.commitEdit({ pageId, tabId: "setup", batch: 1, attributes, blocks: [] }).status, "saved");
+    assert.equal(service.commitEdit({ pageId, tabId: "setup", batch: 1, attributes, blocks: [] }, pageHistory(pageId)).status, "saved");
 }
 
 for (const otherSource of [false, true]) {
@@ -97,18 +98,18 @@ for (const otherSource of [false, true]) {
         replaceBody(service, a.id, { kind: "block", id: paragraph.id }, false);
         if (otherSource) changeAttributes(service, service.create("editable", "D").id, { links: [c.id] });
         changeAttributes(service, c.id, { independent: false });
-        const preview = service.trash([b.id], "trash");
+        const preview = service.trash([b.id], "trash", workspaceHistory);
         assert.equal(preview.status, "confirmation");
         assert.equal(service.get(b.id).attributes.deleted, false);
         assert.equal(service.get(c.id).attributes.deleted, false);
-        assert.equal(service.trash([b.id], "trash", preview.preview.token).status, "saved");
+        assert.equal(service.trash([b.id], "trash", workspaceHistory, preview.preview.token).status, "saved");
         const edit: EditCommit = { pageId: a.id, tabId: "entry", batch: 2, pageChildren: [], blocks: [] };
         const removal = service.previewEdit(edit);
         t.diagnostic("Trash B, preview = " + JSON.stringify(preview.preview.recycled.map(p => p.title)) + ", C recycled = " + service.get(c.id).attributes.deleted + "; later removing A's entry would recycle " + JSON.stringify(removal?.recycled.map(p => p.title) ?? []));
         assert.deepEqual(preview.preview.recycled.map(p => p.id), otherSource ? [] : [c.id]);
         assert.equal(service.get(c.id).attributes.deleted, !otherSource);
         assert.equal(removal, null);
-        assert.equal(service.commitEdit(edit).status, "saved");
+        assert.equal(service.commitEdit(edit, pageHistory(edit.pageId)).status, "saved");
         assert.deepEqual(service.get(a.id).children, []);
         assert.equal(service.get(c.id).attributes.deleted, !otherSource);
     });
@@ -121,10 +122,10 @@ test("automatically recycling the only owner disables its block's outgoing links
     replaceBody(service, a.id, { kind: "block", id: paragraph.id }, false);
     changeAttributes(service, c.id, { independent: false });
     const edit: EditCommit = { pageId: b.id, tabId: "retention", batch: 1, blocks: [], attributes: { independent: false } };
-    const result = service.commitEdit(edit);
+    const result = service.commitEdit(edit, pageHistory(edit.pageId));
     assert.equal(result.status, "confirmation");
     assert.deepEqual(result.preview.recycled.map(p => p.id).sort(), [b.id, c.id].sort());
-    assert.equal(service.commitEdit(edit, result.preview.token).status, "saved");
+    assert.equal(service.commitEdit(edit, pageHistory(edit.pageId), result.preview.token).status, "saved");
     assert.equal(service.get(b.id).attributes.deleted, true);
     assert.equal(service.get(c.id).attributes.deleted, true);
 });
@@ -136,10 +137,10 @@ test("a block link cannot rescue a rootless page cycle or its outgoing page refe
     const entry = replaceBody(service, a.id, { kind: "block", id: paragraph.id }, false);
     changeAttributes(service, c.id, { links: [b.id], independent: false });
     const edit: EditCommit = { pageId: b.id, batch: 1, tabId: "cycle", blocks: [], attributes: { independent: false } };
-    const preview = service.commitEdit(edit);
+    const preview = service.commitEdit(edit, pageHistory(edit.pageId));
     assert.equal(preview.status, "confirmation");
     assert.deepEqual(preview.preview.recycled.map(p => p.id).sort(), [b.id, c.id].sort());
-    assert.equal(service.commitEdit(edit, preview.preview.token).status, "saved");
+    assert.equal(service.commitEdit(edit, pageHistory(edit.pageId), preview.preview.token).status, "saved");
     assert.equal(service.get(b.id).attributes.deleted, true);
     assert.equal(service.get(c.id).attributes.deleted, true);
     assert.equal(service.get(a.id).attributes.deleted, false);

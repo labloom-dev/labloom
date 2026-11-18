@@ -26,6 +26,7 @@ export function readSettings(path: string): LoadResult {
         value = null;
     }
     if (value && typeof value === "object" && "version" in value && typeof value.version === "number" && value.version > settingsVersion) throw new LabloomError({ kind: "config-newer-version" });
+    if (value && typeof value === "object" && !("history" in value)) value = { ...value, history: defaultSettings.history };
     if (validSettings(value)) return { settings: value, savedText: JSON.stringify(value) };
     const backup = join(dirname(path), "settings.invalid-" + randomUUID() + ".json");
     renameSync(path, backup);

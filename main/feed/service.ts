@@ -112,7 +112,7 @@ export function getItem(id: string): FeedItemDetail {
 function updateSource(id: string, name: string, values: Record<string, AttributeValue>): void {
     return commit.run({ sourceTab: "", feed: true, history: false, updateModified: false }, () => {
         const page = knowledge.get(id), title = page.blocks[page.titleBlockId];
-        edits.commitEdit({ pageId: id, tabId: "feed-settings", batch: 0, blocks: name === page.title ? [] : [{ ...title, payload: payload("title", name) }], attributes: values });
+        edits.commitEdit({ pageId: id, tabId: "feed-settings", batch: 0, blocks: name === page.title ? [] : [{ ...title, payload: payload("title", name) }], attributes: values }, false);
         commit.invalidate(["page:" + id, "block:" + page.titleBlockId]);
 
     });

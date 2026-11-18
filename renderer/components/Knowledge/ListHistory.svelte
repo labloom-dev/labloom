@@ -13,11 +13,16 @@
     import type { HistoryState } from "../../../shared/types/knowledge";
     import { displayMilliseconds } from "../layout/preferences.svelte";
     import { confirmed, perform, writeFromTab } from "./state.svelte";
-    let { tabId, history = $bindable() }: { tabId: string; history: HistoryState } = $props();
+    import { onMount } from "svelte";
+    import { watchHistory } from "./history";
+    let { tabId }: { tabId: string } = $props();
+    let history = $state.raw<HistoryState>({ canUndo: false, redo: [] });
+    onMount(() => watchHistory({ kind: "workspace" }, state => {
+        history = state;
+    }));
     function apply(direction: "undo" | "redo", branch?: string): void {
         void perform(async () => {
-            await writeFromTab(tabId, () => confirmed(token => window.api.history.apply(tabId, direction, branch, token)));
-            history = await window.api.history.state(tabId);
+            await writeFromTab(tabId, () => confirmed(token => window.api.history.apply({ kind: "workspace" }, direction, branch, token)));
         });
     }
 </script>

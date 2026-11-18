@@ -1,3 +1,4 @@
+import type { HistoryOrigin, HistorySource } from "../../shared/history/ipc";
 import { randomUUID } from "node:crypto";
 import { attributeTargets, decodeValue, record, validUUID } from "../../shared/attrs/values";
 import { blockText, payload, references, validateBlock } from "../../shared/content/blocks";
@@ -21,10 +22,10 @@ class DefinitionRollback extends Error {
         super("definition preview");
     }
 }
-function transact(tabId: string, action: () => CommitResult, confirmation?: string): CommitResult {
+function transact(tabId: string, source: HistorySource | false, action: () => CommitResult, confirmation?: string): CommitResult {
     workspace.requireWorkspace();
     checkTab(tabId);
-    return commit.run({ sourceTab: tabId, history: true, confirmation }, action);
+    return commit.run({ sourceTab: tabId, history: source, confirmation }, action);
 }
 function putBlock(block: ContentBlock): void {
     const plan = new EditChanges();
@@ -36,7 +37,7 @@ export function create(kind: PageKind = "editable", title = "", initial: Record<
     if (!record(initial)) throw new LabloomError({ kind: "page-invalid-attributes" });
     for (const id of Object.keys(initial)) if (attributes.definition(id).readonly || id === "deleted") throw new LabloomError({ kind: "page-create-readonly" });
     if (kind === "annotation") throw new LabloomError({ kind: "annotation-selection-required" });
-    return createPage(kind, title, initial, parentId, tabId);
+    return insertPage(kind, title, initial, parentId, tabId, false);
 }
 function writable(id: string): ReturnType<typeof data["header"]> {
     const page = data.header(id);
@@ -83,9 +84,9 @@ export function previewEdit(input: EditCommit): ChangePreview | null {
     return workspace.native().transaction(() => commit.preview(planEdit(input), input))();
 }
 
-export function commitEdit(input: EditCommit, confirmation?: string): CommitResult {
+export function commitEdit(input: EditCommit, source: HistorySource | false, confirmation?: string): CommitResult {
     workspace.requireWorkspace();
-    return transact(input?.tabId, () => {
+    return transact(input?.tabId, source, () => {
         const plan = planEdit(input);
         return commit.finish(plan, input.pageId, input.batch, commit.preview(plan, input));
     }, confirmation);
@@ -129,9 +130,9 @@ function deletionSubject(block: ContentBlock): string {
     return excerpt ? `“${excerpt}”` : names[block.type];
 }
 
-export function deleteBlock(input: BlockDeletion, confirmation?: string): CommitResult {
+export function deleteBlock(input: BlockDeletion, source: HistorySource, confirmation?: string): CommitResult {
     workspace.requireWorkspace();
-    return transact(input?.tabId, () => {
+    return transact(input?.tabId, source, () => {
         const { pageId, blockId } = input;
         writable(pageId);
         const plan = new EditChanges(), block = plan.block(blockId), pages = data.owners(blockId);
@@ -147,9 +148,9 @@ export function deleteBlock(input: BlockDeletion, confirmation?: string): Commit
     }, confirmation);
 }
 
-export function place(input: Placement, confirmation?: string): CommitResult {
+export function place(input: Placement, source: HistorySource, confirmation?: string): CommitResult {
     workspace.requireWorkspace();
-    return transact(input?.tabId, () => {
+    return transact(input?.tabId, source, () => {
         const { position, action } = input;
         if (!record(position) || !Number.isSafeInteger(position.index) || position.index < 0 || !validUUID(position.blockId)) throw new LabloomError({ kind: "block-invalid-position" });
         const { pageId, containerId, index } = position;
@@ -213,9 +214,9 @@ function selectPages(ids: string[]): string[] {
     return [...new Set(ids)];
 }
 
-export function trash(ids: string[], tabId: string, confirmation?: string): CommitResult {
+export function trash(ids: string[], tabId: string, source: HistorySource, confirmation?: string): CommitResult {
     workspace.requireWorkspace();
-    return transact(tabId, () => {
+    return transact(tabId, source, () => {
         const selected = selectPages(ids), plan = new EditChanges();
         for (const id of selected) {
             plan.attributes(id, { deleted: true, recycle_reason: "manual_delete", recycled_at: nowSeconds() }, [], true);
@@ -225,9 +226,9 @@ export function trash(ids: string[], tabId: string, confirmation?: string): Comm
     }, confirmation);
 }
 
-export function restore(ids: string[], tabId: string): CommitResult {
+export function restore(ids: string[], tabId: string, source: HistorySource): CommitResult {
     workspace.requireWorkspace();
-    return transact(tabId, () => {
+    return transact(tabId, source, () => {
         const selected = selectPages(ids), plan = new EditChanges();
         for (const id of selected) {
             plan.attributes(id, { deleted: false, recycle_reason: null, recycled_at: null }, [], true);
@@ -238,11 +239,14 @@ export function restore(ids: string[], tabId: string): CommitResult {
     });
 }
 
-export function createPage(kind: PageKind = "editable", title = "", initial: Record<string, AttributeValue> = {}, parentId?: string, tabId = ""): PageRecord {
+export function createPage(kind: PageKind = "editable", title = "", initial: Record<string, AttributeValue> = {}, parentId?: string, origin?: HistoryOrigin): PageRecord {
+    return insertPage(kind, title, initial, parentId, origin?.tabId ?? "", kind === "annotation" && parentId && origin ? origin.source : false);
+}
+function insertPage(kind: PageKind, title: string, initial: Record<string, AttributeValue>, parentId: string | undefined, tabId: string, history: HistorySource | false): PageRecord {
     workspace.requireWorkspace();
     if (!pageKinds.includes(kind) || typeof title !== "string" || !record(initial)) throw new LabloomError({ kind: "page-invalid-create" });
     const changed = { pages: [] as string[], blocks: [] as string[] };
-    const page = commit.run({ sourceTab: tabId, history: !!parentId && kind === "annotation" && !!tabId }, context => {
+    const page = commit.run({ sourceTab: tabId, history }, context => {
         if (parentId) writable(parentId);
         if (kind === "annotation" && initial.annotation_file != null) {
             if (!parentId || data.header(parentId).kind !== "paper") throw new LabloomError({ kind: "annotation-paper-required" });

@@ -26,17 +26,20 @@ export function validLayout(value: unknown): value is Settings["layout"] {
         && typeof value.width === "number" && Number.isFinite(value.width) && value.width >= minPanelWidth && value.width <= maxPanelWidth
         && typeof value.collapsed === "boolean";
 }
+function validHistory(value: unknown): value is Settings["history"] {
+    return record(value) && keys(value, ["limit"]) && (value.limit === null || Number.isSafeInteger(value.limit) && Number(value.limit) > 0);
+}
 export function validSettings(value: unknown): value is Settings {
-    return record(value) && keys(value, ["version", "lastWorkspace", "appearance", "window", "layout"])
+    return record(value) && keys(value, ["version", "lastWorkspace", "appearance", "window", "layout", "history"])
         && value.version === settingsVersion && validWorkspace(value.lastWorkspace)
         && record(value.appearance) && keys(value.appearance, ["theme", "readingSize", "motion", "timeZone", "language"])
-        && isAppearance(value.appearance) && validWindowSettings(value.window) && validLayout(value.layout);
+        && isAppearance(value.appearance) && validWindowSettings(value.window) && validLayout(value.layout) && validHistory(value.history);
 }
 export function validPatch(value: unknown, base: Settings): value is SettingsPatch {
-    if (!record(value) || !Object.keys(value).length || !keys(value, ["lastWorkspace", "appearance", "window", "layout"])) return false;
+    if (!record(value) || !Object.keys(value).length || !keys(value, ["lastWorkspace", "appearance", "window", "layout", "history"])) return false;
     if (Object.hasOwn(value, "lastWorkspace") && !validWorkspace(value.lastWorkspace)) return false;
-    const sections = ["appearance", "window", "layout"] as const;
-    const validators = { appearance: isAppearance, window: validWindowSettings, layout: validLayout };
+    const sections = ["appearance", "window", "layout", "history"] as const;
+    const validators = { appearance: isAppearance, window: validWindowSettings, layout: validLayout, history: validHistory };
     for (const section of sections) {
         if (!Object.hasOwn(value, section)) continue;
         const patch = value[section];

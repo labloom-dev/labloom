@@ -25,7 +25,7 @@ export function purge(ids: string[] | null, tabId: string, confirmation?: string
         }
         if (plan.pages.length) data.statement("DELETE FROM pages WHERE id IN (SELECT value FROM json_each(?))").run(JSON.stringify(plan.pages));
         const blocks = context.cleanup();
-        if (plan.pages.length || blocks.length) context.clearHistory();
+        context.invalidate([...plan.pages.map(id => "page:" + id), ...blocks.map(id => "block:" + id)], true);
         context.change({ pages: plan.pages, blocks, backlinks: plan.pages, purged: plan.pages });
         return { status: "deleted", pages: plan.pages, blocks };
     });
