@@ -12,16 +12,26 @@ export async function importFeedPDF(
     url: string,
     attach: (path: string) => void,
     fetcher: Fetcher = fetch,
-    limits = pdfLimits
+    limits = pdfLimits,
+    signal?: AbortSignal
 ): Promise<void> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(new LabloomError({ kind: "pdf-download-timeout" })), limits.timeoutMs);
+    const abort = (): void => {
+        clearTimeout(timer); controller.abort(signal?.reason);
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
     let folder: string | undefined;
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
     try {
         const response = await fetcher(feedURL(url), { signal: controller.signal, credentials: "omit", headers: { Accept: "application/pdf" } }).catch(error => {
             throw controller.signal.aborted ? controller.signal.reason : new LabloomError({ kind: "pdf-download-failed", diagnostic: diagnostic(error) }, { cause: error });
         });
+        if (signal?.aborted) {
+            await response.body?.cancel();
+            return;
+        }
         if (!response.ok || !response.body) {
             await response.body?.cancel();
             throw new LabloomError({ kind: "pdf-download-http", status: response.status });
@@ -30,7 +40,7 @@ export async function importFeedPDF(
         if (Number(response.headers.get("content-length")) > limits.maxBytes) throw new LabloomError({ kind: "pdf-too-large" });
         const chunks: Uint8Array[] = [];
         let size = 0;
-        for (;;) {
+        for (; ;) {
             const { value, done } = await reader.read().catch(error => {
                 throw controller.signal.aborted ? controller.signal.reason : new LabloomError({ kind: "pdf-download-failed", diagnostic: diagnostic(error) }, { cause: error });
             });
@@ -44,11 +54,12 @@ export async function importFeedPDF(
         folder = await mkdtemp(join(tmpdir(), "labloom-feed-pdf-"));
         const path = join(folder, "article.pdf");
         await writeFile(path, data, { flag: "wx" });
-        attach(path);
+        if (!signal?.aborted) attach(path);
     }
     finally {
+        signal?.removeEventListener("abort", abort);
         clearTimeout(timer);
-        await reader?.cancel().catch(() => {});
+        await reader?.cancel().catch(() => { });
         if (folder) await rm(folder, { recursive: true, force: true });
     }
 }

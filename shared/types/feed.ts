@@ -44,8 +44,6 @@ export type FeedEntry = {
     publishedAt: number | null;
 };
 
-/** The address and identifier an item had when it was first fetched. */
-export type FeedOrigin = { feedURL: string; externalId: string | null };
 export type FeedPosition = { progress: number };
 export type FeedPaperState = "none" | "saved" | "recycled" | "missing";
 
@@ -93,22 +91,3 @@ export type FeedState = {
 
 export const feedPageSize = 50;
 export const feedIntervals = { min: 15, max: 1440, default: 60 } as const;
-
-export interface FeedAPI {
-    getState: (query: FeedQuery) => Promise<FeedState>;
-    getItem: (id: string) => Promise<FeedItemDetail>;
-    saveSource: (source: FeedSourceInput) => Promise<string>;
-    setSourceStatus: (id: string, action: FeedSourceAction) => Promise<void>;
-    /** Resolves when the fetch finishes; failures are recorded on the source. */
-    refresh: (sourceId?: string) => Promise<void>;
-    setRead: (id: string, isRead: boolean) => Promise<void>;
-    markAllRead: (sourceId?: string) => Promise<number>;
-    setPosition: (id: string, progress: number) => Promise<void>;
-    setKeywords: (keywords: string[]) => Promise<string[]>;
-    /** Adds the item to the library and returns the paper page. */
-    importItem: (id: string, replace?: boolean) => Promise<string>;
-    fetchPDF: (id: string) => Promise<void>;
-    openItem: (id: string) => Promise<void>;
-    /** Background refreshes and other windows report changes here. */
-    onChanged: (listener: () => void) => () => void;
-}

@@ -6,7 +6,7 @@ import { Slice, Fragment } from "@tiptap/pm/model";
 import { EditorState, TextSelection } from "@tiptap/pm/state";
 import { Mapping } from "@tiptap/pm/transform";
 import { blockData, blankTable, documentEdit, documentExtensions, indexDoc, pageDocument, removesReference } from "../renderer/components/Editor/document";
-import { clipboardRows, identityPlugin, indent, shallowPaste, split, syncInsert } from "../renderer/components/Editor/transactions";
+import { clipboardRows, copyBlocks, identityPlugin, indent, split, syncInsert } from "../renderer/components/Editor/transactions";
 import { inverse, patchDocument, replay } from "../renderer/components/Editor/reconcile";
 import { PageWrites, restoreOccurrences, reviewEdit } from "../renderer/components/Knowledge/page-writes";
 import { PendingInput } from "../renderer/components/Editor/pending-input";
@@ -95,7 +95,7 @@ test("native split and paste create IDs; inserting a synchronous occurrence reta
     assert.match(ids[1], /^[0-9a-f-]{36}$/u);
     assert.notEqual(a.id, ids[1]);
     const oldNode = s.doc.child(1);
-    const pasted = shallowPaste(new Slice(Fragment.from(oldNode), 0, 0));
+    const pasted = copyBlocks(new Slice(Fragment.from(oldNode), 0, 0));
     s = s.apply(s.tr.replace(s.doc.content.size, s.doc.content.size, pasted).setMeta("workspace.paste", true));
     assert.notEqual(s.doc.lastChild!.attrs.blockId, a.id);
     assert.ok(s.doc.lastChild!.attrs.blockId);
@@ -104,14 +104,15 @@ test("native split and paste create IDs; inserting a synchronous occurrence reta
     s = s.apply(s.tr.insert(s.doc.content.size, native));
     assert.notEqual(s.doc.lastChild!.attrs.blockId, a.id);
 });
-test("cross-page block paste keeps shallow children, multiline paste allocates each item, indentation retains identity", () => {
+test("cross-page block paste copies every child, multiline paste allocates each item, indentation retains identity", () => {
     const a = block(""), b = block("k", "unordered_list");
     a.children = [b.id];
     const p = page([a, b], [a.id]), s = state(p);
-    const copy = shallowPaste(new Slice(Fragment.from(s.doc.lastChild!), 0, 0));
+    const copy = copyBlocks(new Slice(Fragment.from(s.doc.lastChild!), 0, 0));
     const next = s.apply(s.tr.replace(s.doc.content.size, s.doc.content.size, copy).setMeta("workspace.paste", true));
     assert.notEqual(next.doc.lastChild!.attrs.blockId, a.id);
-    assert.equal(next.doc.lastChild!.lastChild!.attrs.blockId, b.id);
+    assert.notEqual(next.doc.lastChild!.lastChild!.attrs.blockId, b.id);
+    assert.equal(next.doc.lastChild!.lastChild!.textContent, b.payload.inline[0].type === "text" ? b.payload.inline[0].text : "");
     let current = select(state(page([b])), b.id);
     current = current.apply(clipboardRows(current, [{ text: "one", kind: "unordered_list" }, { text: "two", kind: "unordered_list" }]));
     const first = current.doc.child(1), last = current.doc.lastChild!;

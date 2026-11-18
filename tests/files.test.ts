@@ -1,52 +1,50 @@
+import * as commit from "../main/knowledge/commit";
+import { knowledgeServices, historyServices, paperServices, purgeServices, session, type Knowledge, type History, type Papers, type Purge } from "./support/session";
 import { hasFailure } from "./failures";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { test, type TestContext } from "node:test";
-import { createWorkspace, openWorkspace } from "../main/storage/workspace";
-import { attachmentPath, unreferencedFiles, withFileCleanup } from "../main/storage/files";
-import { KnowledgeService } from "../main/knowledge/service";
-import { EditHistory } from "../main/knowledge/history";
-import { PaperService } from "../main/knowledge/papers";
-import { PurgeService } from "../main/knowledge/purge";
+import { createWorkspace, openWorkspace } from "./support/session";
+import { attachmentPath, unreferencedFiles } from "../main/storage/files";
 import { defaultMetadata } from "../shared/attrs/values";
 import { display, search } from "../shared/attrs/format";
 import { PDF_EXTRACTOR_VERSION } from "../shared/content/pdf-text";
 import { type AttributeDefinition, type AttributeType, type AttributeValue } from "../shared/types/attributes";
 import { knownCoordinatePdf } from "./fixtures/pdf-text";
 
-function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { service: KnowledgeService; history: EditHistory; papers: PaperService; purge: PurgeService } {
+function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { service: Knowledge; history: History; papers: Papers; purge: Purge } {
     const ws = createWorkspace(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "files-")));
-    const service = new KnowledgeService(ws.db), history = new EditHistory(service), papers = new PaperService(service, ws.info.path), purge = new PurgeService(service, history, ws.info.path);
+    const service = knowledgeServices(), history = historyServices(), papers = paperServices(), purge = purgeServices();
     t.after(() => {
- if (ws.database.open) ws.database.close();
-});
+        session.close();
+    });
     return { ...ws, service, history, papers, purge };
 }
-function definition(service: KnowledgeService, type: AttributeType): AttributeDefinition {
+function definition(service: Knowledge, type: AttributeType): AttributeDefinition {
     const item = { id: "custom:" + randomUUID(), name: "A", type, metadata: defaultMetadata(type) };
     assert.equal(service.setDefinition(item.id, item, "definitions"), null);
     return item;
 }
-function changeType(service: KnowledgeService, item: AttributeDefinition, type: AttributeType): void {
+function changeType(service: Knowledge, item: AttributeDefinition, type: AttributeType): void {
     const next = { ...item, type }, preview = service.setDefinition(item.id, next, "definitions");
     if (preview) assert.equal(service.setDefinition(item.id, next, "definitions", preview.token), null);
 }
-function edit(service: KnowledgeService, pageId: string, values: Record<string, AttributeValue>, tabId = "files"): void {
+function edit(service: Knowledge, pageId: string, values: Record<string, AttributeValue>, tabId = "files"): void {
     assert.equal(service.commitEdit({ pageId, tabId, batch: 0, blocks: [], attributes: values }).status, "saved");
 }
-function checkIndex(service: KnowledgeService): void {
+function checkIndex(service: Knowledge): void {
     const query = "SELECT * FROM link_refs ORDER BY source_kind,source_id,source_field,target_kind,target_id";
     const before = service.statement(query).all();
     service.rebuildLinks();
     assert.deepEqual(service.statement(query).all(), before);
 }
-function trash(service: KnowledgeService, pageId: string): void {
+function trash(service: Knowledge, pageId: string): void {
     const result = service.trash([pageId], "trash");
     if (result.status === "confirmation") assert.equal(service.trash([pageId], "trash", result.preview.token).status, "saved");
 }
-function erase(purge: PurgeService, pageId: string): void {
+function erase(purge: Purge, pageId: string): void {
     const preview = purge.purge([pageId], "purge");
     assert.equal(preview.status, "confirmation");
     if (preview.status === "confirmation") assert.equal(purge.purge([pageId], "purge", preview.token).status, "deleted");
@@ -164,12 +162,12 @@ test("clearing an attachment leaves bytes available for undo, but reopening remo
     assert.equal(history.apply("files", "undo").status, "saved");
     assert.deepEqual(unreferencedFiles(service.db), []);
     edit(service, pageId, { paper_files: [] });
-    database.close();
+    session.close();
     const reopened = openWorkspace(info.path);
-    t.after(() => reopened.database.close());
+    t.after(() => session.close());
     assert.equal(existsSync(stored), false);
     for (const table of ["attachments"]) assert.equal(reopened.database.prepare("SELECT count(*) FROM " + table).pluck().get(), 0);
-    assert.deepEqual(new EditHistory(new KnowledgeService(reopened.db)).state("files"), { canUndo: false, redo: [] });
+    assert.deepEqual(historyServices().state("files"), { canUndo: false, redo: [] });
 });
 
 test("a recycled page's custom property protects its independently imported file until the page is permanently deleted", async t => {
@@ -183,14 +181,14 @@ test("a recycled page's custom property protects its independently imported file
     erase(purge, paperId);
     assert.equal(existsSync(original), false);
     assert.equal(existsSync(stored), true); assert.deepEqual(unreferencedFiles(service.db), []);
-    database.close();
+    session.close();
     const reopened = openWorkspace(info.path);
-    t.after(() => reopened.database.close());
+    t.after(() => session.close());
     assert.equal(existsSync(stored), true, "opening retains references from recycled pages too");
-    const next = new KnowledgeService(reopened.db), history = new EditHistory(next), cleanup = new PurgeService(next, history, info.path);
+    const next = knowledgeServices(), history = historyServices(), cleanup = purgeServices();
     erase(cleanup, other.id);
     assert.equal(existsSync(stored), false);
-    assert.equal(new PaperService(next, info.path).hasPDF(paperId), false, "dangling subscription paper IDs still report no PDF after purge");
+    assert.equal(paperServices().hasPDF(paperId), false, "dangling subscription paper IDs still report no PDF after purge");
     for (const table of ["attachments"]) assert.equal(next.statement("SELECT count(*) FROM " + table).pluck().get(), 0);
 });
 
@@ -205,7 +203,7 @@ test("failed batch import and failed orphan cleanup restore rows, bytes and hist
     edit(service, page.id, { paper_files: [] });
     const before = history.state("files");
     service.statement("UPDATE attachments SET stored_name='../invalid.txt' WHERE id=?").run(second.id);
-    assert.throws(() => withFileCleanup(service.db, info.path, cleanup => cleanup()), hasFailure("attachment-invalid-name"));
+    assert.throws(() => commit.run({ sourceTab: "cleanup", cleanup: true }, context => context.cleanup()), hasFailure("attachment-invalid-name"));
     assert.equal(papers.files().length, 2);
     for (const path of paths) assert.equal(existsSync(path), true);
     assert.deepEqual(Buffer.from(papers.read(first.id)), readFileSync(a));

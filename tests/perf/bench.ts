@@ -1,7 +1,7 @@
+import { session, type Knowledge } from "../support/session";
 import { fixture, seedLargePage, type SeedPage } from "./fixture";
 import assert from "node:assert/strict";
 import { cpus, platform, release } from "node:os";
-import { KnowledgeService } from "../../main/knowledge/service";
 import { payload } from "../../shared/content/blocks";
 import { type CommitResult } from "../../shared/types/content";
 
@@ -25,13 +25,13 @@ function measure(label: string, limit: number, prepare: (round: number) => Sampl
     if (p95 > limit) exceeded = true;
 }
 
-function prepareText(service: KnowledgeService, pageId: string, round: number) {
+function prepareText(service: Knowledge, pageId: string, round: number) {
     const page = service.get(pageId), block = page.blocks[page.children[0]];
     const value = { ...block, payload: payload("paragraph", "Edited " + round) };
     return (token?: string): CommitResult => service.commitEdit({ pageId, tabId: "perf", batch: round, blocks: [value] }, token);
 }
 
-function prepareDeletion(service: KnowledgeService, pageId: string) {
+function prepareDeletion(service: Knowledge, pageId: string) {
     const page = service.get(pageId), blockId = page.children[0];
     return (token?: string): CommitResult => service.deleteBlock({ pageId, blockId, tabId: "perf" }, token);
 }
@@ -85,7 +85,7 @@ function workspaceScale(): void {
         });
     }
     finally {
-        sql.close();
+        session.close();
     }
 }
 
@@ -101,7 +101,7 @@ function largePage(): void {
         });
     }
     finally {
-        sql.close();
+        session.close();
     }
 }
 
@@ -130,7 +130,7 @@ function retentionGraph(): void {
         });
     }
     finally {
-        sql.close();
+        session.close();
     }
 }
 
@@ -145,7 +145,7 @@ function probes(): void {
         for (const keyword of ["tags", "true", "2026", "modified"]) console.log("Probe | search", keyword, "matched", service.list({ keyword }).total, "of 2 pages");
     }
     finally {
-        sql.close();
+        session.close();
     }
 }
 

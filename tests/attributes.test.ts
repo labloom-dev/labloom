@@ -1,26 +1,25 @@
+import { knowledgeServices, attributeServices, session, type Attributes } from "./support/session";
 import { convertValue } from "../shared/attrs/convert";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
-import { createWorkspace } from "../main/storage/workspace";
-import { KnowledgeService } from "../main/knowledge/service";
-import { AttributeService } from "../main/knowledge/attributes";
+import { createWorkspace } from "./support/session";
 import { builtinAttrs } from "../shared/attrs/builtins";
 import { display, search } from "../shared/attrs/format";
 import { decodeValue, defaultMetadata, defaultValue, emptyValue, encodeValue, isEmpty, nullable, validateValue } from "../shared/attrs/values";
 import { attributeTypes, type AttributeDefinition, type AttributeType, type AttributeValue } from "../shared/types/attributes";
 
-function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { id: string; service: AttributeService } {
+function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { id: string; service: Attributes } {
     const root = process.env.LABLOOM_TEST_ROOT;
     if (!root) throw new Error("Use the isolated workspace test runner.");
     const workspace = createWorkspace(mkdtempSync(join(root, "attributes-")));
     t.after(() => {
-        if (workspace.database.open) workspace.database.close();
+        session.close();
     });
-    const id = new KnowledgeService(workspace.db).create("editable", "Test").id;
-    return { ...workspace, id, service: new AttributeService(workspace.db) };
+    const id = knowledgeServices().create("editable", "Test").id;
+    return { ...workspace, id, service: attributeServices() };
 }
 
 test("generic attributes preserve scalar types, null versus absent, and atomic validation", t => {

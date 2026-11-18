@@ -2,7 +2,7 @@
     <h3>{source ? "编辑来源" : "添加来源"}</h3>
     <label>
         名称
-        <input bind:value={name} maxlength="200" placeholder="留空则使用来源自带的标题" disabled={pending} {@attach focus} />
+        <input bind:value={name} placeholder="留空则使用来源自带的标题" disabled={pending} {@attach focus} />
     </label>
     <label>
         添加方式
@@ -17,9 +17,9 @@
     {#if kind === "url"}
         <label>
             订阅地址
-            <input bind:value={url} type="url" required maxlength="4096" placeholder="https://rss.arxiv.org/atom/cs.LG" disabled={pending} />
+            <input bind:value={url} type="url" required placeholder="https://rss.arxiv.org/atom/cs.LG" disabled={pending} />
         </label>
-        <p class="hint">支持 RSS、Atom 和 JSON Feed。填写网站首页时，会自动查找它提供的订阅地址。另外支持 Anthropic 的 News、Engineering 页面。博客来源每次获取最新 10 篇，已保存的文章和阅读状态会保留。</p>
+        <p class="hint">支持 RSS、Atom 和 JSON Feed。填写网站首页时，会自动查找它提供的订阅地址。另外支持 Anthropic 的 News、Engineering 页面。博客订阅会保存来源返回的全部文章，已保存的文章和阅读状态会保留。</p>
     {:else if kind === "arxiv"}
         <label>
             领域
@@ -27,7 +27,7 @@
         </label>
         <label>
             关键词或短语
-            <input bind:value={keyword} maxlength="200" placeholder="例如：large language model" disabled={pending} />
+            <input bind:value={keyword} placeholder="例如：large language model" disabled={pending} />
         </label>
         <p class="hint">多个领域用逗号分隔，匹配其中任一领域。关键词按完整短语匹配标题或摘要。</p>
         <p class="hint">仅填领域时订阅每日公告；填写关键词时获取最近提交的 10 篇匹配论文，之后刷新并累积保存。这里只获取来源返回的内容，不补齐全部历史。</p>
@@ -36,7 +36,7 @@
         {/if}
     {:else}
         <p class="address">{address.url}</p>
-        <p class="hint">每次获取最新 10 篇，已保存的文章和阅读状态会保留。</p>
+        <p class="hint">每次刷新会保存来源返回的全部文章，已保存的文章和阅读状态会保留。</p>
     {/if}
     {#if address.error}
         <p class="hint" role="status">{message(address.error)}</p>

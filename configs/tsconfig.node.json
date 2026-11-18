@@ -9,6 +9,6 @@
         "tsBuildInfoFile": "../dist/tsconfig.node.tsbuildinfo",
         "strict": true,
         "checkJs": true,
-        "types": ["electron-vite/node"]
+        "types": ["node", "electron-vite/node"]
     }
 }

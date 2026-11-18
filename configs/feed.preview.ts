@@ -1,15 +1,13 @@
-import { mkdirSync } from "node:fs";
+import { svelte } from "@sveltejs/vite-plugin-svelte";
+import { existsSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig } from "vite";
-import { svelte } from "@sveltejs/vite-plugin-svelte";
-import Database from "better-sqlite3";
-import { FeedService } from "../main/feed/service";
-import { createWorkspaceDatabase } from "../main/storage/database";
-import { createWorkspaceSchema, validateWorkspaceSchema } from "../main/storage/schema";
-import { initializeBuiltinAttrs } from "../main/storage/builtin-attrs";
+import * as feed from "../main/feed/service";
+import * as events from "../main/knowledge/events";
+import * as session from "../main/session";
+import { LabloomError, toFailureInfo } from "../shared/failure";
 import type { FeedQuery, FeedSourceAction, FeedSourceInput } from "../shared/types/feed";
 import { arxivURL } from "../shared/utils/feed";
-import { LabloomError, toFailureInfo } from "../shared/failure";
 
 const root = resolve(import.meta.dirname, "..");
 
@@ -22,26 +20,18 @@ export default defineConfig({
             async configureServer(server) {
                 const folder = resolve(root, ".local/feed-preview");
                 mkdirSync(folder, { recursive: true });
-                const database = new Database(resolve(folder, "feed.sqlite"));
-                database.pragma("foreign_keys = ON");
-                const db = createWorkspaceDatabase(database);
-                if (database.pragma("user_version", { simple: true }) === 0) {
-                    database.transaction(() => {
-                        createWorkspaceSchema(database);
-                        initializeBuiltinAttrs(db);
-                    })();
-                }
-                else validateWorkspaceSchema(database);
-                // Followed keywords are workspace settings, so the preview database needs a workspace record.
-                database.prepare("INSERT INTO workspace_meta (id, name, created_at, last_modified_at) SELECT 'preview', 'Feed preview', ?, ? WHERE NOT EXISTS (SELECT 1 FROM workspace_meta)")
-                    .run(Date.now(), Date.now());
-                const feed = new FeedService(db);
+                const workspacePath = resolve(folder, "workspace");
+                const exists = existsSync(resolve(workspacePath, "workspace.sqlite"));
+                mkdirSync(workspacePath, { recursive: true });
+                session.open(workspacePath, exists ? "open" : "create");
                 // The page polls this counter in place of the desktop change notice.
                 let version = 0;
-                feed.onChanged = () => version++;
-                const timer = setInterval(() => void feed.refreshDue().catch(() => {}), 30000);
-                server.httpServer?.once("close", () => clearInterval(timer));
-                server.httpServer?.once("close", () => database.close());
+                const unsubscribe = events.subscribe(event => {
+                    if (event.type === "feed") version++;
+                });
+                server.httpServer?.once("close", () => {
+                    unsubscribe(); session.close();
+                });
 
                 if (!feed.getState({}).sources.length) {
                     try {

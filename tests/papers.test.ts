@@ -1,30 +1,28 @@
+import { openWorkspace, watchKnowledge } from "./support/session";
+import { knowledgeServices, paperServices, historyServices, purgeServices, session, type Knowledge, type History, type Papers } from "./support/session";
 import { hasFailure } from "./failures";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
-import { createWorkspace } from "../main/storage/workspace";
-import { KnowledgeService } from "../main/knowledge/service";
-import { PaperService } from "../main/knowledge/papers";
-import { EditHistory } from "../main/knowledge/history";
+import { createWorkspace } from "./support/session";
 import { unreferencedFiles } from "../main/storage/files";
-import { PurgeService } from "../main/knowledge/purge";
 import { rectanglePoints, rectangleWithinPage } from "../shared/content/anchors";
 import { PDF_EXTRACTOR_VERSION } from "../shared/content/pdf-text";
 import { payload } from "../shared/content/blocks";
 import { type AnnotationInput } from "../shared/types/papers";
 import { knownCoordinatePdf } from "./fixtures/pdf-text";
 
-function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { knowledge: KnowledgeService; papers: PaperService; history: EditHistory } {
+function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { knowledge: Knowledge; papers: Papers; history: History } {
     const workspace = createWorkspace(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "paper-")));
     t.after(() => {
-        if (workspace.database.open) workspace.database.close();
+        session.close();
     });
-    const knowledge = new KnowledgeService(workspace.db), papers = new PaperService(knowledge, workspace.info.path), history = new EditHistory(knowledge);
+    const knowledge = knowledgeServices(), papers = paperServices(), history = historyServices();
     return { ...workspace, knowledge, papers, history };
 }
-function importPDF(papers: PaperService, path: string): string {
+function importPDF(papers: Papers, path: string): string {
     writeFileSync(path, knownCoordinatePdf());
     return papers.importFile(path).pageId;
 }
@@ -168,11 +166,13 @@ test("encrypted PDF passwords stay transient and repeated selections produce ind
     assert.equal((await papers.resources(paperId)).annotations.length, 2);
     assert.equal((await papers.getAnnotation(second)).color, "green");
     knowledge.attributes.cache(id, { annotation_quote: "stale", annotation_extractor: "old" });
-    const restarted = new PaperService(knowledge, info.path);
+    session.close();
+    const reopened = openWorkspace(info.path);
+    const restarted = paperServices();
     assert.equal((await restarted.resources(paperId)).annotations[0].quote, "");
     await restarted.unlockPDF(fileId, "reader-pass");
     assert.equal((await restarted.resources(paperId)).annotations[0].quote, original.quote);
-    assert.ok(!String(database.prepare("SELECT group_concat(value) FROM page_attrs").pluck().get()).includes("reader-pass"));
+    assert.ok(!String(reopened.database.prepare("SELECT group_concat(value) FROM page_attrs").pluck().get()).includes("reader-pass"));
 });
 
 test("annotation text controls the reader icon, while one tab's undo tree spans paper and popup edits", async t => {
@@ -226,7 +226,7 @@ test("annotation file references retain detached files and purging clears member
     const removal = papers.deleteAnnotation(id, "annotations");
     if (removal.status !== "confirmation") throw new Error("Expected confirmation");
     papers.deleteAnnotation(id, "annotations", removal.preview.token);
-    const purge = new PurgeService(knowledge, history, info.path), preview = purge.purge([id], "purge");
+    const purge = purgeServices(), preview = purge.purge([id], "purge");
     if (preview.status !== "confirmation") throw new Error("Expected confirmation");
     assert.equal(purge.purge([id], "purge", preview.token).status, "deleted");
     assert.deepEqual(knowledge.get(paperId).attributes.paper_annotations, []);
@@ -261,10 +261,10 @@ test("annotation edits invalidate every retaining paper and cross-tab typing inv
     const id = await papers.annotate(paperId, selection(fileId), "creator");
     assert.equal(history.state("creator").canUndo, true);
     const annotation = knowledge.get(id), body = annotation.blocks[annotation.children[0]], changes: string[][] = [];
-    knowledge.onChanged = change => changes.push(change.pages);
-    knowledge.commitEdit({ pageId: id, tabId: "other-window", batch: 0, blocks: [{ ...body, payload: payload("paragraph", "B") }] });
+    t.after(watchKnowledge(change => changes.push(change.pages)));
+    knowledge.commitEdit({ pageId: id, tabId: "other-tab", batch: 0, blocks: [{ ...body, payload: payload("paragraph", "B") }] });
     assert.equal(history.state("creator").canUndo, false);
     assert.ok(changes[0].includes(id)); assert.ok(changes[0].includes(paperId));
-    changes.length = 0; papers.changeAnnotation(id, "pink", "other-window");
+    changes.length = 0; papers.changeAnnotation(id, "pink", "other-tab");
     assert.ok(changes[0].includes(paperId));
 });

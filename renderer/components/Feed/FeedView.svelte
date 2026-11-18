@@ -107,7 +107,7 @@
                         </div>
                     {/if}
                     <form class="add" onsubmit={addKeyword}>
-                        <input bind:value={newKeyword} maxlength="100" placeholder="添加关键词，例如 diffusion" aria-label="新的关注关键词" />
+                        <input bind:value={newKeyword} placeholder="添加关键词，例如 diffusion" aria-label="新的关注关键词" />
                         <button type="submit" disabled={!newKeyword.trim()}>添加</button>
                     </form>
                 </div>
@@ -854,10 +854,11 @@
 
 
 <script lang="ts">
+    import type { FeedAPI } from "../../../shared/feed/ipc";
     import { onMount, tick, untrack } from "svelte";
     import {
         feedPageSize,
-        type FeedAPI, type FeedItem, type FeedItemDetail, type FeedQuery, type FeedSource, type FeedSourceAction, type FeedSourceInput, type FeedState
+        type FeedItem, type FeedItemDetail, type FeedQuery, type FeedSource, type FeedSourceAction, type FeedSourceInput, type FeedState
     } from "../../../shared/types/feed";
 
     import { t, failure, message, type ErrorValue } from "../../i18n.svelte";
@@ -1210,7 +1211,7 @@
             clearTimeout(reloadTimer);
             reloadTimer = setTimeout(reload, 120);
         });
-        const releaseKnowledge = window.api?.knowledge?.onChanged(change => {
+        const releaseKnowledge = window.api?.pages?.onChanged(change => {
             if (!(detail?.paperId && change.pages.includes(detail.paperId)) && !Object.values(change.kinds ?? {}).includes("feed") && !change.pages.includes(sourcePageId ?? "")) return;
             clearTimeout(reloadTimer);
             reloadTimer = setTimeout(reload, 120);

@@ -19,6 +19,7 @@
         "useDefineForClassFields": true,
         "strict": true,
         "checkJs": true,
+        "types": [],
         "lib": ["ESNext", "DOM", "DOM.Iterable"]
     }
 }

@@ -1,14 +1,14 @@
+import { watchKnowledge } from "./support/session";
+import { knowledgeServices, historyServices, session, type Knowledge, type History } from "./support/session";
 import { hasFailure } from "./failures";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
-import { createWorkspace, openWorkspace } from "../main/storage/workspace";
-import { KnowledgeService } from "../main/knowledge/service";
-import { EditHistory } from "../main/knowledge/history";
+import { createWorkspace, openWorkspace } from "./support/session";
 import { fingerprint } from "../main/knowledge/attributes";
-import { AppStorage } from "../main/storage/app";
+import * as settings from "../main/settings/store";
 import { builtinAttrs, builtinAttrsByPageKind } from "../shared/attrs/builtins";
 import { display } from "../shared/attrs/format";
 import { validateValue } from "../shared/attrs/values";
@@ -17,23 +17,23 @@ import { confirmationText } from "../shared/content/confirmation";
 import { payload, blockText } from "../shared/content/blocks";
 import { type ContentBlock, type EditCommit, type CommitResult, type PageRecord } from "../shared/types/content";
 
-function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { service: KnowledgeService; history: EditHistory } {
+function fixture(t: TestContext, options: import("../main/session").SessionOptions = {}): ReturnType<typeof createWorkspace> & { service: Knowledge; history: History } {
     const root = process.env.LABLOOM_TEST_ROOT;
     if (!root) throw new Error("Use the isolated workspace test runner.");
-    const workspace = createWorkspace(mkdtempSync(join(root, "content-")));
+    const workspace = createWorkspace(mkdtempSync(join(root, "content-")), options);
     t.after(() => {
-        if (workspace.database.open) workspace.database.close();
+        session.close();
     });
-    const service = new KnowledgeService(workspace.db), history = new EditHistory(service);
+    const service = knowledgeServices(), history = historyServices();
     return { ...workspace, service, history };
 }
-function edit(service: KnowledgeService, page: PageRecord, changes: ContentBlock[], children = page.children, tabId = "tab-one"): CommitResult {
+function edit(service: Knowledge, page: PageRecord, changes: ContentBlock[], children = page.children, tabId = "tab-one"): CommitResult {
     return service.commitEdit({ pageId: page.id, tabId, batch: 1, pageChildren: children, blocks: changes });
 }
 function text(block: ContentBlock, value: string): ContentBlock {
     return { ...block, payload: payload(block.type, value) };
 }
-function snapshot(service: KnowledgeService): string {
+function snapshot(service: Knowledge): string {
     return fingerprint(["pages", "blocks", "page_attrs", "link_refs"].map(table => service.sql.prepare("SELECT * FROM " + table + " ORDER BY rowid").all()));
 }
 
@@ -195,7 +195,7 @@ test("removing a retaining property previews both its owners and dependent pages
     const dependent = service.create("editable", "Dependent");
     const id = `custom:${randomUUID()}`;
     const tabId = randomUUID();
-    service.setDefinition(id, { id, type: "page-link", name: "Citation", metadata: {  } }, tabId);
+    service.setDefinition(id, { id, type: "page-link", name: "Citation", metadata: {} }, tabId);
     service.commitEdit({ pageId: root.id, tabId: "owner", batch: 1, blocks: [], attributes: { [id]: dependent.id } });
     service.commitEdit({ pageId: dependent.id, tabId: "dependent", batch: 1, blocks: [], attributes: { independent: false } });
     const preview = service.setDefinition(id, null, tabId)!;
@@ -206,9 +206,9 @@ test("removing a retaining property previews both its owners and dependent pages
     assert.equal(history.state("owner").canUndo, true);
     service.create("editable", "Another edit");
     let source: string | undefined;
-    service.onChanged = change => {
+    t.after(watchKnowledge(change => {
         source = change.sourceTab;
-    };
+    }));
     assert.equal(service.setDefinition(id, null, tabId, preview.token), null);
     assert.equal(source, tabId);
     assert.equal(history.state(tabId).canUndo, false);
@@ -239,10 +239,10 @@ test("cross-tab history invalidates only overlapping operations and preserves re
     assert.equal(history.state("tab-one").redo.length, 2);
     history.apply("tab-one", "redo", firstBranch);
     assert.equal(blockText(service.get(page.id).blocks[b.id]), "B1");
-    database.close();
+    session.close();
     const reopened = openWorkspace(info.path);
-    t.after(() => reopened.database.close());
-    const restoredHistory = new EditHistory(new KnowledgeService(reopened.db));
+    t.after(() => session.close());
+    const restoredHistory = historyServices();
     assert.equal(restoredHistory.state("tab-one").canUndo, false);
     restoredHistory.close("tab-one");
     assert.equal(restoredHistory.state("tab-one").canUndo, false);
@@ -253,9 +253,13 @@ test("deleteBlock removes every use, keeps live links and undo restores nested a
     const a = service.create("editable", "A"), b = service.create("editable", "B"), c = service.create("editable", "C");
     const shared = text(a.blocks[a.children[0]], "Common");
     const parent = { ...b.blocks[b.children[0]], children: [shared.id] };
-    const link = { ...c.blocks[c.children[0]], payload: { ...payload("paragraph"), inline: [
-        { type: "inlineReference" as const, attrs: { target: { kind: "block" as const, id: shared.id }, label: "Common" } }
-    ] } };
+    const link = {
+        ...c.blocks[c.children[0]], payload: {
+            ...payload("paragraph"), inline: [
+                { type: "inlineReference" as const, attrs: { target: { kind: "block" as const, id: shared.id }, label: "Common" } }
+            ]
+        }
+    };
     edit(service, a, [shared], [shared.id, shared.id]);
     edit(service, b, [parent]);
     edit(service, c, [link]);
@@ -314,6 +318,22 @@ test("incremental links match rebuilding after changing, clearing and undoing al
     check(3);
 });
 
+test("detaching and deleting custom page links clears their source index through the service", t => {
+    const { service } = fixture(t), a = service.create("editable", "A"), b = service.create("editable", "B");
+    const id = "custom:" + randomUUID(), definition = { id, type: "page-link" as const, name: "Related", metadata: {} };
+    assert.equal(service.setDefinition(id, definition, "definitions"), null);
+    const count = (): unknown => service.statement("SELECT count(*) FROM link_refs WHERE source_kind='page' AND source_field=?").pluck().get(id);
+    service.commitEdit({ pageId: a.id, tabId: "links", batch: 0, blocks: [], attributes: { [id]: b.id } });
+    assert.equal(count(), 1);
+    service.commitEdit({ pageId: a.id, tabId: "links", batch: 1, blocks: [], detach: [id] });
+    assert.equal(count(), 0);
+    service.commitEdit({ pageId: a.id, tabId: "links", batch: 2, blocks: [], attributes: { [id]: b.id } });
+    const preview = service.setDefinition(id, null, "definitions");
+    assert.ok(preview);
+    assert.equal(service.setDefinition(id, null, "definitions", preview.token), null);
+    assert.equal(count(), 0);
+});
+
 test("new pages have valid typed values, independent retention and system timestamps", t => {
     const { service } = fixture(t), parent = service.create("paper");
     for (const kind of pageKinds) {
@@ -334,23 +354,21 @@ test("new pages have valid typed values, independent retention and system timest
 });
 
 test("keywords and display use the current application timezone on the same open workspace", t => {
-    const { db, info } = fixture(t);
-    const storage = new AppStorage(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "preferences-")));
-    storage.load();
-    storage.remember(info);
-    const service = new KnowledgeService(db, () => storage.getAppearance().timeZone);
-    storage.saveAppearance({ ...storage.getAppearance(), timeZone: "Asia/Shanghai" });
+    settings.initialize(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "preferences-")));
+    fixture(t);
+    const service = knowledgeServices();
+    settings.update({ appearance: { timeZone: "Asia/Shanghai" } });
     const e = service.create("event", "A");
     const anchor = randomUUID(), a = service.create("annotation", "B", { independent: true, annotation_context: anchor });
     assert.ok(!("task_status" in e.attributes) && !("priority" in e.attributes));
     const seconds = 1794071576;
     service.attributes.write(e.id, { created_at: seconds, modified_at: seconds + 3600, schedule_start: seconds + 7200 }, true);
     service.attributes.write(a.id, { created_at: 0, modified_at: 0 }, true);
-    const created = (): string => display({ id: "created_at", ...builtinAttrs.created_at }, service.get(e.id).attributes.created_at, { zone: storage.getAppearance().timeZone });
+    const created = (): string => display({ id: "created_at", ...builtinAttrs.created_at }, service.get(e.id).attributes.created_at, { zone: settings.get().settings.appearance.timeZone });
     assert.equal(created(), "2026-11-08 01:12");
     for (const keyword of ["tags", "true", "modified", anchor, "1794", "17:12", "未开始", "asia"]) assert.equal(service.list({ keyword }).total, 0, keyword);
     for (const keyword of ["2026", "01:12", "02:12", "03:12"]) assert.deepEqual(service.list({ keyword }).items.map(p => p.id), [e.id], keyword);
-    storage.saveAppearance({ ...storage.getAppearance(), timeZone: "UTC" });
+    settings.update({ appearance: { timeZone: "UTC" } });
     assert.equal(created(), "2026-11-07 17:12");
     assert.deepEqual(service.list({ keyword: "17:12" }).items.map(p => p.id), [e.id]);
     assert.equal(service.list({ keyword: "01:12" }).total, 0);

@@ -1,6 +1,6 @@
 {
     "name": "labloom",
-    "version": "1.0.0",
+    "version": "0.1.0",
     "type": "module",
     "description": "An all-in-one AI research workspace for the entire research lifecycle.",
     "main": "./dist/main/index.js",
@@ -51,6 +51,7 @@
         "i18next": "26.4.2",
         "pdfjs-dist": "6.3.289",
         "rss-parser": "^3.13.0",
+        "typia": "~12.2.1",
         "uuid": "^14.0.2"
     },
     "devDependencies": {
@@ -60,6 +61,7 @@
         "@eslint/json": "^2.1.0",
         "@stylistic/eslint-plugin": "^5.10.0",
         "@sveltejs/vite-plugin-svelte": "^7.3.1",
+        "@typia/unplugin": "~12.2.1",
         "@types/better-sqlite3": "^9.6.0",
         "@types/node": "^22.20.2",
         "drizzle-kit": "0.31.11",
@@ -73,7 +75,7 @@
         "svelte": "^5.57.0",
         "svelte-check": "^4.7.6",
         "tsx": "^4.23.15",
-        "typescript": "^5.9.3",
+        "typescript": "6.0.3",
         "vite": "^8.3.5",
         "vite-plugin-static-copy": "4.1.1"
     }

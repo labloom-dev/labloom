@@ -18,6 +18,7 @@ type ExtraItem = {
 };
 
 export type FeedRequest = {
+    signal?: AbortSignal;
     url: string;
     /** Validators from the previous response, replayed verbatim. */
     etag?: string | null;
@@ -278,7 +279,7 @@ async function download(request: FeedRequest, fetcher: Fetcher): Promise<FeedRes
     if (request.lastModified) headers["If-Modified-Since"] = request.lastModified;
     let response: Response;
     try {
-        response = await fetcher(url, { signal: AbortSignal.timeout(30000), credentials: "omit", headers });
+        response = await fetcher(url, { signal: request.signal ? AbortSignal.any([request.signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000), credentials: "omit", headers });
     }
     catch (error) {
         throw requestError(error);
@@ -332,13 +333,13 @@ export async function fetchFeed(request: FeedRequest, fetcher: Fetcher = fetch):
     if (host !== "arxiv.org" && !host.endsWith(".arxiv.org")) {
         const result = await download(request, fetcher);
         if (!result.entries) return result;
-        // Blog sources import their latest ten entries; an entry without an identifier is told apart by its address.
+        // An entry without an identifier is told apart by its address.
         const unique = [...new Map(result.entries.map(entry => [entry.externalId ?? entry.url ?? `${entry.title}\n${entry.publishedAt}`, entry])).values()];
-        return { ...result, entries: unique.sort((a, b) => (b.publishedAt ?? -Infinity) - (a.publishedAt ?? -Infinity)).slice(0, 10) };
+        return { ...result, entries: unique.sort((a, b) => (b.publishedAt ?? -Infinity) - (a.publishedAt ?? -Infinity)) };
     }
     // arXiv requests share one connection queue, at least three seconds apart.
     const queued = arxivQueue.then(async () => {
-        await delay(Math.max(0, nextArxivRequest - Date.now()));
+        await delay(Math.max(0, nextArxivRequest - Date.now()), undefined, { signal: request.signal });
         try {
             return await download(request, fetcher);
         }
@@ -346,6 +347,6 @@ export async function fetchFeed(request: FeedRequest, fetcher: Fetcher = fetch):
             nextArxivRequest = Date.now() + 3000;
         }
     });
-    arxivQueue = queued.catch(() => {});
+    arxivQueue = queued.catch(() => { });
     return queued;
 }

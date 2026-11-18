@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { buildTestMain } from "../run-workspace.mjs";
 import { build } from "esbuild";
 import { createServer } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
@@ -16,8 +17,9 @@ const server = await createServer({ root: join(root, "renderer"), configFile: fa
     plugins: [svelte({ configFile: join(root, "configs/svelte.config.js") })],
     server: { host: "localhost", port: 0, hmr: false, watch: null, fs: { allow: [root] } } });
 try {
-    await build({ absWorkingDir: root, entryPoints: { main: "tests/perf/compact-main.ts", preload: "preload/index.ts" }, bundle: true,
-        platform: "node", format: "cjs", packages: "external", outdir: dir, outExtension: { ".js": ".cjs" } });
+    const options = { absWorkingDir: root, bundle: true, platform: "node", format: "cjs", packages: "external", outdir: dir, outExtension: { ".js": ".cjs" } };
+    await buildTestMain({ ...options, entryPoints: { main: "tests/perf/compact-main.ts" } });
+    await build({ ...options, entryPoints: { preload: "preload/index.ts" } });
     await server.listen();
     const env = { ...process.env, LABLOOM_TEST_ROOT: dir, LABLOOM_BENCH_URL: server.resolvedUrls.local[0] };
     delete env.ELECTRON_RUN_AS_NODE;

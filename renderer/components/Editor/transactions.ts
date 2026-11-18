@@ -65,10 +65,15 @@ export function indent(out: boolean): Command {
     };
 }
 
-export function shallowPaste(slice: Slice): Slice {
+export function wholeBlocks(slice: Slice): boolean {
+    return slice.openStart === 0 && slice.openEnd === 0 && slice.content.childCount > 0
+        && slice.content.content.every(node => isBlock(node) && node.type.name !== "pageTitle");
+}
+export function copyBlocks(slice: Slice): Slice {
     const copy = (node: DocNode): DocNode => {
-        if (isBlock(node)) return node.type.create({ ...node.attrs, blockId: null }, node.content, node.marks);
-        return node;
+        if (node.isText) return node;
+        const content = Fragment.fromArray(node.content.content.map(copy));
+        return node.type.create(isBlock(node) ? { ...node.attrs, blockId: crypto.randomUUID() } : node.attrs, content, node.marks);
     };
     return new Slice(Fragment.fromArray(slice.content.content.map(copy)), slice.openStart, slice.openEnd);
 }
@@ -94,10 +99,14 @@ export function identityPlugin(): Plugin {
         appendTransaction(transactions, old, next) {
             if (!transactions.some(tr => tr.docChanged) || transactions.some(tr => tr.getMeta(remoteEdit))) return null;
             const tr = next.tr, prior = indexDoc(old.doc), current = indexDoc(next.doc);
-            // Paste clears copied roots before fitting the slice. A native split may copy the left node's ID.
+            // A native split may copy the left node's ID; explicit paste has already allocated IDs.
             for (const [id, occurrences] of current) {
                 const surplus = occurrences.length - (prior.get(id)?.length ?? 0);
-                if (id && (surplus <= 0 || transactions.some(t => t.getMeta(syncInsert) || t.getMeta("workspace.paste")))) continue;
+                const explicit = transactions.some(t => {
+                    const synced = t.getMeta(syncInsert);
+                    return synced === true || Array.isArray(synced) && synced.includes(id) || !prior.has(id) && t.getMeta("workspace.paste");
+                });
+                if (id && (surplus <= 0 || explicit)) continue;
                 if (!id && occurrences.some(o => o.node.type.name === "pageTitle")) {
                     for (const o of occurrences.filter(o => o.node.type.name === "pageTitle")) tr.setNodeMarkup(o.pos, undefined, { ...o.node.attrs, blockId: old.doc.firstChild!.attrs.blockId });
                 }

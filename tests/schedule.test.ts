@@ -1,27 +1,27 @@
+import { events } from "./support/session";
+import { knowledgeServices, historyServices, session, type Knowledge, type History } from "./support/session";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
-import { createWorkspace, openWorkspace } from "../main/storage/workspace";
-import { KnowledgeService } from "../main/knowledge/service";
-import { EditHistory } from "../main/knowledge/history";
+import { createWorkspace, openWorkspace } from "./support/session";
 import { dayToSeconds, monthToSeconds, yearToSeconds, wallToSeconds } from "../shared/content/time";
 import { type Notice } from "../shared/types/knowledge";
 import { type AttributeValue } from "../shared/types/attributes";
 
-function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { clock: { now: number; zone: string }; knowledge: KnowledgeService; history: EditHistory; delivered: Notice[]; bodies: string[]; check: () => Promise<void>; edit: (pageId: string, attributes: Record<string, AttributeValue>) => void } {
-    const ws = createWorkspace(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "timers-"))), clock = { now: Date.UTC(2026, 10, 13), zone: "Asia/Shanghai" };
+function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { clock: { now: number; zone: string }; knowledge: Knowledge; history: History; delivered: Notice[]; bodies: string[]; check: () => Promise<void>; edit: (pageId: string, attributes: Record<string, AttributeValue>) => void } {
+    const ws = createWorkspace(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "timers-")), { timeZone: () => clock.zone, clock: () => clock.now }), clock = { now: Date.UTC(2026, 10, 13), zone: "Asia/Shanghai" };
     t.after(() => {
- if (ws.database.open) ws.database.close();
-});
-    const knowledge = new KnowledgeService(ws.db, () => clock.zone, () => clock.now), history = new EditHistory(knowledge), delivered: Notice[] = [], bodies: string[] = [];
+        session.close();
+    });
+    const knowledge = knowledgeServices(), history = historyServices(), delivered: Notice[] = [], bodies: string[] = [];
     const check = (): Promise<void> => knowledge.timers.check((notice, body) => {
- delivered.push(notice); bodies.push(body);
-});
+        delivered.push(notice); bodies.push(body);
+    });
     const edit = (pageId: string, attributes: Record<string, AttributeValue>): void => {
- assert.equal(knowledge.commitEdit({ pageId, tabId: "timers", batch: 0, blocks: [], attributes }).status, "saved");
-};
+        assert.equal(knowledge.commitEdit({ pageId, tabId: "timers", batch: 0, blocks: [], attributes }).status, "saved");
+    };
     return { ...ws, clock, knowledge, history, delivered, bodies, check, edit };
 }
 
@@ -87,14 +87,21 @@ test("recycle, restore, completed tasks, detached attributes and changed types u
     assert.equal(f.database.prepare("SELECT count(*) FROM timers WHERE attr_id=?").pluck().get(id), 0);
 });
 
-test("a previously scheduled reminder catches up after reopening, is shared by windows and appears once", async t => {
+test("a scheduled reminder catches up after reopening and subsequent checks do not repeat it", async t => {
     const f = fixture(t), due = Math.floor(f.clock.now / 1000) + 1000, page = f.knowledge.create("event", "A", { schedule_start: due });
-    f.knowledge.timers.set(page.id, "schedule_start", 0, true); f.database.close(); f.clock.now = (due + 1) * 1000;
-    const reopened = openWorkspace(f.info.path); t.after(() => reopened.database.close());
-    const first = new KnowledgeService(reopened.db, () => f.clock.zone, () => f.clock.now), second = new KnowledgeService(reopened.db, () => f.clock.zone, () => f.clock.now), notices: Notice[] = [];
-    await Promise.all([first.timers.check(notice => notices.push(notice)), second.timers.check(notice => notices.push(notice))]);
-    assert.equal(notices.length, 1); assert.equal(notices[0].firedAt, due + 1);
-    await second.timers.check(notice => notices.push(notice)); assert.equal(notices.length, 1);
+    f.knowledge.timers.set(page.id, "schedule_start", 0, true);
+    session.close();
+    f.clock.now = (due + 1) * 1000;
+    const notices: Notice[] = [];
+    t.after(events.subscribe(event => {
+        if (event.type === "reminder") notices.push(event.notice);
+    }));
+    openWorkspace(f.info.path);
+    await Promise.resolve();
+    assert.equal(notices.length, 1);
+    assert.equal(notices[0].firedAt, due + 1);
+    await f.check();
+    assert.equal(notices.length, 1);
 });
 
 test("notification identity and title are derived from the current page, with no undo entries for settings or reading", async t => {

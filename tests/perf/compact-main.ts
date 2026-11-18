@@ -1,17 +1,12 @@
+import { historyServices, purgeServices, startupServices, session } from "../support/session";
 import type { Editor } from "@tiptap/core";
 import { app, BrowserWindow } from "electron";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fixture } from "./fixture";
-import { EditHistory } from "../../main/knowledge/history";
-import { PurgeService } from "../../main/knowledge/purge";
-import { AppStorage } from "../../main/storage/app";
-import { Startup } from "../../main/startup/startup";
-import { registerAppearanceIPCs } from "../../main/appearance/ipc";
-import { registerFeedIPCs } from "../../main/feed/ipc";
-import { registerKnowledgeIPCs } from "../../main/knowledge/ipc";
-import { registerStartupIPCs } from "../../main/startup/ipc";
+import { registerIPCs } from "../../main/register";
+import { attach } from "../../main/ui/windowFrame";
 
 function stats(values: number[]): { p50: number; p95: number } {
     const sorted = values.toSorted((a, b) => a - b);
@@ -40,7 +35,11 @@ async function firstScreen(): Promise<{ sidebar: number; library: number; dimens
 }
 async function titleFilterSamples(): Promise<number[]> {
     const input = document.querySelector<HTMLInputElement>(".left-panel .filter")!, samples: number[] = [];
-    const wait = async (condition: () => boolean): Promise<void> => { const start = performance.now(); while (!condition()) { if (performance.now() - start > 15000) throw new Error("Title filter timeout"); await new Promise(resolve => setTimeout(resolve, 2)); } };
+    const wait = async (condition: () => boolean): Promise<void> => {
+        const start = performance.now(); while (!condition()) {
+            if (performance.now() - start > 15000) throw new Error("Title filter timeout"); await new Promise(resolve => setTimeout(resolve, 2));
+        }
+    };
     for (let i = 0; i <= 20; i++) {
         const start = performance.now(); input.value = "ordinary" + i; input.dispatchEvent(new Event("input", { bubbles: true }));
         await wait(() => !!document.querySelector(".left-panel section[aria-busy=true]"));
@@ -177,7 +176,7 @@ app.setPath("userData", join(root, "chromium-compact"));
 app.commandLine.appendSwitch("disable-renderer-backgrounding");
 app.commandLine.appendSwitch("disable-background-timer-throttling");
 app.on("window-all-closed", () => { });
-const f = fixture(), path = dirname(f.sql.name), history = new EditHistory(f.service), purge = new PurgeService(f.service, history, path);
+const f = fixture(), path = dirname(f.sql.name), history = historyServices(), purge = purgeServices();
 f.sql.transaction(() => {
     for (let i = 0; i < 10000; i++) {
         const page = f.makePage(10, "Research " + String(i).padStart(5, "0"));
@@ -195,18 +194,17 @@ for (let sample = 0; sample <= (process.env.LABLOOM_COMPACT_UI_ONLY ? 0 : 20); s
 }
 const group = randomUUID(), tabs = Array.from({ length: 20 }, () => ({ id: randomUUID(), type: "library", title: "知识库" }));
 f.sql.prepare("UPDATE workspace_meta SET settings=?").run(JSON.stringify({ tabs: { groups: [{ id: group, tabs, activeTabId: tabs[0].id }], focusedGroupId: group, layout: { type: "group", groupId: group } } }));
-f.sql.close();
+session.close();
 void app.whenReady().then(async () => {
     const deadline = setTimeout(() => app.exit(1), 240000);
-    const storage = new AppStorage(join(root, "storage")), startup = new Startup(storage);
+    const startup = startupServices(join(root, "storage"));
     startup.restore(); startup.choose(path, "open");
     const window = new BrowserWindow({ show: false, width: 1280, height: 860, titleBarStyle: "hidden", titleBarOverlay: { height: 32 }, webPreferences: { preload: join(__dirname, "preload.cjs"), sandbox: true, backgroundThrottling: false } });
     try {
         window.webContents.on("console-message", details => {
             if (details.level === "error") console.error(details.message);
         });
-        registerStartupIPCs(window, startup); registerAppearanceIPCs(window, storage);
-        registerFeedIPCs(window, startup, registerKnowledgeIPCs(window, startup, storage));
+        registerIPCs(window, attach(window));
         window.webContents.debugger.attach();
         const sidebar: number[] = [], library: number[] = [];
         let last: Awaited<ReturnType<typeof firstScreen>> | undefined;

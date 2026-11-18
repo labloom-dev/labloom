@@ -61,7 +61,7 @@ export function openPage(id: string, options: { duplicate?: boolean; anchorId?: 
     }
 }
 export async function openTarget(target: { kind: "page" | "block"; id: string }, otherGroup = false): Promise<void> {
-    const resolved = await window.api.knowledge.resolve(target);
+    const resolved = await window.api.pages.resolve(target);
     if (!resolved || resolved.status === "deleted") {
         const { notify } = await import("../Knowledge/feedback.svelte"); notify("目标已删除"); return;
     }
@@ -71,9 +71,9 @@ export async function openTarget(target: { kind: "page" | "block"; id: string },
         let offset = 0;
         const keyword = resolved.text.trim().slice(0, 80);
         while (true) {
-            const result = await window.api.knowledge.list({ keyword, limit: 100, offset });
+            const result = await window.api.pages.list({ keyword, limit: 100, offset });
             for (const page of result.items) {
-                const record = await window.api.knowledge.get(page.id);
+                const record = await window.api.pages.get(page.id);
                 if (record.blocks[target.id]) {
                     openPage(page.id, { otherGroup, anchorId: target.id }); return;
                 }
@@ -87,7 +87,7 @@ export async function openTarget(target: { kind: "page" | "block"; id: string },
 export function createPage(kind: PageKind = "editable", initial: Record<string, AttributeValue> = {}): void {
     const source = tabState.groups.find(group => group.id === tabState.focusedGroupId)?.activeTabId;
     void perform(async () => {
-        const create = (): Promise<PageRecord> => window.api.knowledge.create(kind, "", initial, undefined, source ?? undefined);
+        const create = (): Promise<PageRecord> => window.api.pages.create(kind, "", initial, undefined, source ?? undefined);
         const page = source ? await writeFromTab(source, create) : await saveAll() && await create();
         if (page) openPage(page.id);
     });

@@ -194,13 +194,13 @@
             // This lookup exists only until the query result is assembled.
             // eslint-disable-next-line svelte/prefer-svelte-reactivity
             const kept = new Map(result.items.filter(row => !initial && !changed.has(row.id)).map(row => [row.id, row]));
-            const pages = await window.api.knowledge.listUpdates(copyData(query), [...kept.keys()]);
+            const pages = await window.api.pages.listUpdates(copyData(query), [...kept.keys()]);
             for (const row of pages.items) kept.set(row.id, row);
             result = { items: pages.order.map(id => kept.get(id)!), total: pages.total };
             if (initial || definitionsDirty) {
                 definitionsDirty = false;
                 try {
-                    definitions = await window.api.knowledge.definitions();
+                    definitions = await window.api.attributes.definitions();
                 }
                 catch (problem) {
                     definitionsDirty = true;
@@ -225,7 +225,7 @@
             return type === "file" && typeof value === "string" ? [value] : type === "files" && Array.isArray(value) ? value as string[] : [];
         });
         let active = true;
-        void window.api.knowledge.files([...new Set(ids)]).then(files => {
+        void window.api.papers.files([...new Set(ids)]).then(files => {
             if (active) fileNames = Object.fromEntries(files.map(file => [file.id, file.originalName]));
         }, problem => {
             if (active) error = failure(problem);
@@ -241,7 +241,7 @@
     async function importPDF(): Promise<void> {
         busy = true;
         try {
-            const result = await writeFromTab(tabId, () => window.api.knowledge.importPDF(undefined, tabId));
+            const result = await writeFromTab(tabId, () => window.api.papers.importPDF(undefined, tabId));
             if (result) {
                 info = "PDF 已复制到工作区。";
                 openPage(result.pageId);
@@ -258,7 +258,7 @@
         busy = true;
         try {
             const ids = [...selected];
-            if (await writeFromTab(tabId, () => confirmed(token => view === "trash" ? window.api.knowledge.restore(ids, tabId) : window.api.knowledge.trash(ids, tabId, token)))) selected = [];
+            if (await writeFromTab(tabId, () => confirmed(token => view === "trash" ? window.api.pages.restore(ids, tabId) : window.api.pages.trash(ids, tabId, token)))) selected = [];
         }
         catch (problem) {
             error = failure(problem);

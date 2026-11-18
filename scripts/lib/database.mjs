@@ -37,6 +37,12 @@ async function baseline(root) {
     const empty = await generateSQLiteDrizzleJson({});
     const statements = (await generateSQLiteMigration(empty, snapshot)).map(statement => {
         const name = /^CREATE TABLE [`"]([^`"]+)[`"]/.exec(statement)?.[1];
+        if (name === "sync_refs") {
+            // Drizzle's SQLite foreign keys do not expose transaction-deferred checking.
+            const foreignKey = "FOREIGN KEY (`block_id`) REFERENCES `blocks`(`id`) ON UPDATE no action ON DELETE no action";
+            if (!statement.includes(foreignKey)) throw new Error("Expected the sync_refs block foreign key in generated SQL.");
+            statement = statement.replace(foreignKey, foreignKey + " DEFERRABLE INITIALLY DEFERRED");
+        }
         return options.strictTables.includes(name) ? statement.replace(/\);\s*$/, ") STRICT;") : statement;
     });
     return [...statements, ...splitSql(rules)].map(statement => statement.trim()).filter(Boolean).join(separator);

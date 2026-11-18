@@ -166,7 +166,7 @@
             const result = initial ? [] : scheduled.filter(row => !changed.has(row.id));
             for (const kind of ["task", "event"] as const) {
                 for (let offset = 0; ; offset += 200) {
-                    const batch = await window.api.knowledge.list({ kind, ids: initial ? undefined : ids, offset, limit: 200 });
+                    const batch = await window.api.pages.list({ kind, ids: initial ? undefined : ids, offset, limit: 200 });
                     result.push(...batch.items);
                     if (offset + batch.items.length >= batch.total) break;
                 }
@@ -174,14 +174,14 @@
             if (initial || noticesDirty) {
                 noticesDirty = false;
                 try {
-                    notices = await window.api.knowledge.notices();
+                    notices = await window.api.timers.notices();
                 }
                 catch (problem) {
                     noticesDirty = true;
                     throw problem;
                 }
             }
-            history = await window.api.knowledge.history(tabId);
+            history = await window.api.history.state(tabId);
             scheduled = result.sort((a, b) => Number(a.kind === "event") - Number(b.kind === "event")
                 || Number(b.attributes.modified_at) - Number(a.attributes.modified_at) || a.id.localeCompare(b.id));
             error = "";
@@ -202,16 +202,16 @@
     function toggle(id: string): void {
         void perform(async () => {
             await writeFromTab(tabId, async () => {
-                const { page } = await window.api.knowledge.readObjects(id, [id]);
+                const { page } = await window.api.pages.readObjects(id, [id]);
                 if (!page) throw new LabloomError({ kind: "page-missing" });
-                await confirmed(token => window.api.knowledge.commitEdit({ pageId: id, tabId, batch: 0, blocks: [], attributes: { task_status: page.attributes.task_status === "done" ? "todo" : "done" } }, token));
+                await confirmed(token => window.api.pages.commitEdit({ pageId: id, tabId, batch: 0, blocks: [], attributes: { task_status: page.attributes.task_status === "done" ? "todo" : "done" } }, token));
             });
         });
     }
     function read(notice: Notice): void {
         void perform(async () => {
             await writeFromTab(tabId, async () => {
-                await window.api.knowledge.readNotice(notice.pageId, notice.attrId, notice.leadSeconds, tabId);
+                await window.api.timers.readNotice(notice.pageId, notice.attrId, notice.leadSeconds, tabId);
                 openPage(notice.pageId);
             });
         });

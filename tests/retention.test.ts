@@ -1,11 +1,11 @@
+import { knowledgeServices, session, type Knowledge } from "./support/session";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
-import { KnowledgeService } from "../main/knowledge/service";
 import { rebuildSyncRefs } from "../main/storage/schema";
-import { createWorkspace } from "../main/storage/workspace";
+import { createWorkspace } from "./support/session";
 import { builtinAttrs } from "../shared/attrs/builtins";
 import { payload } from "../shared/content/blocks";
 import { type GraphPage, unreachablePages } from "../shared/content/lifecycle";
@@ -27,11 +27,11 @@ function reference(target: Target, inline: boolean): ContentBlock {
     return { id: randomUUID(), type, payload: body, children: [] };
 }
 
-function fixture(t: TestContext, graph: Graph): { service: KnowledgeService; sql: ReturnType<typeof createWorkspace>["database"] } {
+function fixture(t: TestContext, graph: Graph): { service: Knowledge; sql: ReturnType<typeof createWorkspace>["database"] } {
     const workspace = createWorkspace(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "retention-")));
     const sql = workspace.database;
-    const service = new KnowledgeService(workspace.db);
-    t.after(() => sql.close());
+    const service = knowledgeServices();
+    t.after(() => session.close());
     const insertBlock = sql.prepare("INSERT INTO blocks(id, type, content, children) VALUES (?, ?, ?, ?)");
     const insertPage = sql.prepare("INSERT INTO pages(id, kind, title_block_id, children) VALUES (?, 'editable', ?, ?)");
     const attr = sql.prepare("UPDATE page_attrs SET value = ? WHERE page_id = ? AND attr_id = ?");
@@ -51,9 +51,11 @@ function fixture(t: TestContext, graph: Graph): { service: KnowledgeService; sql
 }
 
 type Change = { children?: string[]; block?: ContentBlock; attributes?: GraphPage["attributes"] };
-function checkEdit(service: KnowledgeService, graph: Graph, item: GraphPage, change: Change, description: string): string[] {
-    const edit: EditCommit = { pageId: item.id, tabId: "graph-test", batch: 1,
-        pageChildren: change.children, attributes: change.attributes, blocks: change.block ? [change.block] : [] };
+function checkEdit(service: Knowledge, graph: Graph, item: GraphPage, change: Change, description: string): string[] {
+    const edit: EditCommit = {
+        pageId: item.id, tabId: "graph-test", batch: 1,
+        pageChildren: change.children, attributes: change.attributes, blocks: change.block ? [change.block] : []
+    };
     if (change.children) item.children = change.children;
     if (change.attributes) Object.assign(item.attributes, change.attributes);
     if (change.block) graph.blocks.set(change.block.id, change.block);
@@ -75,7 +77,7 @@ function checkEdit(service: KnowledgeService, graph: Graph, item: GraphPage, cha
     return expected;
 }
 
-function replaceBody(service: KnowledgeService, pageId: string, target: Target, inline: boolean): ContentBlock {
+function replaceBody(service: Knowledge, pageId: string, target: Target, inline: boolean): ContentBlock {
     const page = service.get(pageId);
     const block = { ...reference(target, inline), id: page.children[0] };
     const result = service.commitEdit({ pageId, tabId: "setup", batch: 1, blocks: [block] });
@@ -83,7 +85,7 @@ function replaceBody(service: KnowledgeService, pageId: string, target: Target, 
     return block;
 }
 
-function changeAttributes(service: KnowledgeService, pageId: string, attributes: GraphPage["attributes"]): void {
+function changeAttributes(service: Knowledge, pageId: string, attributes: GraphPage["attributes"]): void {
     assert.equal(service.commitEdit({ pageId, tabId: "setup", batch: 1, attributes, blocks: [] }).status, "saved");
 }
 

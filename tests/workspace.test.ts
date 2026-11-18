@@ -1,3 +1,4 @@
+import { attributeServices, startupServices, session } from "./support/session";
 import { hasFailure } from "./failures";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -6,11 +7,9 @@ import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import Database from "better-sqlite3";
 import { rebuildSyncRefs, workspaceFormatVersion } from "../main/storage/schema";
-import { createWorkspace, openWorkspace, type OpenWorkspace } from "../main/storage/workspace";
-import { AttributeService } from "../main/knowledge/attributes";
+import { createWorkspace, openWorkspace, type OpenWorkspace } from "./support/session";
 import { createWorkspaceDatabase } from "../main/storage/database";
-import { AppStorage } from "../main/storage/app";
-import { Startup } from "../main/startup/startup";
+import { defaultSettings } from "../shared/settings/defaults";
 
 const testRoot = process.env.LABLOOM_TEST_ROOT;
 if (!testRoot) throw new Error("Run these tests with node tests/run-workspace.mjs.");
@@ -33,7 +32,7 @@ function directory(): string {
 
 function track(t: TestContext, workspace: OpenWorkspace): OpenWorkspace {
     t.after(() => {
-        if (workspace.database.open) workspace.database.close();
+        session.close();
     });
     return workspace;
 }
@@ -57,7 +56,7 @@ function page(database: Database.Database, children: string[] = []): { id: strin
     const title = block(database, "title");
     database.prepare("INSERT INTO pages (id, kind, title_block_id, children) VALUES (?, 'editable', ?, ?)")
         .run(id, title, JSON.stringify(children));
-    new AttributeService(createWorkspaceDatabase(database)).initializePage(id);
+    attributeServices().initializePage(id);
     return { id, title };
 }
 
@@ -90,7 +89,7 @@ test("new workspaces contain the core and feed tables and reopen without changin
     assert.ok(Number.isSafeInteger(before.created_at));
     assert.equal(before.settings, "{}");
     assert.ok(existsSync(join(info.path, "attachments")));
-    database.close();
+    session.close();
     const reopened = track(t, openWorkspace(info.path, info.id));
     assert.deepEqual(meta(reopened.database), before);
     assert.equal(reopened.database.pragma("foreign_keys", { simple: true }), 1);
@@ -100,7 +99,7 @@ test("new workspaces contain the core and feed tables and reopen without changin
 const incompatible = { kind: "workspace-incompatible" };
 
 function files(root: string): Record<string, Buffer> {
-    return Object.fromEntries(readdirSync(root, { recursive: true, withFileTypes: true }).filter(entry => entry.isFile())
+    return Object.fromEntries(readdirSync(root, { recursive: true, withFileTypes: true }).filter(entry => entry.isFile() && !(entry.name === "workspace.lock" && entry.parentPath === root))
         .map(entry => [join(entry.parentPath, entry.name), readFileSync(join(entry.parentPath, entry.name))]));
 }
 
@@ -116,7 +115,7 @@ test("schema drift is rejected read-only even when the format marker is current"
         const { database, info } = fresh(t);
         writeFileSync(join(info.path, "attachments", "preserved.txt"), "Keep this attachment");
         database.exec(sql);
-        database.close();
+        session.close();
         const before = files(info.path), metadata = statSync(join(info.path, "workspace.sqlite"));
         assert.throws(() => openWorkspace(info.path), hasFailure("workspace-incompatible"));
         assert.deepEqual(files(info.path), before);
@@ -127,22 +126,22 @@ test("schema drift is rejected read-only even when the format marker is current"
 
 test("identity, application, format, and attachments are validated without changing files", t => {
     const mismatched = fresh(t);
-    mismatched.database.close();
+    session.close();
     assert.throws(() => openWorkspace(mismatched.info.path, randomUUID()), hasFailure("workspace-changed"));
     for (const version of [0, 17, workspaceFormatVersion + 1]) {
         const { database, info } = fresh(t);
         database.pragma(`user_version = ${version}`);
-        database.close();
+        session.close();
         const before = files(info.path);
         assert.throws(() => openWorkspace(info.path), hasFailure("workspace-incompatible"));
         assert.deepEqual(files(info.path), before);
     }
     const foreign = fresh(t);
     foreign.database.pragma("application_id = 1");
-    foreign.database.close();
+    session.close();
     assert.throws(() => openWorkspace(foreign.info.path), hasFailure("workspace-not-workspace"));
     const missing = fresh(t);
-    missing.database.close();
+    session.close();
     rmdirSync(join(missing.info.path, "attachments"));
     const before = files(missing.info.path);
     assert.throws(() => openWorkspace(missing.info.path), hasFailure("workspace-attachments-unavailable"));
@@ -152,11 +151,10 @@ test("identity, application, format, and attachments are validated without chang
 test("startup shows the incompatible workspace message on restore and manual open", t => {
     const { database, info } = fresh(t);
     database.exec("ALTER TABLE blocks ADD COLUMN obsolete TEXT");
-    database.close();
-    const storage = new AppStorage(directory());
-    storage.load();
-    storage.remember(info);
-    const startup = new Startup(storage);
+    session.close();
+    const root = directory();
+    writeFileSync(join(root, "settings.json"), JSON.stringify({ ...defaultSettings, lastWorkspace: info }));
+    const startup = startupServices(root);
     t.after(() => startup.close());
     const before = files(info.path);
     for (const state of [startup.restore(), startup.choose(info.path, "open")]) {
@@ -221,6 +219,51 @@ test("foreign keys, JSON shapes, and block-use positions reject invalid data ato
     assert.deepEqual(database.pragma("foreign_key_check"), []);
 });
 
+test("synchronous targets are checked at commit, permitting parent-first insertion and rolling back failed edits", t => {
+    const { database } = fresh(t), parent = block(database), created = page(database, [parent]);
+    const missing = randomUUID(), before = database.serialize();
+    let reachedCommit = false;
+    assert.throws(() => database.transaction(() => {
+        database.prepare("UPDATE blocks SET children=? WHERE id=?").run(JSON.stringify([missing]), parent);
+        database.prepare("UPDATE pages SET children=? WHERE id=?").run(JSON.stringify([parent, missing]), created.id);
+        reachedCommit = true;
+    })(), /FOREIGN KEY/);
+    assert.equal(reachedCommit, true, "the writes themselves are deferred until commit");
+    assert.deepEqual(database.serialize(), before);
+    database.transaction(() => {
+        database.prepare("UPDATE blocks SET children=? WHERE id=?").run(JSON.stringify([missing]), parent);
+        database.prepare("INSERT INTO blocks(id,type) VALUES (?,'paragraph')").run(missing);
+    })();
+    const saved = database.serialize();
+    assert.throws(() => database.transaction(() => database.prepare("DELETE FROM blocks WHERE id=?").run(missing))(), /FOREIGN KEY/);
+    assert.deepEqual(database.serialize(), saved);
+    assert.deepEqual(database.pragma("foreign_key_check"), []);
+});
+
+test("link source deletion triggers clear only the vanished source and preserve soft targets", t => {
+    const { database } = fresh(t), source = page(database), other = page(database), content = block(database);
+    database.exec("INSERT INTO attrs_meta(id,type,name) VALUES ('custom:link','page-link','Link'),('custom:file','file','File')");
+    const attr = database.prepare("INSERT INTO page_attrs(page_id,attr_id,value) VALUES (?,?,?)");
+    attr.run(source.id, "custom:link", other.id);
+    attr.run(source.id, "custom:file", "missing-file");
+    attr.run(other.id, "custom:link", source.id);
+    const link = database.prepare("INSERT INTO link_refs VALUES (?,?,?,?,?)");
+    link.run("page", source.id, "custom:link", "page", other.id);
+    link.run("page", source.id, "custom:file", "file", "missing-file");
+    link.run("page", other.id, "custom:link", "page", source.id);
+    link.run("block", content, "payload", "block", source.title);
+    database.prepare("DELETE FROM page_attrs WHERE page_id=? AND attr_id='custom:link'").run(source.id);
+    assert.equal(database.prepare("SELECT count(*) FROM link_refs WHERE source_id=?").pluck().get(source.id), 1);
+    database.prepare("DELETE FROM blocks WHERE id=?").run(content);
+    assert.equal(database.prepare("SELECT count(*) FROM link_refs WHERE source_kind='block'").pluck().get(), 0);
+    database.prepare("DELETE FROM pages WHERE id=?").run(source.id);
+    assert.equal(database.prepare("SELECT count(*) FROM link_refs WHERE source_id=?").pluck().get(source.id), 0);
+    assert.equal(database.prepare("SELECT target_id FROM link_refs WHERE source_id=?").pluck().get(other.id), source.id);
+    database.prepare("DELETE FROM page_attrs WHERE attr_id='custom:link'").run();
+    database.prepare("DELETE FROM attrs_meta WHERE id='custom:link'").run();
+    assert.equal(database.prepare("SELECT count(*) FROM link_refs").pluck().get(), 0);
+});
+
 test("reverse lookup tracks shared and repeated blocks, titles, nesting, and reordering", t => {
     const { database } = fresh(t);
     const shared = block(database);
@@ -247,13 +290,17 @@ test("reverse lookup tracks shared and repeated blocks, titles, nesting, and reo
     assert.equal(database.prepare("SELECT count(*) FROM sync_refs WHERE block_id = ?").pluck().get(first.title), 0);
     assert.deepEqual(database.prepare("SELECT block_id FROM sync_refs WHERE container_id = ? AND slot = 'title'").get(first.id), { block_id: nextTitle });
 
-    // Removing a target retains the source reference so the UI can show it as missing.
-    database.prepare("DELETE FROM blocks WHERE id = ?").run(shared);
+    // A synchronous target cannot disappear while a source still names it.
+    assert.throws(() => database.transaction(() => database.prepare("DELETE FROM blocks WHERE id = ?").run(shared))(), /FOREIGN KEY/);
     assert.equal(database.prepare("SELECT count(*) FROM sync_refs WHERE block_id = ?").pluck().get(shared), 1);
     database.prepare("UPDATE blocks SET children = ? WHERE id = ?").run(JSON.stringify([shared]), nested);
-    database.prepare("DELETE FROM blocks WHERE id = ?").run(nested);
+    database.transaction(() => {
+        database.prepare("UPDATE pages SET children = '[]' WHERE id = ?").run(first.id);
+        database.prepare("DELETE FROM blocks WHERE id = ?").run(nested);
+        database.prepare("DELETE FROM blocks WHERE id = ?").run(shared);
+    })();
     assert.equal(database.prepare("SELECT count(*) FROM sync_refs WHERE container_kind = 'block' AND container_id = ?").pluck().get(nested), 0);
-    assert.equal(database.prepare("SELECT count(*) FROM sync_refs WHERE block_id = ?").pluck().get(nested), 1);
+    assert.equal(database.prepare("SELECT count(*) FROM sync_refs WHERE block_id = ?").pluck().get(nested), 0);
 });
 
 test("rollback restores source data, derived uses, and last_modified_at together", t => {
@@ -277,12 +324,13 @@ test("rollback restores source data, derived uses, and last_modified_at together
 
 test("the reverse index can be rebuilt without modifying business data or timestamps", t => {
     const { database } = fresh(t);
-    const missing = randomUUID();
-    const nested = block(database, "blockquote", [missing]);
+    const child = block(database);
+    const nested = block(database, "blockquote", [child]);
     page(database, [nested, nested]);
     const before = uses(database);
     const beforeMeta = meta(database);
-    database.exec("DELETE FROM sync_refs; INSERT INTO sync_refs VALUES ('page', 'stale-container', 'children', 0, 'stale-target');");
+    database.prepare("DELETE FROM sync_refs").run();
+    database.prepare("INSERT INTO sync_refs VALUES ('page', 'stale-container', 'children', 0, ?)").run(child);
     rebuildSyncRefs(database);
     assert.deepEqual(uses(database), before);
     assert.deepEqual(meta(database), beforeMeta);

@@ -1,5 +1,5 @@
 import type { AppAPI } from "../shared/app";
-import type { BridgeAPI } from "../shared/failure";
+import type { BridgeAPI } from "../shared/ipc/bridge";
 
 declare global {
     interface Window {

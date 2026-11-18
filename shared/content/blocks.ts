@@ -41,7 +41,7 @@ export function validateBlock(value: unknown): asserts value is ContentBlock {
         }
         else if (node.type !== "hardBreak") throw new LabloomError({ kind: "block-inline-only" });
     }
-    if (value.type === "title" && (value.children.length || blockText(value as ContentBlock).length > 1000)) throw new LabloomError({ kind: "block-invalid-title" });
+    if (value.type === "title" && value.children.length) throw new LabloomError({ kind: "block-invalid-title" });
     if (["title", "heading_1", "heading_2", "heading_3", "code", "table", "hr", "blocked_reference"].includes(String(value.type)) && value.children.length) throw new LabloomError({ kind: "block-no-children" });
     if (value.type === "blocked_reference" && body.target !== null && !validTarget(body.target)) throw new LabloomError({ kind: "block-reference-required" });
     if (value.type !== "blocked_reference" && body.target !== undefined) throw new LabloomError({ kind: "block-reference-only" });

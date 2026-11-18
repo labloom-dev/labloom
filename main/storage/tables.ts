@@ -62,8 +62,7 @@ export const syncRefs = sqliteTable("sync_refs", {
     containerId: text("container_id").notNull(),
     slot: text("slot", { enum: ["title", "children"] }).notNull(),
     position: integer("position").notNull(),
-    // Missing targets are retained so a broken reference can still be displayed.
-    blockId: text("block_id").notNull()
+    blockId: text("block_id").notNull().references(() => blocks.id)
 }, table => [
     primaryKey({ columns: [table.containerKind, table.containerId, table.slot, table.position] }),
     index("sync_refs_by_block").on(table.blockId),
@@ -89,7 +88,6 @@ export const feedItems = sqliteTable("feed_items", {
     // False when the source only offered a summary for this item.
     fullContent: integer("has_full_content", { mode: "boolean" }).notNull().default(false),
     publishedAt: integer("published_at"),
-    originSnapshot: text("origin_snapshot", { mode: "json" }).$type<import("../../shared/types/feed").FeedOrigin>(),
     isRead: integer("is_read", { mode: "boolean" }).notNull().default(false),
     readingPosition: text("reading_position", { mode: "json" }).$type<import("../../shared/types/feed").FeedPosition>(),
     paperId: text("paper_id"),

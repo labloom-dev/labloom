@@ -1,11 +1,10 @@
+import { knowledgeServices, historyServices, session, type Knowledge } from "./support/session";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
-import { KnowledgeService } from "../main/knowledge/service";
-import { EditHistory } from "../main/knowledge/history";
-import { createWorkspace, openWorkspace } from "../main/storage/workspace";
+import { createWorkspace, openWorkspace } from "./support/session";
 import { builtinAttrs } from "../shared/attrs/builtins";
 import { convertValue } from "../shared/attrs/convert";
 import { display, search } from "../shared/attrs/format";
@@ -17,13 +16,13 @@ const definition = (type: AttributeType, id = "custom:" + randomUUID()): Attribu
 const zone = "Asia/Shanghai";
 const instant = Date.UTC(2026, 10, 7, 17, 12, 56) / 1000;
 
-function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { service: KnowledgeService; setZone: (value: string) => void } {
-    const workspace = createWorkspace(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "time-precision-")));
+function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { service: Knowledge; setZone: (value: string) => void } {
+    const workspace = createWorkspace(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "time-precision-")), { timeZone: () => timeZone });
     t.after(() => {
-        if (workspace.database.open) workspace.database.close();
+        session.close();
     });
     let timeZone = zone;
-    const service = new KnowledgeService(workspace.db, () => timeZone);
+    const service = knowledgeServices();
     return { ...workspace, service, setZone: (value: string) => timeZone = value };
 }
 
@@ -128,7 +127,7 @@ test("all precisions persist as SQLite integers and rejected writes roll back at
 
 test("definition preview and commit share conversion, invalidate undo, and refresh tokens after a zone change", t => {
     const { service, setZone } = fixture(t);
-    const history = new EditHistory(service);
+    const history = historyServices();
     const page = service.create("editable", "A"), def = definition("minute");
     service.setDefinition(def.id, def, "manager");
     assert.equal(service.commitEdit({ pageId: page.id, tabId: "editor", batch: 1, blocks: [], attributes: { [def.id]: instant } }).status, "saved");
@@ -165,10 +164,10 @@ test("calendar search and grouping stay on the same day after changing zones and
         assert.equal(scheduleDay(service.get(event.id).attributes, timeZone), "2026-11-11");
         assert.equal(scheduleDay(service.get(task.id).attributes, timeZone), secondsToWall(instant, timeZone).slice(0, 10));
     }
-    database.close();
-    const reopened = openWorkspace(info.path);
-    t.after(() => reopened.database.close());
-    const next = new KnowledgeService(reopened.db, () => "America/New_York");
+    session.close();
+    const reopened = openWorkspace(info.path, undefined, { timeZone: () => "America/New_York" });
+    t.after(() => session.close());
+    const next = knowledgeServices();
     assert.equal(next.get(event.id).attributes.schedule_date, day);
     assert.equal(next.list({ keyword: "2026-11-11" }).total, 2);
     assert.equal(scheduleDay(next.get(event.id).attributes, "America/New_York"), "2026-11-11");

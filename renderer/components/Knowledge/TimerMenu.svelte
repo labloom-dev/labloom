@@ -27,7 +27,7 @@
         const pageId = session.state.page?.id, attrId = definition.id;
         if (!pageId) return;
         let active = true;
-        void window.api.knowledge.timers(pageId).then(settings => {
+        void window.api.timers.settings(pageId).then(settings => {
             if (active) selected = settings[attrId] ?? [];
         }, problem => {
             if (active) error = failure(problem);
@@ -42,8 +42,8 @@
         try {
             await writeFromTab(session.tabId, async () => {
                 const pageId = session.state.page!.id;
-                await window.api.knowledge.setTimer(pageId, definition.id, seconds, !selected.includes(seconds), session.tabId);
-                selected = (await window.api.knowledge.timers(pageId))[definition.id] ?? [];
+                await window.api.timers.set(pageId, definition.id, seconds, !selected.includes(seconds), session.tabId);
+                selected = (await window.api.timers.settings(pageId))[definition.id] ?? [];
             });
             error = "";
         }

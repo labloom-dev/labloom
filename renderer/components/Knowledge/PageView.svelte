@@ -76,6 +76,6 @@
         }
     });
     function trash(): void {
-        void perform(() => current.action(token => page!.attributes.deleted ? window.api.knowledge.restore([tab.pageId], tab.id) : window.api.knowledge.trash([tab.pageId], tab.id, token)));
+        void perform(() => current.action(token => page!.attributes.deleted ? window.api.pages.restore([tab.pageId], tab.id) : window.api.pages.trash([tab.pageId], tab.id, token)));
     }
 </script>

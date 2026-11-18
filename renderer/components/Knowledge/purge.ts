@@ -3,7 +3,7 @@ import { ask } from "./state.svelte";
 import { t } from "../../i18n.svelte";
 
 export async function purgePages(ids: string[] | null, tabId: string): Promise<boolean> {
-    const submit = (token?: string): Promise<PurgeResult> => ids === null ? window.api.knowledge.emptyTrash(tabId, token) : window.api.knowledge.purge(ids, tabId, token);
+    const submit = (token?: string): Promise<PurgeResult> => ids === null ? window.api.pages.emptyTrash(tabId, token) : window.api.pages.purge(ids, tabId, token);
     let result = await submit();
     while (result.status === "confirmation") {
         const preview = result;
