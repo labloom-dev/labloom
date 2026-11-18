@@ -1,7 +1,6 @@
 import { Node as ExtensionNode, type JSONContent } from "@tiptap/core";
 import { Document } from "@tiptap/extension-document";
 import { Text } from "@tiptap/extension-text";
-
 import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
 import { type Node as DocNode, type Schema } from "@tiptap/pm/model";
 import { payload, references } from "../../../shared/content/blocks";
@@ -13,6 +12,7 @@ import strike from "./extensions/mark/strike";
 import code from "./extensions/mark/code";
 import fgColor from "./extensions/mark/fgColor";
 import bgColor from "./extensions/mark/bgColor";
+import { LabloomError } from "../../../shared/failure";
 
 const blockAttrs = (): Record<string, { default: null; rendered: boolean }> => ({ blockId: { default: null, rendered: false }, collapsed: { default: null, rendered: false } });
 const domAttrs = (node: DocNode): Record<string, string> => ({ "data-block-id": node.attrs.blockId, "data-kind": kindOf(node), ...(node.attrs.collapsed ? { "data-folded": "true" } : {}) });
@@ -51,32 +51,19 @@ const inlineReference = ExtensionNode.create({
     parseHTML: () => [{ tag: "span[data-inline-target]", getAttrs: el => ({ target: { kind: el.dataset.targetKind, id: el.dataset.inlineTarget }, label: el.textContent?.replace(/^↗ /u, "") }) }],
     renderHTML: ({ node }) => ["span", { class: "inline-reference", "data-inline-target": node.attrs.target?.id, "data-target-kind": node.attrs.target?.kind }, "↗ " + node.attrs.label]
 });
-function atom(name: "hr" | "blocked_reference" | "source"): ExtensionNode {
+function atom(name: "hr" | "blocked_reference"): ExtensionNode {
     return ExtensionNode.create({
         name, group: "workspaceBlock", atom: true, selectable: true,
-        addAttributes: () => ({ ...blockAttrs(), ...name === "blocked_reference" ? { target: { default: null } } : name === "source" ? { source: { default: null } } : {} }),
-        renderHTML: ({ node }) => ["div", domAttrs(node), name === "hr" ? ["hr"] : name === "source" ? "原文片段" : "链接引用"],
+        addAttributes: () => ({ ...blockAttrs(), ...name === "blocked_reference" ? { target: { default: null } } : {} }),
+        renderHTML: ({ node }) => ["div", domAttrs(node), name === "hr" ? ["hr"] : "链接引用"],
         addNodeView: () => ({ node }) => {
             const dom = document.createElement("div");
             dom.dataset.blockId = node.attrs.blockId;
             dom.dataset.kind = name;
             dom.contentEditable = "false";
             if (name === "hr") dom.append(document.createElement("hr"));
-            let active = true;
-            if (name === "source") {
-                dom.textContent = "正在读取原文…";
-                const anchorId = node.attrs.source?.anchorId;
-                if (anchorId) void window.api.knowledge.getAnchor(anchorId).then(anchor => {
-                    if (active) dom.textContent = anchor.quote;
-                }).catch(() => {
-                    if (active) dom.textContent = "原文暂时无法读取";
-                });
-                else dom.textContent = "原文暂时无法读取";
-            }
-            else if (name !== "hr") dom.textContent = "引用目标缺失";
-            return { dom, destroy: () => {
-                active = false;
-            } };
+            else dom.textContent = "引用目标缺失";
+            return { dom };
         }
     });
 }
@@ -90,19 +77,19 @@ const HardBreak = ExtensionNode.create({
 export const referenceBlock = atom("blocked_reference");
 export const documentExtensions = [Document.extend({ content: "pageTitle workspaceBlock*" }), title, block, body, table,
 Table.configure({ resizable: false }), TableRow, TableCell.extend({ content: "paragraph+" }), TableHeader.extend({ content: "paragraph+" }),
-    cellParagraph, atom("hr"), atom("source"), referenceBlock, inlineReference, Text, HardBreak, bold, italic, underline, strike, code, fgColor, bgColor];
+    cellParagraph, atom("hr"), referenceBlock, inlineReference, Text, HardBreak, bold, italic, underline, strike, code, fgColor, bgColor];
 export const blankTable = (): RichNode => ({ type: "table", content: Array.from({ length: 2 }, () => ({ type: "tableRow", content: Array.from({ length: 2 }, () => ({ type: "tableCell", content: [{ type: "paragraph", content: [] }] })) })) });
 
 export function blockJSON(b: ContentBlock, children: JSONContent[] = []): JSONContent {
     const attrs = { blockId: b.id, collapsed: b.payload.collapsed };
     if (b.type === "title") return { type: "pageTitle", attrs, content: b.payload.inline };
     if (b.type === "table") return { type: "pageTable", attrs, content: [b.payload.table ?? blankTable()] };
-    if (b.type === "hr" || b.type === "source" || b.type === "blocked_reference") return { type: b.type, attrs: { ...attrs, target: b.payload.target, source: b.payload.source } };
+    if (b.type === "hr" || b.type === "blocked_reference") return { type: b.type, attrs: { ...attrs, target: b.payload.target } };
     return { type: "pageBlock", attrs: { ...attrs, kind: b.type }, content: [{ type: "blockBody", content: b.payload.inline }, ...children] };
 }
 export function subtree(id: string, blocks: PageRecord["blocks"]): JSONContent {
     const b = blocks[id];
-    if (!b) throw new Error("找不到页面中的块 " + id);
+    if (!b) throw new LabloomError({ kind: "block-missing", blockId: id });
     return blockJSON(b, b.children.map(child => subtree(child, blocks)));
 }
 export function pageDocument(page: PageRecord): JSONContent {
@@ -136,7 +123,6 @@ export function blockData(node: DocNode): ContentBlock {
     const type = kindOf(node), value = payload(type);
     if (node.attrs.collapsed != null) value.collapsed = node.attrs.collapsed;
     if (type === "table") value.table = tableData(node.firstChild!);
-    else if (type === "source") value.source = node.attrs.source;
     else if (type === "blocked_reference") value.target = node.attrs.target;
     else if (node.type.name === "pageBlock" || type === "title") value.inline = ((type === "title" ? node : node.firstChild!).content.toJSON() ?? []) as InlineNode[];
     return { id: node.attrs.blockId, type, payload: value, children: childIds(node) };

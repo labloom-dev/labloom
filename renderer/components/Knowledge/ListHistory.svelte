@@ -16,8 +16,8 @@
     let { tabId, history = $bindable() }: { tabId: string; history: HistoryState } = $props();
     function apply(direction: "undo" | "redo", branch?: string): void {
         void perform(async () => {
-            await writeFromTab(tabId, () => confirmed(token => window.api.knowledge.undo(tabId, direction, branch, token)));
-            history = await window.api.knowledge.history(tabId);
+            await writeFromTab(tabId, () => confirmed(token => window.api.history.apply(tabId, direction, branch, token)));
+            history = await window.api.history.state(tabId);
         });
     }
 </script>

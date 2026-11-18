@@ -53,23 +53,35 @@
                             {@html redoIcon}
                         </span>
                     </Toolbar.Button>
+                    {#if session.state.history.redo.length > 1}<button class="branch-button" aria-label="选择重做分支" onclick={() => {
+                        if (!branches || !element) return;
+                        branches.showPopover();
+                        const rect = element.getBoundingClientRect(); branches.style.left = rect.left + "px"; branches.style.top = rect.bottom + "px";
+                    }}>▾</button>{/if}
                 </div>
             </div>
         </div>
     {/snippet}
 </Toolbar.Root>
+<div class="compact-menu" popover="auto" bind:this={branches} style="position:fixed;inset:auto;margin:0" onmousedown={keepSelection}>
+    {#each session.state.history.redo as branch (branch.id)}<button class="compact-item" onclick={() => {
+        branches?.hidePopover(); void session.undo("redo", branch.id);
+    }}>{displayMilliseconds(branch.time)}</button>{/each}
+</div>
+
 
 
 <style>
     .toolbar {
         max-width: calc(100vw - 16px);
-        padding: .25rem;
+        height: var(--pagebar-height);
+        padding: 1px;
         overflow: visible;
-        border: 1.5px solid var(--dc-c-popover-text);
-        border-radius: .5rem;
+        border: var(--border-width) solid var(--dc-c-popover-border);
+        border-radius: var(--control-radius);
         color: var(--dc-c-popover-text);
         background: var(--dc-c-surface);
-        box-shadow: 3px 4px 0 var(--dc-c-popover-text);
+        box-shadow: 0 3px 12px #0002;
         font-size: .8125rem;
     }
     .actions, .history-actions {
@@ -90,9 +102,9 @@
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        min-width: 2rem;
-        height: 2rem;
-        padding: 0 .5rem;
+        min-width: var(--button-height);
+        height: var(--button-height);
+        padding: 0 5px;
         white-space: nowrap;
     }
     .toolbar :global(button:hover:not(:disabled)) {
@@ -141,11 +153,13 @@
     import undoIcon from "../../assets/carbon--undo.svg?raw";
     import redoIcon from "../../assets/carbon--redo.svg?raw";
 
-    let { editor, dock }: { editor: Editor; dock: HTMLDivElement } = $props();
+    import type { PageSession } from "../Knowledge/state.svelte";
+    import { displayMilliseconds } from "../layout/preferences.svelte";
+    let { editor, session }: { editor: Editor; session: PageSession } = $props();
+    let branches = $state<HTMLDivElement>();
     let element = $state<HTMLDivElement>();
     let colorElement = $state<HTMLDivElement | null>(null);
     let colorOpen = $state(false);
-    const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 
     const formats = [
         { name: "bold", label: "加粗", icon: boldIcon },
@@ -248,12 +262,14 @@
             }
 
             if (!menu.matches(":popover-open")) menu.showPopover();
-            const bounds = dock.getBoundingClientRect();
+            const bounds = (dom.closest(".annotation-popover") ?? dom.closest(".main-content") ?? dom.closest(".group-content") ?? dom).getBoundingClientRect();
             menu.style.maxWidth = Math.max(40, Math.min(bounds.width, viewport.width)) + "px";
             const { width, height } = menu.getBoundingClientRect();
             const left = Math.max(bounds.left, viewport.left, Math.min(rect.left, bounds.right - width, viewport.right - width));
             menu.style.left = left + "px";
-            menu.style.top = (bounds.top + Math.max(0, (bounds.height - height) / 2)) + "px";
+            const ceiling = Math.max(bounds.top, dom.closest(".group-content")?.getBoundingClientRect().top ?? 0);
+            const top = rect.top - height - 4 >= ceiling ? rect.top - height - 4 : rect.bottom + 4;
+            menu.style.top = Math.max(ceiling, Math.min(top, window.innerHeight - height - 4)) + "px";
         }
 
         function update(): void {
@@ -275,7 +291,7 @@
         }
 
         function pointerDown(event: PointerEvent): void {
-            if (menu.contains(event.target as Node) || colorElement?.contains(event.target as Node)) return;
+            if (menu.contains(event.target as Node) || colorElement?.contains(event.target as Node) || event.target instanceof Element && event.target.closest(".menubar,.compact-menu,.block-menu")) return;
             const inside = dom.contains(event.target as Node);
             selecting = event.button === 0 && inside;
             pointerSelection = selecting;
@@ -304,13 +320,6 @@
             if (event.defaultPrevented || event.isComposing || event.key === "Process") return;
             const target = event.target as Node;
             if (!dom.contains(target) && !menu.contains(target) && !colorElement?.contains(target)) return;
-            const modifier = isMac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
-            if (modifier && !event.altKey && !event.shiftKey && event.code === "KeyW" && instance?.isEditable && !instance.isDestroyed) {
-                event.preventDefault();
-                event.stopImmediatePropagation();
-                if (!event.repeat) clearFormat();
-                return;
-            }
             if (event.key !== "Escape" || event.defaultPrevented || event.repeat || colorOpen || !menu.matches(":popover-open")) return;
             if (!dom.contains(event.target as Node) && !menu.contains(event.target as Node)) return;
             event.preventDefault();

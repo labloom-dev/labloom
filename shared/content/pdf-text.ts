@@ -18,7 +18,8 @@ export function charactersFromTextContent(content: { items: readonly unknown[] }
     return content.items.flatMap(item => {
         if (!item || typeof item !== "object" || !("str" in item)) return [];
         const patched = item as { str: string; characters?: PdfCharacter[] };
-        if (!patched.characters && patched.str.trim()) throw new Error("PDF 字符提取器补丁未生效");
+        // Internal assertion: the bundled PDF extractor must include the maintained character-cell patch.
+        if (!patched.characters && patched.str.trim()) throw new Error("The PDF character extractor patch is inactive.");
         return patched.characters ?? [];
     });
 }

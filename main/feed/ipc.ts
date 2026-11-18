@@ -1,25 +1,31 @@
-import { net, shell, type WebContents } from "electron";
-import type { FeedQuery, FeedSourceInput } from "../../shared/types/feed";
-import { feedChannels } from "../../shared/ipc";
-import { handle } from "../ipc";
-import type { Startup } from "../startup/startup";
-import { fetchFeed } from "./parser";
-import { FeedService } from "./service";
+import { shell, type BrowserWindow } from "electron";
+import typia from "typia";
+import { feedChannels, feedChanged, type FeedAPI } from "../../shared/feed/ipc";
+import { invalid, register, route, type Routes } from "../ipc";
+import * as events from "../knowledge/events";
+import * as feed from "./service";
 
-// Shared by every window, so refreshes of one source never run twice.
-let service: FeedService | undefined;
+type Args<Key extends keyof typeof feedChannels> = Parameters<FeedAPI[Key]>;
 
-export function registerFeedIPCs(contents: WebContents, startup: Startup): void {
-    function feed(): FeedService {
-        service ??= new FeedService(startup.getDatabase(), url => fetchFeed(url, net.fetch));
-        return service;
-    }
-
-    // FeedService validates the shape of each argument itself.
-    handle(contents, feedChannels.getState, query => feed().getState(query as FeedQuery));
-    handle(contents, feedChannels.saveSource, source => feed().saveSource(source as FeedSourceInput));
-    handle(contents, feedChannels.removeSource, id => feed().removeSource(id as string));
-    handle(contents, feedChannels.refresh, sourceId => feed().refresh(sourceId as string | undefined));
-    handle(contents, feedChannels.setRead, (id, isRead) => feed().setRead(id as string, isRead as boolean));
-    handle(contents, feedChannels.openItem, id => shell.openExternal(feed().itemURL(id as string)));
+export const routes = {
+    getState: route(typia.createAssert<Args<"getState">>(invalid), feed.getState),
+    getItem: route(typia.createAssert<Args<"getItem">>(invalid), feed.getItem),
+    saveSource: route(typia.createAssert<Args<"saveSource">>(invalid), feed.saveSource),
+    setSourceStatus: route(typia.createAssert<Args<"setSourceStatus">>(invalid), feed.setSourceStatus),
+    refresh: route(typia.createAssert<Args<"refresh">>(invalid), feed.refresh),
+    setRead: route(typia.createAssert<Args<"setRead">>(invalid), feed.setRead),
+    markAllRead: route(typia.createAssert<Args<"markAllRead">>(invalid), feed.markAllRead),
+    setPosition: route(typia.createAssert<Args<"setPosition">>(invalid), feed.setPosition),
+    setKeywords: route(typia.createAssert<Args<"setKeywords">>(invalid), feed.setKeywords),
+    importItem: route(typia.createAssert<Args<"importItem">>(invalid), feed.importItem),
+    fetchPDF: route(typia.createAssert<Args<"fetchPDF">>(invalid), feed.fetchPDF),
+    openItem: route(typia.createAssert<Args<"openItem">>(invalid), id => shell.openExternal(feed.itemURL(id)))
+} satisfies Routes<FeedAPI>;
+export function registerFeedIPCs(window: BrowserWindow): void {
+    const contents = window.webContents;
+    register(contents, feedChannels, routes);
+    const unsubscribe = events.subscribe(event => {
+        if (event.type === "feed" && !contents.isDestroyed()) contents.send(feedChanged);
+    });
+    contents.once("destroyed", unsubscribe);
 }

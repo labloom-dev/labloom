@@ -35,17 +35,18 @@
         {:else if status.kind === "password"}
             <form class="overlay" onsubmit={submitPassword}>
                 <p class:error={status.incorrect}>
-                    {status.incorrect ? "密码错误，请重新输入。" : "此 PDF 受密码保护，请输入密码。"}
+                    {t(status.incorrect ? "failure.pdf-password-incorrect" : "failure.pdf-password-required")}
                 </p>
-                <input aria-label="PDF 密码" type="password" autocomplete="off" bind:value={password} {@attach element => element.focus()} />
+                <input aria-label={t("dialog.pdfPassword")} type="password" autocomplete="off" bind:value={password} {@attach element => element.focus()} />
                 <div class="actions">
-                    <button type="submit" class="primary" disabled={!password}>打开</button>
-                    <button type="button" onclick={cancelPassword}>取消</button>
+                    <button type="submit" class="primary" disabled={!password}>{t("dialog.open")}</button>
+                    <button type="button" onclick={cancelPassword}>{t("dialog.cancel")}</button>
                 </div>
             </form>
         {:else if status.kind === "error"}
             <div class="overlay">
-                <p class="error">{status.error.message}</p>
+                <p class="error">{message(status.error)}</p>
+                {#if status.error.diagnostic}<details><summary>{t("dialog.details")}</summary><p>{status.error.diagnostic}</p></details>{/if}
             </div>
         {/if}
     </div>
@@ -139,11 +140,13 @@
 
 
 <script lang="ts">
+    import { message, t } from "../../i18n.svelte";
     import { onMount, untrack } from "svelte";
     import Bloom from "../utils/Bloom.svelte";
     import Toolbar from "./Toolbar.svelte";
     import type { ReaderError, ReaderFindStatus, ReaderScale, ReaderSource, ReaderViewState } from "./defs";
-    import { type Anchor, type AnchorInput, type Highlight } from "../../../shared/types/papers";
+    import { type PaperAnnotation, type AnnotationInput } from "../../../shared/types/papers";
+    import { annotationColors } from "../../../shared/content/annotations";
     import { charactersFromTextContent, extractText, hitTest, lineRange, wordRange, selectionRectangles, PDF_EXTRACTOR_VERSION, type PdfCharacter } from "../../../shared/content/pdf-text";
     import {
         applyViewState, createViewer, FindState, getViewState, hasText, loadDocument, PasswordResponses,
@@ -159,9 +162,8 @@
         onError?: (error: ReaderError) => void;
         onPasswordAccepted?: (password: string) => Promise<void>;
         fileId?: string;
-        anchors?: Anchor[];
-        highlights?: Highlight[];
-        onSelection?: (selection: AnchorInput | null, position?: { x: number; y: number }) => void;
+        annotations?: PaperAnnotation[];
+        onSelection?: (selection: AnnotationInput | null, position?: { x: number; y: number }) => void;
         onHighlight?: (id: string, position: { x: number; y: number }, annotation?: boolean) => void;
     };
 
@@ -172,7 +174,7 @@
         | { kind: "ready" }
         | { kind: "error"; error: ReaderError };
 
-    const { source, viewState, onViewStateChange, onError, onPasswordAccepted, fileId, anchors = [], highlights = [], onSelection, onHighlight }: Props = $props();
+    const { source, viewState, onViewStateChange, onError, onPasswordAccepted, fileId, annotations = [], onSelection, onHighlight }: Props = $props();
 
     const viewStateReportDelay = 250;
 
@@ -198,7 +200,6 @@
     let reportTimer: ReturnType<typeof setTimeout> | null = null;
     let findQuery = "";
     let textCheck: Promise<boolean> | null = null;
-    let anchorToOpen: Anchor | null = null;
     let acceptedPassword = "";
 
     onMount(() => {
@@ -209,7 +210,6 @@
             if (viewState) applyViewState(viewer, viewState);
             else viewer.currentScaleValue = "auto";
             restoring = false;
-            if (anchorToOpen) goToAnchor(anchorToOpen);
         });
         eventBus.on("pagechanging", ({ pageNumber: value }: { pageNumber: number }) => {
             pageNumber = value;
@@ -227,7 +227,6 @@
         eventBus.on("pagerendered", ({ pageNumber }: { pageNumber: number }) => {
             void loadCharacters(pageNumber);
             paintHighlights();
-            if (anchorToOpen) goToAnchor(anchorToOpen);
         });
         eventBus.on("rotationchanging", paintHighlights);
         eventBus.on("updatefindmatchescount", ({ matchesCount }: { matchesCount: { current: number; total: number } }) => {
@@ -240,7 +239,7 @@
     });
 
     $effect(() => {
-        void anchors; void highlights; const viewer = pdf; if (viewer) untrack(paintHighlights);
+        void annotations; const viewer = pdf; if (viewer) untrack(paintHighlights);
     });
 
     // Character geometry lives in PDF user space. DOM text remains for find/accessibility only.
@@ -250,7 +249,7 @@
     // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const pendingCharacters = new Map<number, Promise<void>>();
     let drag: { page: number; start: number; end: number; initial: [number, number]; unit: number; pointer: number } | null = null;
-    let selected: AnchorInput | null = null;
+    let selected: AnnotationInput | null = null;
     let clicks = { time: 0, x: 0, y: 0, count: 0 };
     const feedback: number[] = [];
     function afterPaint(callback: () => void): void {
@@ -347,7 +346,7 @@
         if (report) onSelection?.(selected, selected ? selectionPosition(selected) : undefined);
         else onSelection?.(null);
     }
-    function selectionPosition(anchor: AnchorInput): { x: number; y: number } {
+    function selectionPosition(anchor: AnnotationInput): { x: number; y: number } {
         const view = pdf!.viewer.getPageView(anchor.pageNumber - 1), rect = anchor.rectangles.at(-1)!;
         const [x, y] = view.viewport.convertToViewportPoint(rect.x + rect.width, rect.y);
         const bounds = view.div.getBoundingClientRect();
@@ -365,7 +364,7 @@
         // Use exactly the same rectangle rule as the persisted cache.
         event.clipboardData?.setData("text/plain", extractText(characters.get(selected.pageNumber) ?? [], selected.rectangles));
     }
-    function drawRectangle(layer: HTMLElement, rect: Anchor["rectangles"][number], number: number, color: string): HTMLElement {
+    function drawRectangle(layer: HTMLElement, rect: PaperAnnotation["rectangles"][number], number: number, color: string): HTMLElement {
         const view = pdf!.viewer.getPageView(number - 1);
         const [x1, y1] = view.viewport.convertToViewportPoint(rect.x, rect.y);
         const [x2, y2] = view.viewport.convertToViewportPoint(rect.x + rect.width, rect.y + rect.height);
@@ -389,8 +388,8 @@
     function paintHighlights(): void {
         if (!pdf) return;
         container.querySelectorAll(".knowledge-highlights").forEach(layer => layer.remove());
-        for (const highlight of highlights) {
-            const anchor = anchors.find(item => item.id === highlight.anchorId);
+        for (const anchor of annotations) {
+            const highlight = anchor;
             if (!anchor || anchor.fileId !== fileId) continue;
             const view = pdf.viewer.getPageView(anchor.pageNumber - 1);
             if (!view?.pdfPage) continue;
@@ -398,13 +397,13 @@
             layer.className = "knowledge-highlights";
             Object.assign(layer.style, { position: "absolute", inset: "0", pointerEvents: "none", zIndex: "2", mixBlendMode: "multiply" });
             for (const rect of anchor.rectangles) {
-                const mark = drawRectangle(layer, rect, anchor.pageNumber, highlight.color);
+                const mark = drawRectangle(layer, rect, anchor.pageNumber, annotationColors[highlight.color].value);
                 Object.assign(mark.style, { pointerEvents: "auto", cursor: "pointer" });
                 mark.onclick = event => {
                     event.stopPropagation(); onHighlight?.(highlight.id, { x: event.clientX, y: event.clientY });
                 };
             }
-            if (highlight.annotationId && anchor.rectangles.length) {
+            if (highlight.hasText && anchor.rectangles.length) {
                 const rect = anchor.rectangles[0];
                 const [x, y] = view.viewport.convertToViewportPoint(rect.x + rect.width, rect.y + rect.height);
                 const note = document.createElement("button");
@@ -420,17 +419,6 @@
             view.div.appendChild(layer);
         }
         paintSelection();
-    }
-
-    export function goToAnchor(anchor: Anchor): void {
-        anchorToOpen = anchor;
-        if (!pdf || status.kind !== "ready") return;
-        pdf.viewer.currentPageNumber = anchor.pageNumber;
-        const view = pdf.viewer.getPageView(anchor.pageNumber - 1);
-        if (!view?.pdfPage || !anchor.rectangles.length) return;
-        const rectangle = anchor.rectangles[0], left = rectangle.x, top = rectangle.y + rectangle.height;
-        pdf.viewer.scrollPageIntoView({ pageNumber: anchor.pageNumber, destArray: [null, { name: "XYZ" }, left, top, null], allowNegativeOffset: true });
-        anchorToOpen = null;
     }
 
     $effect(() => {
@@ -524,7 +512,7 @@
     function cancelPassword(): void {
         passwordCallback = null;
         password = "";
-        fail({ kind: "password-cancelled", message: "已取消打开：此 PDF 需要密码。" });
+        fail({ kind: "pdf-password-cancelled" });
     }
 
     function reportViewState(): void {

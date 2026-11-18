@@ -1,13 +1,14 @@
+import { watchKnowledge } from "./support/session";
+import { knowledgeServices, historyServices, session, type Knowledge, type History } from "./support/session";
+import { hasFailure } from "./failures";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
-import { createWorkspace, openWorkspace } from "../main/storage/workspace";
-import { KnowledgeService } from "../main/knowledge/service";
-import { EditHistory } from "../main/knowledge/history";
+import { createWorkspace, openWorkspace } from "./support/session";
 import { fingerprint } from "../main/knowledge/attributes";
-import { AppStorage } from "../main/storage/app";
+import * as settings from "../main/settings/store";
 import { builtinAttrs, builtinAttrsByPageKind } from "../shared/attrs/builtins";
 import { display } from "../shared/attrs/format";
 import { validateValue } from "../shared/attrs/values";
@@ -16,24 +17,24 @@ import { confirmationText } from "../shared/content/confirmation";
 import { payload, blockText } from "../shared/content/blocks";
 import { type ContentBlock, type EditCommit, type CommitResult, type PageRecord } from "../shared/types/content";
 
-function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { service: KnowledgeService; history: EditHistory } {
+function fixture(t: TestContext, options: import("../main/session").SessionOptions = {}): ReturnType<typeof createWorkspace> & { service: Knowledge; history: History } {
     const root = process.env.LABLOOM_TEST_ROOT;
     if (!root) throw new Error("Use the isolated workspace test runner.");
-    const workspace = createWorkspace(mkdtempSync(join(root, "content-")));
+    const workspace = createWorkspace(mkdtempSync(join(root, "content-")), options);
     t.after(() => {
-        if (workspace.database.open) workspace.database.close();
+        session.close();
     });
-    const service = new KnowledgeService(workspace.db), history = new EditHistory(service);
+    const service = knowledgeServices(), history = historyServices();
     return { ...workspace, service, history };
 }
-function edit(service: KnowledgeService, page: PageRecord, changes: ContentBlock[], children = page.children, tabId = "tab-one"): CommitResult {
+function edit(service: Knowledge, page: PageRecord, changes: ContentBlock[], children = page.children, tabId = "tab-one"): CommitResult {
     return service.commitEdit({ pageId: page.id, tabId, batch: 1, pageChildren: children, blocks: changes });
 }
 function text(block: ContentBlock, value: string): ContentBlock {
     return { ...block, payload: payload(block.type, value) };
 }
-function snapshot(service: KnowledgeService): string {
-    return fingerprint(["pages", "blocks", "page_attrs", "link_index", "undo_nodes", "undo_objects"].map(table => service.sql.prepare("SELECT * FROM " + table + " ORDER BY rowid").all()));
+function snapshot(service: Knowledge): string {
+    return fingerprint(["pages", "blocks", "page_attrs", "link_refs"].map(table => service.sql.prepare("SELECT * FROM " + table + " ORDER BY rowid").all()));
 }
 
 test("repeated and nested UUIDs remain shared; edits update only their page context timestamp", t => {
@@ -59,15 +60,20 @@ test("repeated and nested UUIDs remain shared; edits update only their page cont
     assert.deepEqual(service.backlinks(second.id), []);
 });
 
-test("opening legacy text and targetless references never rewrites the stored blocks", t => {
+test("opening current targetless references and rejecting malformed content never rewrites blocks", t => {
     const { service, database } = fixture(t);
     const page = service.create();
     const id = page.children[0];
-    database.prepare("UPDATE blocks SET type = 'blocked_reference', content = ? WHERE id = ?").run("Original reference", id);
+    const content = JSON.stringify({ ...payload("blocked_reference", "Original reference"), target: null });
+    const update = database.prepare("UPDATE blocks SET type = 'blocked_reference', content = ? WHERE id = ?");
+    update.run(content, id);
     const opened = service.get(page.id);
     assert.equal(opened.blocks[id].payload.target, null);
     assert.equal(blockText(opened.blocks[id]), "Original reference");
     assert.deepEqual(service.backlinks(page.id), []);
+    assert.equal(database.prepare("SELECT content FROM blocks WHERE id = ?").pluck().get(id), content);
+    update.run("Original reference", id);
+    assert.throws(() => service.get(page.id), SyntaxError);
     assert.equal(database.prepare("SELECT content FROM blocks WHERE id = ?").pluck().get(id), "Original reference");
 });
 
@@ -97,7 +103,7 @@ test("removing one occurrence never garbage-collects content, and stale position
     const position = { pageId: page.id, containerId: page.id, index: 1, blockId: id };
     service.place({ action: "remove", tabId: "tab-one", position });
     assert.deepEqual(service.get(page.id).children, [id]);
-    assert.throws(() => service.place({ action: "remove", tabId: "tab-one", position }), /位置已发生变化/);
+    assert.throws(() => service.place({ action: "remove", tabId: "tab-one", position }), hasFailure("block-position-changed"));
     page = service.get(page.id);
     service.place({ action: "remove", tabId: "tab-one", position: { ...position, index: 0 } });
     assert.ok(service.blockRow(id));
@@ -109,9 +115,9 @@ test("shared edits need no version and invalid duplicate records or containment 
     edit(service, page, [text(initial, "Fresh")]);
     assert.equal(edit(service, page, [text(initial, "Later")]).status, "saved");
     const current = service.get(page.id), before = snapshot(service);
-    assert.throws(() => edit(service, current, [{ ...current.blocks[initial.id], children: [initial.id] }]), /不能形成循环/);
+    assert.throws(() => edit(service, current, [{ ...current.blocks[initial.id], children: [initial.id] }]), hasFailure("block-cycle"));
     assert.equal(snapshot(service), before);
-    assert.throws(() => edit(service, current, [current.blocks[initial.id], current.blocks[initial.id]]), /只能为同一块/);
+    assert.throws(() => edit(service, current, [current.blocks[initial.id], current.blocks[initial.id]]), hasFailure("edit-duplicate-block"));
     assert.equal(snapshot(service), before);
 });
 
@@ -189,7 +195,7 @@ test("removing a retaining property previews both its owners and dependent pages
     const dependent = service.create("editable", "Dependent");
     const id = `custom:${randomUUID()}`;
     const tabId = randomUUID();
-    service.setDefinition(id, { id, type: "page-link", metadata: { name: "Citation" } }, tabId);
+    service.setDefinition(id, { id, type: "page-link", name: "Citation", metadata: {} }, tabId);
     service.commitEdit({ pageId: root.id, tabId: "owner", batch: 1, blocks: [], attributes: { [id]: dependent.id } });
     service.commitEdit({ pageId: dependent.id, tabId: "dependent", batch: 1, blocks: [], attributes: { independent: false } });
     const preview = service.setDefinition(id, null, tabId)!;
@@ -200,9 +206,9 @@ test("removing a retaining property previews both its owners and dependent pages
     assert.equal(history.state("owner").canUndo, true);
     service.create("editable", "Another edit");
     let source: string | undefined;
-    service.onChanged = change => {
+    t.after(watchKnowledge(change => {
         source = change.sourceTab;
-    };
+    }));
     assert.equal(service.setDefinition(id, null, tabId, preview.token), null);
     assert.equal(source, tabId);
     assert.equal(history.state(tabId).canUndo, false);
@@ -233,11 +239,11 @@ test("cross-tab history invalidates only overlapping operations and preserves re
     assert.equal(history.state("tab-one").redo.length, 2);
     history.apply("tab-one", "redo", firstBranch);
     assert.equal(blockText(service.get(page.id).blocks[b.id]), "B1");
-    database.close();
+    session.close();
     const reopened = openWorkspace(info.path);
-    t.after(() => reopened.database.close());
-    const restoredHistory = new EditHistory(new KnowledgeService(reopened.db));
-    assert.equal(restoredHistory.state("tab-one").canUndo, true);
+    t.after(() => session.close());
+    const restoredHistory = historyServices();
+    assert.equal(restoredHistory.state("tab-one").canUndo, false);
     restoredHistory.close("tab-one");
     assert.equal(restoredHistory.state("tab-one").canUndo, false);
 });
@@ -247,9 +253,13 @@ test("deleteBlock removes every use, keeps live links and undo restores nested a
     const a = service.create("editable", "A"), b = service.create("editable", "B"), c = service.create("editable", "C");
     const shared = text(a.blocks[a.children[0]], "Common");
     const parent = { ...b.blocks[b.children[0]], children: [shared.id] };
-    const link = { ...c.blocks[c.children[0]], payload: { ...payload("paragraph"), inline: [
-        { type: "inlineReference" as const, attrs: { target: { kind: "block" as const, id: shared.id }, label: "Common" } }
-    ] } };
+    const link = {
+        ...c.blocks[c.children[0]], payload: {
+            ...payload("paragraph"), inline: [
+                { type: "inlineReference" as const, attrs: { target: { kind: "block" as const, id: shared.id }, label: "Common" } }
+            ]
+        }
+    };
     edit(service, a, [shared], [shared.id, shared.id]);
     edit(service, b, [parent]);
     edit(service, c, [link]);
@@ -257,7 +267,7 @@ test("deleteBlock removes every use, keeps live links and undo restores nested a
     const remove = (token?: string): CommitResult => service.deleteBlock({ pageId: a.id, tabId: "delete", blockId: shared.id }, token);
     const pending = remove();
     assert.equal(pending.status, "confirmation");
-    assert.equal(confirmationText(pending.preview), "“Common”将从 2 个页面的 3 个位置消失，1 个链接引用将显示“已删除”。");
+    assert.equal(confirmationText(pending.preview), "“Common”将从2个页面的3个位置消失，1个链接引用将显示“已删除”。");
     assert.equal(service.uses(shared.id).length, 3);
     assert.equal(remove(pending.preview.token).status, "saved");
     assert.deepEqual(service.get(a.id).children, []);
@@ -280,7 +290,7 @@ test("reference deletion names its target, omits zero counts and lists all recyc
     const remove = (token?: string): CommitResult => service.deleteBlock({ pageId: d.id, tabId: "delete", blockId }, token);
     const result = remove();
     assert.equal(result.status, "confirmation");
-    assert.equal(confirmationText(result.preview), "指向「E」的链接引用将从 1 个页面的 1 个位置消失。\n将移入回收站：E、F。");
+    assert.equal(confirmationText(result.preview), "指向「E」的链接引用将从1个页面的1个位置消失。\n将移入回收站：E、F。");
     assert.equal(remove(result.preview.token).status, "saved");
     for (const page of [e, f]) assert.equal(service.get(page.id).attributes.deleted, true);
 });
@@ -288,7 +298,7 @@ test("reference deletion names its target, omits zero counts and lists all recyc
 test("incremental links match rebuilding after changing, clearing and undoing all three link sources", t => {
     const { service, history } = fixture(t);
     const a = service.create(), b = service.create();
-    const read = (): unknown[] => service.sql.prepare("SELECT * FROM link_index ORDER BY source_kind,source_id,source_field,target_kind,target_id").all();
+    const read = (): unknown[] => service.sql.prepare("SELECT * FROM link_refs ORDER BY source_kind,source_id,source_field,target_kind,target_id").all();
     const check = (count: number): void => {
         const before = read();
         assert.equal(before.length, count);
@@ -308,8 +318,24 @@ test("incremental links match rebuilding after changing, clearing and undoing al
     check(3);
 });
 
+test("detaching and deleting custom page links clears their source index through the service", t => {
+    const { service } = fixture(t), a = service.create("editable", "A"), b = service.create("editable", "B");
+    const id = "custom:" + randomUUID(), definition = { id, type: "page-link" as const, name: "Related", metadata: {} };
+    assert.equal(service.setDefinition(id, definition, "definitions"), null);
+    const count = (): unknown => service.statement("SELECT count(*) FROM link_refs WHERE source_kind='page' AND source_field=?").pluck().get(id);
+    service.commitEdit({ pageId: a.id, tabId: "links", batch: 0, blocks: [], attributes: { [id]: b.id } });
+    assert.equal(count(), 1);
+    service.commitEdit({ pageId: a.id, tabId: "links", batch: 1, blocks: [], detach: [id] });
+    assert.equal(count(), 0);
+    service.commitEdit({ pageId: a.id, tabId: "links", batch: 2, blocks: [], attributes: { [id]: b.id } });
+    const preview = service.setDefinition(id, null, "definitions");
+    assert.ok(preview);
+    assert.equal(service.setDefinition(id, null, "definitions", preview.token), null);
+    assert.equal(count(), 0);
+});
+
 test("new pages have valid typed values, independent retention and system timestamps", t => {
-    const { service } = fixture(t), parent = service.create();
+    const { service } = fixture(t), parent = service.create("paper");
     for (const kind of pageKinds) {
         const page = service.create(kind, kind, {}, kind === "annotation" ? parent.id : undefined);
         assert.deepEqual(Object.keys(page.attributes).sort(), [...builtinAttrsByPageKind[kind]].sort());
@@ -328,23 +354,21 @@ test("new pages have valid typed values, independent retention and system timest
 });
 
 test("keywords and display use the current application timezone on the same open workspace", t => {
-    const { db, info } = fixture(t);
-    const storage = new AppStorage(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "preferences-")));
-    storage.load();
-    storage.remember(info);
-    const service = new KnowledgeService(db, () => storage.getAppearance().timeZone);
-    storage.saveAppearance({ ...storage.getAppearance(), timeZone: "Asia/Shanghai" });
+    settings.initialize(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "preferences-")));
+    fixture(t);
+    const service = knowledgeServices();
+    settings.update({ appearance: { timeZone: "Asia/Shanghai" } });
     const e = service.create("event", "A");
-    const anchor = randomUUID(), a = service.create("annotation", "B", { independent: true, annotation_anchor: anchor });
+    const anchor = randomUUID(), a = service.create("annotation", "B", { independent: true, annotation_context: anchor });
     assert.ok(!("task_status" in e.attributes) && !("priority" in e.attributes));
     const seconds = 1794071576;
     service.attributes.write(e.id, { created_at: seconds, modified_at: seconds + 3600, schedule_start: seconds + 7200 }, true);
     service.attributes.write(a.id, { created_at: 0, modified_at: 0 }, true);
-    const created = (): string => display({ id: "created_at", ...builtinAttrs.created_at }, service.get(e.id).attributes.created_at, { zone: storage.getAppearance().timeZone });
+    const created = (): string => display({ id: "created_at", ...builtinAttrs.created_at }, service.get(e.id).attributes.created_at, { zone: settings.get().settings.appearance.timeZone });
     assert.equal(created(), "2026-11-08 01:12");
     for (const keyword of ["tags", "true", "modified", anchor, "1794", "17:12", "未开始", "asia"]) assert.equal(service.list({ keyword }).total, 0, keyword);
     for (const keyword of ["2026", "01:12", "02:12", "03:12"]) assert.deepEqual(service.list({ keyword }).items.map(p => p.id), [e.id], keyword);
-    storage.saveAppearance({ ...storage.getAppearance(), timeZone: "UTC" });
+    settings.update({ appearance: { timeZone: "UTC" } });
     assert.equal(created(), "2026-11-07 17:12");
     assert.deepEqual(service.list({ keyword: "17:12" }).items.map(p => p.id), [e.id]);
     assert.equal(service.list({ keyword: "01:12" }).total, 0);

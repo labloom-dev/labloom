@@ -8,10 +8,12 @@ import { PendingInput } from "../Editor/pending-input";
 import { readingTabs, visits } from "../Tab/activity.svelte";
 import type { TabChange, TabView } from "../Tab/visits";
 import { SessionViews, sessionKey } from "./session-views";
-import { knowledgeState, message, perform } from "./feedback.svelte";
+import { knowledgeState, perform } from "./feedback.svelte";
+import { t, failure, type ErrorValue } from "../../i18n.svelte";
+import { LabloomError } from "../../../shared/failure";
 export { knowledgeState, message, perform } from "./feedback.svelte";
-export const confirmation = $state<{ heading: string; text: string; names: string[]; resolve: ((value: boolean) => void) | null }>({ heading: "", text: "", names: [], resolve: null });
-export function ask(heading: string, text: string, names: string[] = []): Promise<boolean> {
+export const confirmation = $state<{ heading: () => string; text: () => string; names: string[]; resolve: ((value: boolean) => void) | null }>({ heading: () => "", text: () => "", names: [], resolve: null });
+export function ask(heading: () => string, text: () => string, names: string[] = []): Promise<boolean> {
     if (confirmation.resolve) return Promise.resolve(false);
     return new Promise(resolve => Object.assign(confirmation, { heading, text, names, resolve }));
 }
@@ -24,16 +26,16 @@ export async function confirmed(commit: (token?: string) => Promise<CommitResult
     let result = await commit();
     while (result.status === "confirmation") {
         const { preview } = result;
-        if (!await ask(preview.deletedBlocks.length ? "删除块" : "确认本次更改", confirmationText(preview))) return false;
+        if (!await ask(() => t(preview.deletedBlocks.length ? "dialog.deleteBlock" : "dialog.change"), () => confirmationText(preview, t))) return false;
         result = await commit(preview.token);
     }
     return true;
 }
 export async function define(id: string, value: AttributeDefinition | null, tabId: string): Promise<boolean> {
-    let impact = await window.api.knowledge.define(id, value, tabId);
+    let impact = await window.api.attributes.define(id, value, tabId);
     while (impact) {
-        if (!await ask("修改共享属性", `以下页面的属性值会被清空、移除或调整。${impact.recycled?.length ? `同时有 ${impact.recycled.length} 个页面失去保留关系，将进入回收站。` : ""}`, [...impact.pages, ...(impact.recycled ?? [])].map(page => page.title))) return false;
-        impact = await window.api.knowledge.define(id, value, tabId, impact.token);
+        if (!await ask(() => t("dialog.sharedAttribute"), () => t("dialog.attributeImpact") + (impact?.recycled?.length ? t("dialog.attributeRecycle", { count: impact.recycled.length }) : ""), [...impact.pages, ...(impact.recycled ?? [])].map(page => page.title))) return false;
+        impact = await window.api.attributes.define(id, value, tabId, impact.token);
     }
     return true;
 }
@@ -44,7 +46,7 @@ class PageState {
     loading = $state(true);
     saving = $state(false);
     dirty = $state(false);
-    error = $state("");
+    error = $state<ErrorValue>("");
     history = $state<HistoryState>({ canUndo: false, redo: [] });
     definitions = $state.raw<AttributeDefinition[]>([]);
     backlinks = $state.raw<Backlink[]>([]);
@@ -64,6 +66,7 @@ type Listener = (ids: string[], whole: boolean) => void;
 // This registry is not rendered; each session carries its own reactive state.
 // eslint-disable-next-line svelte/prefer-svelte-reactivity
 const sessions = new Map<string, PageSession>();
+let historyEpoch = 0;
 // Page views share a tab visit and history, while retaining separate page buffers.
 // eslint-disable-next-line svelte/prefer-svelte-reactivity
 const sessionViews = new Map<string, { views: SessionViews; release: () => void }>();
@@ -113,7 +116,7 @@ export function registerList(tabId: string, intersection: TabView["intersection"
 }
 
 function makeSession(tabId: string, pageId: string): PageSession {
-    const state = new PageState(), api = window.api.knowledge, input = new PendingInput();
+    const state = new PageState(), api = window.api, input = new PendingInput();
     // Unacknowledged container edits may change a sync border in another page.
     // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const pendingUses = new Set<string>();
@@ -152,7 +155,7 @@ function makeSession(tabId: string, pageId: string): PageSession {
             if (ok && group.has(read)) return read();
             return undefined;
         }).catch(error => {
-            knowledgeState.error = message(error);
+            knowledgeState.error = failure(error);
         });
         return () => {
             group.delete(read);
@@ -161,13 +164,13 @@ function makeSession(tabId: string, pageId: string): PageSession {
     }
     function ownChange(change: KnowledgeChange): void {
         void history().catch(error => {
-            knowledgeState.error = message(error);
+            knowledgeState.error = failure(error);
         });
         for (const id of [...(change.summaryPages ?? change.pages), ...change.blocks]) {
             for (const [read, own] of observers.get(id) ?? []) if (own || change.highlightPages?.includes(id)) void perform(read);
         }
         if (change.backlinks?.includes(pageId)) void perform(async () => {
-            state.backlinks = await api.backlinks(pageId);
+            state.backlinks = await api.pages.backlinks(pageId);
         });
     }
     // Only uncommitted newly allocated IDs can disappear entirely within a debounce interval.
@@ -175,9 +178,10 @@ function makeSession(tabId: string, pageId: string): PageSession {
     const newBlocks = new Set<string>();
     let timer: ReturnType<typeof setTimeout> | undefined, composing = false;
     let reviewing: Promise<void> | undefined, load = 0;
-    const prompt = (p: ChangePreview): Promise<boolean> => ask("确认本次更改", confirmationText(p));
+    const prompt = (p: ChangePreview): Promise<boolean> => ask(() => t("dialog.change"), () => confirmationText(p, t));
     const history = async (): Promise<void> => {
-        state.history = await api.history(tabId);
+        const epoch = historyEpoch, value = await api.history.state(tabId);
+        if (epoch === historyEpoch) state.history = value;
     };
     function updateCounts(ids: string[], uses: Record<string, number>): void {
         if (!ids.length || !state.page) return;
@@ -192,13 +196,13 @@ function makeSession(tabId: string, pageId: string): PageSession {
         if (changed) for (const listener of listeners) listener([], false);
     }
     const writes = new PageWrites(tabId, pageId, async input => {
-        let result = await api.commitEdit(input);
+        let result = await api.pages.commitEdit(input);
         while (result.status === "confirmation") {
             // Retention can change between preview and commit. Restore only the disputed fields.
             const causes = new Set(result.preview.causes);
             const disputed = input.blocks.filter(b => causes.has(b.id));
             const ids = [pageId, ...disputed.map(b => b.id)];
-            const stored = await api.readObjects(pageId, ids);
+            const stored = await api.pages.readObjects(pageId, ids);
             const { safe, restore, proposed } = fallbackFields(input, causes, stored, key => writes.current(key));
             apply(fields(restore));
             notify(ids);
@@ -206,7 +210,7 @@ function makeSession(tabId: string, pageId: string): PageSession {
                 writes.retain(fields(safe));
                 return;
             }
-            result = await api.commitEdit(input, result.preview.token);
+            result = await api.pages.commitEdit(input, result.preview.token);
             if (result.status === "saved") {
                 for (const key of proposed.keys()) if (!writes.current(key)) proposed.delete(key);
                 apply(fields(proposed));
@@ -216,7 +220,7 @@ function makeSession(tabId: string, pageId: string): PageSession {
         input.blocks.forEach(block => newBlocks.delete(block.id));
         updateCounts(result.changed.blocks, result.sharedUses ?? {});
         await history().catch(e => {
-            knowledgeState.error = message(e);
+            knowledgeState.error = failure(e);
         });
     });
     function notify(ids: string[], whole = false): void {
@@ -285,7 +289,7 @@ function makeSession(tabId: string, pageId: string): PageSession {
             return !all || !writes.unsaved;
         }
         catch (error) {
-            state.error = "保存失败，可重试。" + message(error);
+            state.error = failure(error);
             return false;
         }
         finally {
@@ -312,20 +316,21 @@ function makeSession(tabId: string, pageId: string): PageSession {
         if (!await flush()) return;
         state.loading = true;
         try {
-            const [page, undo] = await Promise.all([api.get(pageId).then(record => {
+            const epoch = historyEpoch;
+            const [page, undo] = await Promise.all([api.pages.get(pageId).then(record => {
                 performance.clearMarks("labloom:page-read");
                 performance.mark("labloom:page-read", { detail: pageId });
                 return record;
-            }), api.history(tabId)]);
+            }), api.history.state(tabId)]);
             if (request !== load) return;
             newBlocks.clear();
             state.page = page;
-            state.history = undo;
+            if (epoch === historyEpoch) state.history = undo;
             state.error = "";
             notify([], true);
         }
         catch (e) {
-            state.error = message(e);
+            state.error = failure(e);
         }
         finally {
             if (request === load) state.loading = false;
@@ -339,7 +344,7 @@ function makeSession(tabId: string, pageId: string): PageSession {
         const seen = new Set<string>();
         let needed = [...new Set(ids)], structural = false;
         while (needed.length) {
-            const data = await api.readObjects(pageId, needed);
+            const data = await api.pages.readObjects(pageId, needed);
             needed.forEach(id => seen.add(id));
             page.sharedUses ??= {};
             for (const id of needed) {
@@ -378,8 +383,8 @@ function makeSession(tabId: string, pageId: string): PageSession {
             const input = writes.input(edit);
             try {
                 let savedResult: Extract<CommitResult, { status: "saved" }> | undefined;
-                await reviewEdit(input, value => api.previewEdit(value), prompt, async (value, token) => {
-                    const result = await api.commitEdit(value, token);
+                await reviewEdit(input, value => api.pages.previewEdit(value), prompt, async (value, token) => {
+                    const result = await api.pages.commitEdit(value, token);
                     if (result.status === "saved") savedResult = result;
                     return result;
                 }, rollback, saved => {
@@ -391,13 +396,13 @@ function makeSession(tabId: string, pageId: string): PageSession {
                     if (savedResult) {
                         updateCounts(savedResult.changed.blocks, savedResult.sharedUses ?? {});
                         void history().catch(e => {
-                            knowledgeState.error = message(e);
+                            knowledgeState.error = failure(e);
                         });
                     }
                 });
             }
             catch (e) {
-                state.error = "保存失败，可重试。" + message(e);
+                state.error = failure(e);
                 accept(false);
             }
         };
@@ -426,7 +431,7 @@ function makeSession(tabId: string, pageId: string): PageSession {
         }
     }
     const trackedAction = (commit: (token?: string) => Promise<CommitResult>): Promise<void> => trackWrite(tabId, action(commit));
-    const undo = (direction: "undo" | "redo", branch?: string): Promise<void> => trackedAction(token => api.undo(tabId, direction, branch, token));
+    const undo = (direction: "undo" | "redo", branch?: string): Promise<void> => trackedAction(token => api.history.apply(tabId, direction, branch, token));
     let definitionsDirty = false;
     const intersection = (change: TabChange): string[] => [
         ...change.pages.filter(id => id === pageId),
@@ -454,7 +459,7 @@ function makeSession(tabId: string, pageId: string): PageSession {
         flush: async () => {
             await Promise.all(otherWrites(tabId));
             if (await flush()) return true;
-            knowledgeState.error = state.error || "页面输入尚未保存，请结束输入法组字后重试。";
+            knowledgeState.error = state.error || { kind: "page-composing" };
             return false;
         },
         read: async (ids, initial) => {
@@ -462,14 +467,14 @@ function makeSession(tabId: string, pageId: string): PageSession {
             try {
                 if (initial) await refresh();
                 else if (state.page) {
-                    if (!await flush()) throw new Error(state.error || "页面输入尚未保存。");
+                    if (!await flush()) throw new LabloomError({ kind: "page-unsaved" });
                     await reread(ids.filter(id => id === pageId || Object.hasOwn(state.page!.blocks, id)));
                 }
-                if (state.error) throw new Error(state.error);
+                if (state.error) throw new LabloomError({ kind: "page-unsaved" });
                 if (initial || definitionsDirty) {
                     definitionsDirty = false;
                     try {
-                        state.definitions = await api.definitions();
+                        state.definitions = await api.attributes.definitions();
                     }
                     catch (error) {
                         definitionsDirty = true;
@@ -477,7 +482,7 @@ function makeSession(tabId: string, pageId: string): PageSession {
                     }
                 }
                 if (initial || ids.includes(pageId) || ids.some(id => state.backlinks.some(link => link.sourceId === id)))
-                    state.backlinks = await api.backlinks(pageId);
+                    state.backlinks = await api.pages.backlinks(pageId);
                 for (const id of ids) if (observers.has(id)) await Promise.all([...observers.get(id)!.keys()].map(read => read()));
             }
             finally {
@@ -508,6 +513,10 @@ export function session(tabId: string, pageId: string): PageSession {
     return value;
 }
 export function receiveChange(change: KnowledgeChange): void {
+    if (change.purged && (change.purged.length || change.blocks.length)) {
+        historyEpoch++;
+        for (const value of sessions.values()) value.state.history = { canUndo: false, redo: [] };
+    }
     visits.changed(change);
     for (const value of sessions.values()) if (value.tabId === change.sourceTab) value.ownChange(change);
     knowledgeState.change = { ...change, seq: knowledgeState.change.seq + 1 };
@@ -517,14 +526,14 @@ export async function saveAll(): Promise<boolean> {
     try {
         const prior = [...auxiliary.keys()];
         const pages = [...sessions.values()].map(async value => {
-            if (readingTabs.has(value.tabId) && !await visits.settled(value.tabId)) throw new Error(knowledgeState.error || "读取页面失败。");
-            if (value.input.waiting) throw new Error("仍有等待同步的输入。请先回到原标签页；页面已回收时请先恢复。");
-            if (!await value.flush()) throw new Error(value.state.error || "请先结束输入法组字，页面输入尚未保存。");
+            if (readingTabs.has(value.tabId) && !await visits.settled(value.tabId)) throw new LabloomError({ kind: "page-unsaved" });
+            if (value.input.waiting) throw new LabloomError({ kind: "page-pending-input" });
+            if (!await value.flush()) throw new LabloomError({ kind: "page-composing" });
         });
         await Promise.all([...prior, ...pages]);
     }
     catch (error) {
-        knowledgeState.error = message(error);
+        knowledgeState.error = failure(error);
         return false;
     }
     return true;
@@ -539,15 +548,15 @@ export async function closeSession(tabId: string): Promise<boolean> {
     window.dispatchEvent(new Event("workspace-flush"));
     const values = [...sessions.values()].filter(value => value.tabId === tabId);
     if (!await visits.settled(tabId) || values.some(value => value.input.waiting)) {
-        knowledgeState.error = "此页面未保存，已保留标签页。请处理页面上显示的错误。";
+        knowledgeState.error = { kind: "page-unsaved-close" };
         return false;
     }
     for (const value of values) if (!await value.flush()) {
-        knowledgeState.error = "此页面未保存，已保留标签页。请处理页面上显示的错误。";
+        knowledgeState.error = { kind: "page-unsaved-close" };
         return false;
     }
     await Promise.all(otherWrites(tabId));
-    await window.api.knowledge.closeTab(tabId);
+    await window.api.history.closeTab(tabId);
     for (const [key, value] of sessions) if (value.tabId === tabId) {
         value.release();
         sessions.delete(key);

@@ -1,4 +1,24 @@
 :root {
+    --editor-min-height: 180px;
+    --annotation-min-height: 150px;
+    --titlebar-height: 32px;
+    --tabbar-height: 35px;
+    --pagebar-height: 28px;
+    --library-toolbar-height: 32px;
+    --library-row-height: 28px;
+    --panel-row-height: 22px;
+    --menu-row-height: 26px;
+    --property-row-height: 26px;
+    --button-height: 24px;
+    --activity-width: 48px;
+    --panel-indent: 8px;
+    --property-label-width: 88px;
+    --logo-size: 20px;
+    --search-width: 480px;
+    --control-radius: 4px;
+    --font-body: 13px;
+    --font-secondary: 12px;
+    --font-min: 11px;
     --border-width: 1px;
     --focus-width: 2px;
     --focus-offset: 2px;

@@ -13,9 +13,12 @@
             bind:value={getActiveTab, setActiveTab}
         >
             <GroupHeader {group} />
-            <div class="group-content">
+            <div class="group-content" {@attach element => {
+                const observer = new ResizeObserver(entries => element.style.setProperty("--pane-height", entries[0].contentRect.height + "px"));
+                observer.observe(element); return () => observer.disconnect();
+            }}>
                 {#if !group.tabs.length}
-                    <div class="empty-group"><div class="empty-art"><Bloom /></div><h2>留一片空白，给下一个想法。</h2><p>打开一个页面，或开始新的阅读。</p><button class="button primary" onclick={() => openOverviewInGroup(groupId)}>打开总览</button></div>
+                    <div class="empty-group"><img src={icon} alt="labloom" /><p>{commands.newPage.label} {commands.newPage.shortcut}</p><p>{commands.search.label} {commands.search.shortcut}</p><p>{commands.settings.label} {commands.settings.shortcut}</p></div>
                 {/if}
                 {#each group.tabs as tab (tab.id)}
                     <Tabs.Content value={tab.id} aria-hidden={group.activeTabId !== tab.id} tabindex={group.activeTabId === tab.id ? 0 : -1}>
@@ -76,23 +79,15 @@
         padding: 30px;
         text-align: center;
     }
-    .empty-art {
-        width: min(180px, 70%);
-    }
-    h2 {
-        font-size: 19px;
-    }
-    p {
-        margin: 0 0 24px;
-        color: var(--c-muted);
-        font-size: 12px;
-    }
+    .empty-group img { width: 80px; filter: grayscale(1); opacity: .22; margin-bottom: 16px; }
+    .empty-group p { margin: 4px 0; color: var(--c-muted); font-size: var(--font-body); }
 </style>
 
 
 <script lang="ts">
-    import { acceptTabDrop, dropTab, openOverviewInGroup } from "./interactions";
-    import Bloom from "../utils/Bloom.svelte";
+    import { acceptTabDrop, dropTab } from "./interactions";
+    import icon from "../../assets/icon.png";
+    import { commands } from "../../../shared/content/commands";
     import { Tabs } from "bits-ui";
     import GroupHeader from "./GroupHeader.svelte";
     import Content from "./Content.svelte";

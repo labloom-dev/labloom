@@ -6,7 +6,8 @@
         "../renderer/**/*",
         "../renderer/**/*.svelte",
         "../preload/*.d.ts",
-        "../shared/**/*"
+        "../shared/**/*",
+        "../locales/*.json"
     ],
     "compilerOptions": {
         "rootDir": "..",
@@ -18,6 +19,7 @@
         "useDefineForClassFields": true,
         "strict": true,
         "checkJs": true,
+        "types": [],
         "lib": ["ESNext", "DOM", "DOM.Iterable"]
     }
 }

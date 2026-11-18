@@ -1,52 +1,39 @@
-import { type Database } from "better-sqlite3";
+import { LabloomError } from "../../../shared/failure";
+import Database from "better-sqlite3";
+import { baselineSql, baselineVersion } from "./generated";
 
-export type WorkspaceMigration = {
-    readonly from: number;
-    readonly to: number;
-    readonly foreignKeysOff?: boolean;
-    readonly up: (database: Database) => void;
-};
+let expectedSchema: string | undefined;
 
-export function runMigrations(database: Database, migrations: readonly WorkspaceMigration[]): void {
-    let target = 0;
-    for (const migration of migrations) {
-        if (migration.from !== target || migration.to !== target + 1) {
-            throw new Error("Labloom workspace migrations must form a continuous, ordered version history starting at 0.");
+function schemaDefinition(database: Database.Database): string {
+    return JSON.stringify(database.prepare("SELECT type, name, tbl_name, sql FROM sqlite_schema WHERE sql IS NOT NULL AND name NOT GLOB 'sqlite_*' ORDER BY type, name").all());
+}
+
+export function createBaseline(database: Database.Database): void {
+    if (database.pragma("user_version", { simple: true }) !== 0
+        || database.prepare("SELECT 1 FROM sqlite_schema LIMIT 1").get()) {
+        // Internal assertion: only the baseline initializer calls this on a newly reserved database.
+        throw new Error("The workspace baseline requires an empty database.");
+    }
+    database.transaction(() => {
+        database.exec(baselineSql);
+        database.pragma(`user_version = ${baselineVersion}`);
+        if ((database.pragma("foreign_key_check") as unknown[]).length) {
+            throw new LabloomError({ kind: "workspace-foreign-key-check" });
         }
-        target = migration.to;
-    }
+    })();
+}
 
-    const version = database.pragma("user_version", { simple: true }) as number;
-    if (!Number.isInteger(version) || version < 0 || version > target) {
-        throw new Error("This workspace format is incompatible with this version of Labloom. Open it with a compatible version.");
+export function validateBaseline(database: Database.Database): void {
+    if (database.pragma("user_version", { simple: true }) !== baselineVersion) throw new LabloomError({ kind: "workspace-incompatible" });
+    if (expectedSchema === undefined) {
+        const reference = new Database(":memory:");
+        try {
+            createBaseline(reference);
+            expectedSchema = schemaDefinition(reference);
+        }
+        finally {
+            reference.close();
+        }
     }
-    if (version === target) return;
-
-    // SQLite table rebuilds must disable FK actions before BEGIN: disabling them
-    // inside the transaction is a no-op, and DROP TABLE can cascade-delete rows.
-    const suspendForeignKeys = migrations.some(migration => migration.from >= version && migration.foreignKeysOff)
-        && database.pragma("foreign_keys", { simple: true }) === 1;
-    if (suspendForeignKeys && database.inTransaction) {
-        throw new Error("Table-rebuilding migrations must start outside a transaction with foreign keys enabled.");
-    }
-    if (suspendForeignKeys) database.pragma("foreign_keys = OFF");
-    try {
-        database.transaction(() => {
-            if (database.pragma("user_version", { simple: true }) !== version) {
-                throw new Error("The Labloom workspace version changed before the upgrade could start. Try again.");
-            }
-            for (const migration of migrations) {
-                if (migration.from < version) continue;
-                migration.up(database);
-                database.pragma(`user_version = ${migration.to}`);
-            }
-            const violations = database.pragma("foreign_key_check") as unknown[];
-            if (violations.length > 0) {
-                throw new Error(`The Labloom workspace upgrade failed its foreign key check: ${JSON.stringify(violations)}`);
-            }
-        }).immediate();
-    }
-    finally {
-        if (suspendForeignKeys) database.pragma("foreign_keys = ON");
-    }
+    if (schemaDefinition(database) !== expectedSchema) throw new LabloomError({ kind: "workspace-incompatible" });
 }

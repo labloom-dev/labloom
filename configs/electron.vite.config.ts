@@ -1,10 +1,12 @@
 import { resolve } from "node:path";
+import typia from "@typia/unplugin/vite";
 import { defineConfig } from "electron-vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { viteStaticCopy } from "vite-plugin-static-copy";
 
 export default defineConfig({
     main: {
+        plugins: [typia({ include: [/[/\\]main[/\\][^/\\]+[/\\]ipc\.ts$/], tsconfig: "configs/tsconfig.node.json" })],
         build: {
             outDir: "dist/main",
             rollupOptions: {

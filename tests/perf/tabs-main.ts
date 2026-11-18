@@ -1,20 +1,18 @@
+import { startupServices, session } from "../support/session";
+import { writeFileSync } from "node:fs";
 import { app, BrowserWindow } from "electron";
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import type { Editor } from "@tiptap/core";
 import { fixture, seedLargePage } from "./fixture";
-import { AppStorage } from "../../main/storage/app";
-import { Startup } from "../../main/startup/startup";
-import { registerAppearanceIPCs } from "../../main/appearance/ipc";
-import { registerFeedIPCs } from "../../main/feed/ipc";
-import { registerKnowledgeIPCs } from "../../main/knowledge/ipc";
-import { registerStartupIPCs } from "../../main/startup/ipc";
+import { registerIPCs } from "../../main/register";
+import { attach } from "../../main/ui/windowFrame";
 
 // Executed inside a dedicated benchmark renderer. Synthetic clicks here are timing samples only.
 async function measure(): Promise<Record<string, { p50: number; p95: number }>> {
     const waitFor = async <T>(find: () => T | null | false): Promise<T> => {
         const started = performance.now();
-        for (;;) {
+        for (; ;) {
             const value = find();
             if (value) return value;
             if (performance.now() - started > 12000) throw new Error("Timed out waiting for editor: " + document.body.innerText.slice(-400));
@@ -79,24 +77,29 @@ async function run(large: boolean): Promise<boolean> {
     const id = randomUUID(), tabs = Array.from({ length: 20 }, () => ({ id: randomUUID(), type: "page", pageId: page.id, title: "Tab benchmark" }));
     f.sql.prepare("UPDATE workspace_meta SET settings=?").run(JSON.stringify({ tabs: { groups: [{ id, tabs, activeTabId: tabs[0].id }], focusedGroupId: id, layout: { type: "group", groupId: id } } }));
     const path = dirname(f.sql.name);
-    f.sql.close();
-    const storage = new AppStorage(join(root, large ? "B" : "A")), startup = new Startup(storage);
+    session.close();
+    const startup = startupServices(join(root, large ? "B" : "A"));
     startup.restore();
     if (startup.choose(path, "open").status !== "ready") throw new Error("Could not open benchmark workspace");
-    const window = new BrowserWindow({ show: false, width: 1280, height: 860, titleBarStyle: "hidden", titleBarOverlay: true,
-        webPreferences: { preload: join(__dirname, "preload.cjs"), sandbox: true, backgroundThrottling: false } });
+    const window = new BrowserWindow({
+        show: false, width: 1280, height: 860, titleBarStyle: "hidden", titleBarOverlay: true,
+        webPreferences: { preload: join(__dirname, "preload.cjs"), sandbox: true, backgroundThrottling: false }
+    });
     try {
         window.webContents.on("console-message", details => {
- if (details.level === "error") console.error(details.message);
-});
-        registerStartupIPCs(window, startup);
-        registerAppearanceIPCs(window, storage);
-        registerFeedIPCs(window.webContents, startup);
-        registerKnowledgeIPCs(window, startup, storage);
+            if (details.level === "error") console.error(details.message);
+        });
+        registerIPCs(window, attach(window));
         await window.loadURL(process.env.LABLOOM_BENCH_URL!);
         window.webContents.debugger.attach();
         await window.webContents.debugger.sendCommand("Emulation.setFocusEmulationEnabled", { enabled: true });
+        if (process.env.LABLOOM_TAB_PROFILE) {
+            await window.webContents.debugger.sendCommand("Profiler.enable"); await window.webContents.debugger.sendCommand("Profiler.start");
+        }
         const results = await window.webContents.executeJavaScript(`(${measure.toString()})()`);
+        if (process.env.LABLOOM_TAB_PROFILE) {
+            const result = await window.webContents.debugger.sendCommand("Profiler.stop"); writeFileSync(join(process.cwd(), ".local", "compact-qa-1112", "tabs-profile.json"), JSON.stringify(result.profile));
+        }
         console.log(large ? "B" : "A", JSON.stringify(results));
         return results.clean.p95 <= 50 && results.changed.p95 <= 300;
     }
@@ -107,8 +110,8 @@ async function run(large: boolean): Promise<boolean> {
 }
 void app.whenReady().then(async () => {
     const deadline = setTimeout(() => {
- console.error("Tab benchmark timed out"); app.exit(1);
-}, 150000);
+        console.error("Tab benchmark timed out"); app.exit(1);
+    }, 150000);
     const passed = await run(large);
     clearTimeout(deadline);
     app.exit(passed ? 0 : 1);

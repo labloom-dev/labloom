@@ -1,10 +1,9 @@
 body {
-    overflow: auto;
-    background: var(--c-surface);
+    overflow: hidden;
+    background: var(--c-cream);
 }
 
 #app {
-    height: auto;
-    min-height: 100vh;
-    overflow: visible;
+    height: 100vh;
+    overflow: hidden;
 }

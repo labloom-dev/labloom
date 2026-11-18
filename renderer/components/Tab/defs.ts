@@ -32,7 +32,7 @@ export type Tab = {
     Tab_About |
     Tab_Settings |
     Tab_Feed |
-    { type: "library" | "papers" | "calendar" }
+    { type: "library" | "papers" | "calendar" | "attributes" }
 );
 
 export type TabID = string & {

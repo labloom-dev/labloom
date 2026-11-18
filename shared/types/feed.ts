@@ -1,39 +1,82 @@
+import { type FailureInfo } from "../failure";
+
+export type FeedSourceStatus = "enabled" | "paused" | "cancelled";
+export type FeedSourceAction = "pause" | "resume" | "cancel";
+
 export type FeedSourceInput = {
     id?: string;
     name: string;
     url: string;
+    autoRefresh?: boolean;
+    intervalMinutes?: number;
 };
 
 export type FeedSource = {
     id: string;
     name: string;
     url: string;
+    status: FeedSourceStatus;
+    autoRefresh: boolean;
+    intervalMinutes: number;
+    /** Time of the last successful fetch. */
     lastRefreshed: number | null;
+    /** Time of the last attempt, successful or not. */
+    lastChecked: number | null;
+    nextRefresh: number | null;
     lastAdded: number;
-    error: string | null;
+    error: FailureInfo | null;
     unreadCount: number;
+    refreshing: boolean;
 };
 
+/** What a source returned for one entry, before it is merged into saved items. */
 export type FeedEntry = {
-    externalId: string;
+    externalId: string | null;
+    title: string;
+    url: string | null;
+    pdfURL: string | null;
+    authors: string;
+    summary: string;
+    /** Source markup, unsanitized. Empty when the source only has plain text. */
+    content: string;
+    /** False when the source only offered a summary. */
+    fullContent: boolean;
+    publishedAt: number | null;
+};
+
+export type FeedPosition = { progress: number };
+export type FeedPaperState = "none" | "saved" | "recycled" | "missing";
+
+export type FeedItem = {
+    id: string;
+    sourceId: string;
+    sourceName: string;
     title: string;
     url: string | null;
     authors: string;
     summary: string;
     publishedAt: number | null;
+    isRead: boolean;
+    paperId: string | null;
 };
 
-export type FeedItem = FeedEntry & {
-    id: string;
-    sourceId: string;
-    sourceName: string;
-    isRead: boolean;
+export type FeedItemDetail = FeedItem & {
+    content: string;
+    fullContent: boolean;
+    readingPosition: FeedPosition | null;
+    paperState: FeedPaperState;
+    pdfURL: string | null;
+    pdfStatus: "idle" | "downloading" | "failed" | "saved";
+    pdfFailure?: FailureInfo | null;
 };
 
 export type FeedQuery = {
     sourceId?: string;
     keyword?: string;
-    unreadOnly?: boolean;
+    read?: "all" | "unread" | "read";
+    order?: "newest" | "oldest";
+    /** Only items matching at least one followed keyword. */
+    followed?: boolean;
     offset?: number;
 };
 
@@ -41,13 +84,10 @@ export type FeedState = {
     sources: FeedSource[];
     items: FeedItem[];
     total: number;
+    /** Unread items of every subscription that is not cancelled. */
+    unreadCount: number;
+    keywords: string[];
 };
 
-export interface FeedAPI {
-    getState: (query: FeedQuery) => Promise<FeedState>;
-    saveSource: (source: FeedSourceInput) => Promise<string>;
-    removeSource: (id: string) => Promise<void>;
-    refresh: (sourceId?: string) => Promise<void>;
-    setRead: (id: string, isRead: boolean) => Promise<void>;
-    openItem: (id: string) => Promise<void>;
-}
+export const feedPageSize = 50;
+export const feedIntervals = { min: 15, max: 1440, default: 60 } as const;

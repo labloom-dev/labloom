@@ -1,23 +1,23 @@
 {#if knowledgeState.error}
-    <div class="notice error toast">{knowledgeState.error}<button onclick={() => knowledgeState.error = ""}>关闭</button></div>
+    <div class="notice error toast"><div>{message(knowledgeState.error)}{#if knowledgeState.error.diagnostic}<details><summary>{t("dialog.details")}</summary><p>{knowledgeState.error.diagnostic}</p></details>{/if}</div><button onclick={() => knowledgeState.error = ""}>{t("dialog.close")}</button></div>
 {:else if knowledgeState.notice}
-    <div class="notice toast" role="status">{knowledgeState.notice}<button onclick={() => notify("")}>关闭</button></div>
+    <div class="notice toast" role="status">{knowledgeState.notice}<button onclick={() => notify("")}>{t("dialog.close")}</button></div>
 {/if}
 {#if confirmation.resolve}
-    <div class="shade" popover="manual" {@attach element => element.showPopover()} role="dialog" aria-modal="true" aria-label={confirmation.heading}>
+    <div class="shade" popover="manual" {@attach element => element.showPopover()} role="dialog" aria-modal="true" aria-label={confirmation.heading()}>
         <section class="paper-card confirmation">
-            <h2>{confirmation.heading}</h2>
-            <p>{confirmation.text}</p>
+            <h2>{confirmation.heading()}</h2>
+            <p>{confirmation.text()}</p>
             {#if confirmation.names.length}
                 <ul>
                     {#each confirmation.names as name, index (index)}
-                        <li>{name || "未命名"}</li>
+                        <li>{name || t("dialog.untitled")}</li>
                     {/each}
                 </ul>
             {/if}
             <footer>
-                <button class="button" onclick={() => answer(false)}>取消</button>
-                <button class="button primary" onclick={() => answer(true)}>确认更改</button>
+                <button class="button" onclick={() => answer(false)}>{t("dialog.cancel")}</button>
+                <button class="button primary" onclick={() => answer(true)}>{t("dialog.confirm")}</button>
             </footer>
         </section>
     </div>
@@ -35,4 +35,5 @@
 <script lang="ts">
     import { answer, confirmation, knowledgeState } from "./state.svelte";
     import { notify } from "./feedback.svelte";
+    import { message, t } from "../../i18n.svelte";
 </script>

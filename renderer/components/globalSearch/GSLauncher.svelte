@@ -1,4 +1,4 @@
-<Popover.Root bind:open>
+<Popover.Root bind:open={shell.search}>
     <Popover.Trigger>
         {#snippet child({ props })}
             <button {...props} class="trigger">
@@ -14,13 +14,13 @@
         <Popover.Content
             side="bottom"
             align="center"
-            sideOffset={16}
+            sideOffset={4}
             collisionPadding={12}
         >
             {#snippet child({ wrapperProps, props })}
                 <div {...wrapperProps}>
                     <div {...props} class="popover-content">
-                        <GSPopover onclose={() => open = false} />
+                        <GSPopover onclose={() => shell.search = false} />
                     </div>
                 </div>
             {/snippet}
@@ -36,7 +36,7 @@
         align-items: center;
         gap: 8px;
         width: 100%;
-        height: 70%;
+        height: var(--button-height);
         border: var(--border-width) solid var(--c-search-trigger-border);
         border-radius: 6px;
         background-color: var(--c-search-trigger-background);
@@ -65,7 +65,7 @@
     .popover-content {
         display: flex;
         flex-direction: column;
-        width: min(576px, calc(100vw - 2 * 12px));
+        width: var(--bits-popover-anchor-width);
         max-height: min(512px, var(--bits-popover-content-available-height));
         overflow: hidden;
         border: var(--border-width) solid var(--c-popover-border);
@@ -81,7 +81,7 @@
 
 
 <script lang="ts">
-    let open = $state(false);
+    import { shell } from "../layout/shell.svelte";
     import { Popover } from "bits-ui";
     import GSPopover from "./GSPopover.svelte";
     import search from "../../assets/carbon--search.svg?raw";

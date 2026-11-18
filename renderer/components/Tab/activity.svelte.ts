@@ -1,6 +1,7 @@
+import { failure } from "../../i18n.svelte";
 import { SvelteSet } from "svelte/reactivity";
 import { TabVisits } from "./visits";
-import { knowledgeState, message } from "../Knowledge/feedback.svelte";
+import { knowledgeState } from "../Knowledge/feedback.svelte";
 
 export const readingTabs = new SvelteSet<string>();
 export const slowTabs = new SvelteSet<string>();
@@ -24,5 +25,5 @@ export const visits = new TabVisits((id, locked) => {
         readingTabs.delete(id);
     }
 }, problem => {
- knowledgeState.error = message(problem);
+ knowledgeState.error = failure(problem);
 }, clearIndicator);
