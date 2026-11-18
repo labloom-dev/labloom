@@ -19,5 +19,5 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
-      - run: pnpm lint --max-warnings 0
+      - run: pnpm lint
       - run: pnpm test

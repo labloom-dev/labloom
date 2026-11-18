@@ -7,7 +7,7 @@
     "license": "MIT",
     "author": "Labloom Contributors",
     "homepage": "https://labloom.dev",
-    "packageManager": "pnpm@11.28.11",
+    "packageManager": "pnpm@12.5.1",
     "scripts": {
         "lint": "eslint --config configs/eslint.config.js --cache --cache-location dist/.eslintcache .",
         "lint:fix": "eslint --config configs/eslint.config.js --fix .",
