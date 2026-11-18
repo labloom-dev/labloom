@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import * as session from "../../main/session";
 import * as state from "../../main/workspace-state";
@@ -32,6 +32,7 @@ export function openWorkspace(path: string, expectedId?: string, input?: Session
 export function openTest(t: TestContext, input: SessionOptions = {}): ReturnType<typeof session.open> {
     const root = process.env.LABLOOM_TEST_ROOT ?? join(process.cwd(), ".local");
     options = input;
+    mkdirSync(root, { recursive: true });
     const workspace = session.open(mkdtempSync(join(root, "session-test-")), "create", options);
     t.after(() => session.close());
     return workspace;

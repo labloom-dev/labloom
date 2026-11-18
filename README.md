@@ -30,6 +30,10 @@ pnpm install
 pnpm dev
 ```
 
+### Checks
+
+Run `pnpm typecheck`, `pnpm lint` and `pnpm test` before pushing. CI runs the same checks on pull requests and on `main`.
+
 ### Database development
 
 Use `pnpm db:generate --name <name>` to generate migrations, `pnpm db:check` to check repository consistency, and `pnpm db:diagram` to view the schema. Run `pnpm test:db` for database tests.
