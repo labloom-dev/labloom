@@ -50,12 +50,12 @@
     onMount(() => {
         let live = true;
         const load = (): void => {
-            void window.api.knowledge.definitions().then(definitions => {
+            void window.api.attributes.definitions().then(definitions => {
                 if (live) tags = definitions.find(item => item.id === "tags")?.metadata.options ?? [];
             });
         };
         load();
-        const off = window.api.knowledge.onChanged(change => {
+        const off = window.api.pages.onChanged(change => {
             if (change.definition === "tags") load();
         });
         return () => {

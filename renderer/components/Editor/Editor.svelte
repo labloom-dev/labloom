@@ -195,7 +195,7 @@
         pasting = true;
         try {
             if (!await session.flush() || instance.isDestroyed) return;
-            const available = await window.api.knowledge.syncBlocks(clipboard.workspaceId, clipboard.ids);
+            const available = await window.api.pages.syncBlocks(clipboard.workspaceId, clipboard.ids);
             if (instance.isDestroyed || pendingPaste !== choice) return;
             pasteChoice = choice;
             if (!available) await paste(false);
@@ -211,7 +211,7 @@
         pasteChoice = null; pasting = true;
         try {
             if (!await session.flush() || instance.isDestroyed) return;
-            const current = synced ? await window.api.knowledge.syncBlocks(choice.clipboard.workspaceId, choice.clipboard.ids) : undefined;
+            const current = synced ? await window.api.pages.syncBlocks(choice.clipboard.workspaceId, choice.clipboard.ids) : undefined;
             if (synced && !current) throw new LabloomError({ kind: "block-sync-unavailable" });
             if (current) await session.objects(current.map(block => block.id));
             if (instance.isDestroyed) return;
@@ -220,7 +220,7 @@
             pendingPaste = null;
             let saved = false;
             await session.action(async token => {
-                const result = await window.api.knowledge.commitEdit({ ...planned.edit, pageId: session.state.page!.id, tabId, batch: 0, ...(synced ? { sync: choice.clipboard.ids } : {}) }, token);
+                const result = await window.api.pages.commitEdit({ ...planned.edit, pageId: session.state.page!.id, tabId, batch: 0, ...(synced ? { sync: choice.clipboard.ids } : {}) }, token);
                 saved = result.status === "saved";
                 return result;
             });
@@ -265,7 +265,7 @@
         const at = instance.state.doc.resolve(loc.pos), index = at.index() - 1;
         if (index + direction < 0 || index + direction >= at.parent.childCount - 1) return;
         const position = { pageId: session.state.page!.id, containerId: at.depth ? at.parent.attrs.blockId as string : session.state.page!.id, index, blockId: loc.node.attrs.blockId as string };
-        void perform(() => session.action(token => window.api.knowledge.place({ position, action: direction < 0 ? "move-up" : "move-down", tabId }, token)));
+        void perform(() => session.action(token => window.api.pages.place({ position, action: direction < 0 ? "move-up" : "move-down", tabId }, token)));
     }
     function placeholder(): void {
         if (!editor || !host) return;
@@ -366,7 +366,7 @@
         if (!loc || !instance) return;
         const { node, pos } = loc;
         if (action === "delete") {
-            void perform(() => session.action(token => window.api.knowledge.deleteBlock({ pageId: session.state.page!.id, tabId, blockId: node.attrs.blockId }, token)));
+            void perform(() => session.action(token => window.api.pages.deleteBlock({ pageId: session.state.page!.id, tabId, blockId: node.attrs.blockId }, token)));
             return;
         }
         if (action === "row" || action === "column") {

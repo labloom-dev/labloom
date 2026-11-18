@@ -1,104 +1,46 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { AppAPI } from "../shared/app";
-import type { BridgeAPI } from "../shared/failure";
-import { appChannels, settingsChannels, feedChanged, feedChannels, startupChannels } from "../shared/ipc";
-import { knowledgeChannels, knowledgeChanged } from "../shared/ipc";
+import type { AppAPI, BridgeAPI } from "../shared/ipc";
+import type { Channels, InvokeKeys } from "../shared/ipc/contract";
+import { appChannels, beforeQuit, feedChanged, pagesChanged, settingsChanged, pagesChannels, attributesChannels, historyChannels, papersChannels, timersChannels, workspaceChannels, settingsChannels, startupChannels, feedChannels } from "../shared/ipc";
 
-// The renderer only gets this typed bridge, never ipcRenderer itself.
+function methods<API>(channels: Record<keyof API, string>, call: (channel: string, ...args: unknown[]) => unknown): API {
+    return Object.fromEntries(Object.entries<string>(channels).map(([key, channel]) => [key, (...args: unknown[]) => call(channel, ...args)])) as API;
+}
+function invokes<API>(channels: Channels<API>): Pick<BridgeAPI<API>, InvokeKeys<API>> {
+    return methods(channels, (channel, ...args) => ipcRenderer.invoke(channel, ...args));
+}
+function subscribe<Args extends unknown[]>(channel: string, listener: (...args: Args) => void): () => void {
+    const handler = (_event: unknown, ...args: Args): void => listener(...args);
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.removeListener(channel, handler);
+}
+
+const { beforeQuitResult, ...commands } = appChannels;
 const api: BridgeAPI<AppAPI> = {
-    openDevTools: () => ipcRenderer.send(appChannels.openDevTools),
-    beforeQuit(check) {
-        const listener = (_event: unknown, id: string): void => {
-            Promise.resolve().then(check).then(block => ipcRenderer.send(appChannels.beforeQuitResult, id, block !== false))
-                .catch(error => {
-                    console.error(error); ipcRenderer.send(appChannels.beforeQuitResult, id, true);
-                });
-        };
-        ipcRenderer.on(appChannels.beforeQuit, listener);
-        return () => {
-            ipcRenderer.removeListener(appChannels.beforeQuit, listener);
-        };
-    },
-    knowledge: {
-        list: (...args) => ipcRenderer.invoke(knowledgeChannels.list, ...args),
-        listUpdates: (...args) => ipcRenderer.invoke(knowledgeChannels.listUpdates, ...args),
-        get: (...args) => ipcRenderer.invoke(knowledgeChannels.get, ...args),
-        create: (...args) => ipcRenderer.invoke(knowledgeChannels.create, ...args),
-        readObjects: (...args) => ipcRenderer.invoke(knowledgeChannels.readObjects, ...args),
-        syncBlocks: (...args) => ipcRenderer.invoke(knowledgeChannels.syncBlocks, ...args),
-        commitEdit: (...args) => ipcRenderer.invoke(knowledgeChannels.commitEdit, ...args),
-        previewEdit: (...args) => ipcRenderer.invoke(knowledgeChannels.previewEdit, ...args),
-        deleteBlock: (...args) => ipcRenderer.invoke(knowledgeChannels.deleteBlock, ...args),
-        place: (...args) => ipcRenderer.invoke(knowledgeChannels.place, ...args),
-        trash: (...args) => ipcRenderer.invoke(knowledgeChannels.trash, ...args),
-        restore: (...args) => ipcRenderer.invoke(knowledgeChannels.restore, ...args),
-        purge: (...args) => ipcRenderer.invoke(knowledgeChannels.purge, ...args),
-        emptyTrash: (...args) => ipcRenderer.invoke(knowledgeChannels.emptyTrash, ...args),
-        definitions: (...args) => ipcRenderer.invoke(knowledgeChannels.definitions, ...args),
-        define: (...args) => ipcRenderer.invoke(knowledgeChannels.define, ...args),
-        backlinks: (...args) => ipcRenderer.invoke(knowledgeChannels.backlinks, ...args),
-        resolve: (...args) => ipcRenderer.invoke(knowledgeChannels.resolve, ...args),
-        history: (...args) => ipcRenderer.invoke(knowledgeChannels.history, ...args),
-        undo: (...args) => ipcRenderer.invoke(knowledgeChannels.undo, ...args),
-        closeTab: (...args) => ipcRenderer.invoke(knowledgeChannels.closeTab, ...args),
-        loadTabs: (...args) => ipcRenderer.invoke(knowledgeChannels.loadTabs, ...args),
-        saveTabs: (...args) => ipcRenderer.invoke(knowledgeChannels.saveTabs, ...args),
-        importPDF: (...args) => ipcRenderer.invoke(knowledgeChannels.importPDF, ...args),
-        importFiles: (...args) => ipcRenderer.invoke(knowledgeChannels.importFiles, ...args),
-        files: (...args) => ipcRenderer.invoke(knowledgeChannels.files, ...args),
-        openFile: (...args) => ipcRenderer.invoke(knowledgeChannels.openFile, ...args),
-        resources: (...args) => ipcRenderer.invoke(knowledgeChannels.resources, ...args),
-        readFile: (...args) => ipcRenderer.invoke(knowledgeChannels.readFile, ...args),
-        getAnnotation: (...args) => ipcRenderer.invoke(knowledgeChannels.getAnnotation, ...args),
-        unlockPDF: (...args) => ipcRenderer.invoke(knowledgeChannels.unlockPDF, ...args),
-        changeAnnotation: (...args) => ipcRenderer.invoke(knowledgeChannels.changeAnnotation, ...args),
-        position: (...args) => ipcRenderer.invoke(knowledgeChannels.position, ...args),
-        deleteAnnotation: (...args) => ipcRenderer.invoke(knowledgeChannels.deleteAnnotation, ...args),
-        annotate: (...args) => ipcRenderer.invoke(knowledgeChannels.annotate, ...args),
-        timers: (...args) => ipcRenderer.invoke(knowledgeChannels.timers, ...args),
-        setTimer: (...args) => ipcRenderer.invoke(knowledgeChannels.setTimer, ...args),
-        notices: (...args) => ipcRenderer.invoke(knowledgeChannels.notices, ...args),
-        readNotice: (...args) => ipcRenderer.invoke(knowledgeChannels.readNotice, ...args),
-        onChanged: listener => {
-            const handler = (_event: unknown, change: Parameters<typeof listener>[0]): void => listener(change);
-            ipcRenderer.on(knowledgeChanged, handler);
-            return () => ipcRenderer.removeListener(knowledgeChanged, handler);
+    app: {
+        ...methods<Omit<AppAPI["app"], "beforeQuit">>(commands, (channel, ...args) => ipcRenderer.send(channel, ...args)),
+        beforeQuit(check) {
+            const listener = (_event: unknown, id: string): void => {
+                Promise.resolve().then(check).then(block => ipcRenderer.send(beforeQuitResult, id, block !== false))
+                    .catch(error => {
+                        console.error(error); ipcRenderer.send(beforeQuitResult, id, true);
+                    });
+            };
+            ipcRenderer.on(beforeQuit, listener);
+            return () => {
+                ipcRenderer.removeListener(beforeQuit, listener);
+            };
         }
     },
-    settings: {
-        get: () => ipcRenderer.invoke(settingsChannels.get),
-        update: patch => ipcRenderer.invoke(settingsChannels.update, patch),
-        flush: revision => ipcRenderer.invoke(settingsChannels.flush, revision),
-        onChanged: listener => {
-            const handler = (_event: unknown, value: Parameters<typeof listener>[0]): void => listener(value);
-            ipcRenderer.on(settingsChannels.changed, handler);
-            return () => ipcRenderer.removeListener(settingsChannels.changed, handler);
-        }
-    },
-    feed: {
-        getState: query => ipcRenderer.invoke(feedChannels.getState, query),
-        getItem: id => ipcRenderer.invoke(feedChannels.getItem, id),
-        saveSource: source => ipcRenderer.invoke(feedChannels.saveSource, source),
-        setSourceStatus: (id, action) => ipcRenderer.invoke(feedChannels.setSourceStatus, id, action),
-        refresh: sourceId => ipcRenderer.invoke(feedChannels.refresh, sourceId),
-        setRead: (id, isRead) => ipcRenderer.invoke(feedChannels.setRead, id, isRead),
-        markAllRead: sourceId => ipcRenderer.invoke(feedChannels.markAllRead, sourceId),
-        setPosition: (id, progress) => ipcRenderer.invoke(feedChannels.setPosition, id, progress),
-        setKeywords: keywords => ipcRenderer.invoke(feedChannels.setKeywords, keywords),
-        importItem: (id, replace) => ipcRenderer.invoke(feedChannels.importItem, id, replace),
-        fetchPDF: id => ipcRenderer.invoke(feedChannels.fetchPDF, id),
-        openItem: id => ipcRenderer.invoke(feedChannels.openItem, id),
-        onChanged: listener => {
-            const handler = (): void => listener();
-            ipcRenderer.on(feedChanged, handler);
-            return () => ipcRenderer.removeListener(feedChanged, handler);
-        }
-    },
-    startup: {
-        getState: () => ipcRenderer.invoke(startupChannels.getState),
-        chooseWorkspace: action => ipcRenderer.invoke(startupChannels.chooseWorkspace, action),
-        retry: () => ipcRenderer.invoke(startupChannels.retry)
-    }
+    pages: { ...invokes<AppAPI["pages"]>(pagesChannels), onChanged: listener => subscribe(pagesChanged, listener) },
+    attributes: invokes<AppAPI["attributes"]>(attributesChannels),
+    history: invokes<AppAPI["history"]>(historyChannels),
+    papers: invokes<AppAPI["papers"]>(papersChannels),
+    timers: invokes<AppAPI["timers"]>(timersChannels),
+    workspace: invokes<AppAPI["workspace"]>(workspaceChannels),
+    settings: { ...invokes<AppAPI["settings"]>(settingsChannels), onChanged: listener => subscribe(settingsChanged, listener) },
+    startup: invokes<AppAPI["startup"]>(startupChannels),
+    feed: { ...invokes<AppAPI["feed"]>(feedChannels), onChanged: listener => subscribe(feedChanged, listener) }
 };
 
 contextBridge.exposeInMainWorld("bridge", api);

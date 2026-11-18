@@ -27,7 +27,7 @@
     let active = true;
     async function load(): Promise<void> {
         try {
-            const data = await window.api.knowledge.readFile(file.id);
+            const data = await window.api.papers.readFile(file.id);
             if (active) {
                 source = { kind: "data", data: new Uint8Array(data) };
                 error = "";

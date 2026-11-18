@@ -83,7 +83,8 @@ export function getState(query: FeedQuery): FeedState {
         where.push(match); args.push(query.keyword.trim());
     }
     if (query.followed) {
-        where.push(localKeywords.length ? "(" + localKeywords.map(() => match).join(" OR ") + ")" : "0"); args.push(...localKeywords);
+        where.push("EXISTS (SELECT 1 FROM json_each(?) k WHERE instr(lower(i.title || ' ' || i.summary),lower(k.value))>0)");
+        args.push(JSON.stringify(localKeywords));
     }
     const from = ` FROM feed_items i JOIN pages p ON p.id=i.source_id JOIN blocks b ON b.id=p.title_block_id
         JOIN page_attrs s ON s.page_id=p.id AND s.attr_id='feed_status' JOIN page_attrs d ON d.page_id=p.id AND d.attr_id='deleted' WHERE ` + where.join(" AND ");
@@ -123,7 +124,6 @@ export async function saveSource(input: FeedSourceInput): Promise<string> {
     const interval = input.intervalMinutes;
     if (interval !== undefined && (!Number.isSafeInteger(interval) || interval < feedIntervals.min || interval > feedIntervals.max)) throw new LabloomError({ kind: "feed-invalid-interval" });
     let name = input.name.trim();
-    if (name.length > 200 || input.url.length > 4096) throw new LabloomError({ kind: "feed-source-too-long" });
     const url = feedURL(input.url);
     let existing = input.id ? source(input.id) : undefined;
     if (existing?.status === "cancelled") throw new LabloomError({ kind: "feed-cancelled" });
@@ -144,7 +144,7 @@ export async function saveSource(input: FeedSourceInput): Promise<string> {
     const id = commit.run({ sourceTab: "", feed: true, history: false, updateModified: false }, () => {
         const localDuplicate = duplicate(address, existing?.id);
         if (localDuplicate && localDuplicate.id !== existing?.id) throw new LabloomError({ kind: "feed-duplicate" });
-        name ||= existing?.name || result.title.slice(0, 200) || new URL(address).hostname;
+        name ||= existing?.name || result.title || new URL(address).hostname;
         let id: string;
         if (existing) {
             source(existing.id);

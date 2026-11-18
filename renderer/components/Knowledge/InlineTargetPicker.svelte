@@ -46,7 +46,7 @@
     $effect(() => {
         const query = keyword; let live = true; active = 0; chosen = null;
         const timer = setTimeout(() => {
-            void window.api.knowledge.list({ keyword: query, limit: 40 }).then(result => {
+            void window.api.pages.list({ keyword: query, limit: 40 }).then(result => {
                 if (live) pages = result.items;
             }, problem => {
                 if (live) error = failure(problem);
@@ -63,7 +63,7 @@
         const page = pages[active];
         if (!page || chosen) return;
         try {
-            chosen = await window.api.knowledge.get(page.id); active = 0;
+            chosen = await window.api.pages.get(page.id); active = 0;
         }
         catch (problem) {
             error = failure(problem);

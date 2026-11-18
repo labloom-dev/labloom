@@ -1,24 +1,31 @@
-import { type BrowserWindow, shell } from "electron";
-import type { FeedQuery, FeedSourceAction, FeedSourceInput } from "../../shared/types/feed";
-import { feedChannels } from "../../shared/ipc";
-import { handle } from "../ipc";
+import { shell, type BrowserWindow } from "electron";
+import typia from "typia";
+import { feedChannels, feedChanged, type FeedAPI } from "../../shared/feed/ipc";
+import { invalid, register, route, type Routes } from "../ipc";
+import * as events from "../knowledge/events";
 import * as feed from "./service";
 
+type Args<Key extends keyof typeof feedChannels> = Parameters<FeedAPI[Key]>;
+
+export const routes = {
+    getState: route(typia.createAssert<Args<"getState">>(invalid), feed.getState),
+    getItem: route(typia.createAssert<Args<"getItem">>(invalid), feed.getItem),
+    saveSource: route(typia.createAssert<Args<"saveSource">>(invalid), feed.saveSource),
+    setSourceStatus: route(typia.createAssert<Args<"setSourceStatus">>(invalid), feed.setSourceStatus),
+    refresh: route(typia.createAssert<Args<"refresh">>(invalid), feed.refresh),
+    setRead: route(typia.createAssert<Args<"setRead">>(invalid), feed.setRead),
+    markAllRead: route(typia.createAssert<Args<"markAllRead">>(invalid), feed.markAllRead),
+    setPosition: route(typia.createAssert<Args<"setPosition">>(invalid), feed.setPosition),
+    setKeywords: route(typia.createAssert<Args<"setKeywords">>(invalid), feed.setKeywords),
+    importItem: route(typia.createAssert<Args<"importItem">>(invalid), feed.importItem),
+    fetchPDF: route(typia.createAssert<Args<"fetchPDF">>(invalid), feed.fetchPDF),
+    openItem: route(typia.createAssert<Args<"openItem">>(invalid), id => shell.openExternal(feed.itemURL(id)))
+} satisfies Routes<FeedAPI>;
 export function registerFeedIPCs(window: BrowserWindow): void {
     const contents = window.webContents;
-
-    // The subscription module validates the shape of each argument itself.
-    handle(contents, feedChannels.getState, query => feed.getState(query as FeedQuery));
-    handle(contents, feedChannels.getItem, id => feed.getItem(id as string));
-    handle(contents, feedChannels.saveSource, source => feed.saveSource(source as FeedSourceInput));
-    handle(contents, feedChannels.setSourceStatus, (id, action) => feed.setSourceStatus(id as string, action as FeedSourceAction));
-    handle(contents, feedChannels.refresh, sourceId => feed.refresh(sourceId as string | undefined));
-    handle(contents, feedChannels.setRead, (id, isRead) => feed.setRead(id as string, isRead as boolean));
-    handle(contents, feedChannels.markAllRead, sourceId => feed.markAllRead(sourceId as string | undefined));
-    handle(contents, feedChannels.setPosition, (id, progress) => feed.setPosition(id as string, progress as number));
-    handle(contents, feedChannels.setKeywords, keywords => feed.setKeywords(keywords as string[]));
-    handle(contents, feedChannels.importItem, (id, replace) => feed.importItem(id as string, replace === true));
-    handle(contents, feedChannels.fetchPDF, id => feed.fetchPDF(id as string));
-    handle(contents, feedChannels.openItem, id => shell.openExternal(feed.itemURL(id as string)));
-
+    register(contents, feedChannels, routes);
+    const unsubscribe = events.subscribe(event => {
+        if (event.type === "feed" && !contents.isDestroyed()) contents.send(feedChanged);
+    });
+    contents.once("destroyed", unsubscribe);
 }

@@ -11,7 +11,8 @@ import * as session from "../main/session";
 import * as feed from "../main/feed/service";
 import * as records from "../main/knowledge/records";
 import { type FeedResult } from "../main/feed/parser";
-import { appChannels } from "../shared/ipc";
+import { registerAppIPCs } from "../main/app/ipc";
+import { appChannels, beforeQuit } from "../shared/ipc";
 
 async function until(check: () => boolean): Promise<void> {
     const deadline = performance.now() + 2000;
@@ -23,7 +24,7 @@ type LifecycleFixture = {
     state: { expectSaved: boolean; quit: number; closed: number; dialogs: number; response: number; destroyed: boolean; loading: boolean; contentsDestroyed: boolean; minimized: boolean; shown: number; focused: number; restored: number; hidden: number };
     sent: { channel: string; id: string }[]; close(): void; quit(): void; reply(block: unknown, id?: string): void;
 };
-function fixture(t: TestContext, platform: NodeJS.Platform = "win32", options: session.SessionOptions = {}): LifecycleFixture {
+function fixture(t: TestContext, platform: NodeJS.Platform = "win32", options: session.SessionOptions = {}, startEditor = true): LifecycleFixture {
     const root = mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "lifecycle-"));
     settings.initialize(root);
     mkdirSync(root + "-workspace");
@@ -74,7 +75,8 @@ function fixture(t: TestContext, platform: NodeJS.Platform = "win32", options: s
         } as unknown as NonNullable<Parameters<typeof lifecycle.initialize>[0]>["dialog"]
     });
     lifecycle.registerWindowLifecycle(window as unknown as BrowserWindow);
-    lifecycle.editorStarted(contents as unknown as BrowserWindow["webContents"]);
+    registerAppIPCs(window as unknown as BrowserWindow);
+    if (startEditor) ipc.emit(appChannels.editorStarted, { senderFrame: frame });
     const reply = (block: unknown, id = sent.at(-1)?.id): void => {
         ipc.emit(appChannels.beforeQuitResult, { senderFrame: frame }, id, block);
     };
@@ -84,12 +86,18 @@ function fixture(t: TestContext, platform: NodeJS.Platform = "win32", options: s
     return { root, workspace, contents, state, sent, close, quit, reply };
 }
 
+test("closing before the editor starts skips the renderer handshake", async t => {
+    const f = fixture(t, "win32", {}, false);
+    f.close(); await until(() => f.state.quit === 1);
+    assert.deepEqual(f.sent, []);
+});
+
 test("close and quit share one save request and persist settings before closing the database", async t => {
     const f = fixture(t);
     settings.update({ layout: { width: 330 } });
     f.close(); f.close(); f.quit();
     assert.equal(f.sent.length, 1);
-    assert.equal(f.sent[0].channel, appChannels.beforeQuit);
+    assert.equal(f.sent[0].channel, beforeQuit);
     assert.equal(f.workspace.database.open, true);
     f.reply(false);
     await until(() => f.state.quit === 1);
@@ -104,6 +112,11 @@ test("wrong ids are ignored and malformed or blocking answers retain focus and t
         await delay(0);
         assert.equal(f.state.quit, 0);
         f.reply(value);
+        if (value !== true) {
+            await delay(0);
+            assert.equal(f.state.minimized, true);
+            f.reply(true);
+        }
         await until(() => !f.state.minimized);
         await delay(0);
         assert.equal(f.workspace.database.open, true);

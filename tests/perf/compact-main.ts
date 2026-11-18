@@ -5,10 +5,8 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fixture } from "./fixture";
-import { registerSettingsIPCs } from "../../main/settings/ipc";
-import { registerFeedIPCs } from "../../main/feed/ipc";
-import { registerKnowledgeIPCs } from "../../main/knowledge/ipc";
-import { registerStartupIPCs } from "../../main/startup/ipc";
+import { registerIPCs } from "../../main/register";
+import { attach } from "../../main/ui/windowFrame";
 
 function stats(values: number[]): { p50: number; p95: number } {
     const sorted = values.toSorted((a, b) => a - b);
@@ -206,8 +204,7 @@ void app.whenReady().then(async () => {
         window.webContents.on("console-message", details => {
             if (details.level === "error") console.error(details.message);
         });
-        registerStartupIPCs(window); registerSettingsIPCs(window);
-        registerKnowledgeIPCs(window); registerFeedIPCs(window);
+        registerIPCs(window, attach(window));
         window.webContents.debugger.attach();
         const sidebar: number[] = [], library: number[] = [];
         let last: Awaited<ReturnType<typeof firstScreen>> | undefined;

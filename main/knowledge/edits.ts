@@ -192,7 +192,7 @@ function syncBlock(id: string): ContentBlock | null {
 
 export function syncBlocks(workspaceId: string, ids: string[]): ContentBlock[] | null {
     workspace.requireWorkspace();
-    if (!Array.isArray(ids) || !ids.length || ids.length > 10000 || !ids.every(validUUID)) throw new LabloomError({ kind: "page-invalid-objects" });
+    if (!Array.isArray(ids) || !ids.length || !ids.every(validUUID)) throw new LabloomError({ kind: "page-invalid-objects" });
     if (data.statement("SELECT id FROM workspace_meta").pluck().get() !== workspaceId || ids.some(id => !syncBlock(id))) return null;
     const blocks = new Map<string, ContentBlock>();
     let pending = ids;
@@ -240,7 +240,7 @@ export function restore(ids: string[], tabId: string): CommitResult {
 
 export function createPage(kind: PageKind = "editable", title = "", initial: Record<string, AttributeValue> = {}, parentId?: string, tabId = ""): PageRecord {
     workspace.requireWorkspace();
-    if (!pageKinds.includes(kind) || typeof title !== "string" || title.length > 1000 || !record(initial)) throw new LabloomError({ kind: "page-invalid-create" });
+    if (!pageKinds.includes(kind) || typeof title !== "string" || !record(initial)) throw new LabloomError({ kind: "page-invalid-create" });
     const changed = { pages: [] as string[], blocks: [] as string[] };
     const page = commit.run({ sourceTab: tabId, history: !!parentId && kind === "annotation" && !!tabId }, context => {
         if (parentId) writable(parentId);

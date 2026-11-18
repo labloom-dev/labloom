@@ -1,5 +1,5 @@
 import { mount } from "svelte";
-import type { FeedAPI } from "../../shared/types/feed";
+import type { FeedAPI } from "../../shared/feed/ipc";
 import FeedView from "../components/Feed/FeedView.svelte";
 import { LabloomError } from "../../shared/failure";
 import "../styles/colors.css";

@@ -1,6 +1,6 @@
 import { mount } from "svelte";
 import App from "./components/layout/App.svelte";
-import { connectAPI } from "../shared/failure";
+import { connectAPI } from "../shared/ipc/bridge";
 import { type AppAPI } from "../shared/app";
 
 window.api = connectAPI<AppAPI>(window.bridge);

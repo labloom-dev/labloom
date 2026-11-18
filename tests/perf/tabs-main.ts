@@ -5,10 +5,8 @@ import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import type { Editor } from "@tiptap/core";
 import { fixture, seedLargePage } from "./fixture";
-import { registerSettingsIPCs } from "../../main/settings/ipc";
-import { registerFeedIPCs } from "../../main/feed/ipc";
-import { registerKnowledgeIPCs } from "../../main/knowledge/ipc";
-import { registerStartupIPCs } from "../../main/startup/ipc";
+import { registerIPCs } from "../../main/register";
+import { attach } from "../../main/ui/windowFrame";
 
 // Executed inside a dedicated benchmark renderer. Synthetic clicks here are timing samples only.
 async function measure(): Promise<Record<string, { p50: number; p95: number }>> {
@@ -91,9 +89,7 @@ async function run(large: boolean): Promise<boolean> {
         window.webContents.on("console-message", details => {
             if (details.level === "error") console.error(details.message);
         });
-        registerStartupIPCs(window);
-        registerSettingsIPCs(window);
-        registerKnowledgeIPCs(window); registerFeedIPCs(window);
+        registerIPCs(window, attach(window));
         await window.loadURL(process.env.LABLOOM_BENCH_URL!);
         window.webContents.debugger.attach();
         await window.webContents.debugger.sendCommand("Emulation.setFocusEmulationEnabled", { enabled: true });

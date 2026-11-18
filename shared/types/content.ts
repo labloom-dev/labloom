@@ -1,3 +1,4 @@
+import type { TabId } from "../ipc/contract";
 import { type AttributeValue } from "./attributes";
 
 export const pageKinds = ["editable", "paper", "annotation", "task", "event", "feed"] as const;
@@ -40,13 +41,13 @@ export type PageObjects = {
 export type PageQuery = { ids?: string[]; keyword?: string; kind?: PageKind | ""; deleted?: boolean; pinned?: boolean; tags?: string[]; attributes?: Record<string, AttributeValue>; sort?: "modified" | "created" | "title"; offset?: number; limit?: number };
 export type PageList = { items: PageSummary[]; total: number };
 export type EditCommit = {
-    pageId: string; tabId: string; batch: number;
+    pageId: string; tabId: TabId; batch: number;
     blocks: ContentBlock[]; pageChildren?: string[]; attributes?: Record<string, AttributeValue>; detach?: string[];
     sync?: string[];
 };
 export type Position = { pageId: string; containerId: string; index: number; blockId: string };
-export type Placement = { position: Position; action: "insert" | "remove" | "clone" | "duplicate" | "move-up" | "move-down"; blockId?: string; tabId: string };
-export type BlockDeletion = { pageId: string; tabId: string; blockId: string };
+export type Placement = { position: Position; action: "insert" | "remove" | "clone" | "duplicate" | "move-up" | "move-down"; blockId?: string; tabId: TabId };
+export type BlockDeletion = { pageId: string; tabId: TabId; blockId: string };
 export type Changed = { pages: string[]; blocks: string[]; backlinks?: string[]; highlightPages?: string[] };
 export type KnowledgeChange = Changed & { sourceTab: string; kinds?: Record<string, PageKind>; summaryPages?: string[]; definition?: string; notices?: boolean; purged?: string[] };
 export type NamedPage = { id: string; title: string };

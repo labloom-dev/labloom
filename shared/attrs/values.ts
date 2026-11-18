@@ -7,9 +7,9 @@ const optionMetadata = {
     initial: { options: [] },
     validate(value: Record<string, unknown>): boolean {
         const options = value.options;
-        return Object.keys(value).length === 1 && Array.isArray(options) && options.length <= 10000
+        return Object.keys(value).length === 1 && Array.isArray(options)
             && options.every(item => record(item) && Object.keys(item).length === 2 && typeof item.id === "string" && !!item.id
-                && typeof item.name === "string" && !!item.name.trim() && item.name.length <= 100)
+                && typeof item.name === "string" && !!item.name.trim())
             && new Set(options.map(item => item.id)).size === options.length
             && new Set(options.map(item => item.name)).size === options.length;
     }
@@ -82,17 +82,23 @@ export function validUUID(value: unknown): value is string {
     return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
 
-export function jsonValue(value: unknown, depth = 0): value is AttributeValue {
-    if (depth > 40) return false;
+export function jsonValue(value: unknown, seen = new Map<object, boolean>()): value is AttributeValue {
     if (value === null || typeof value === "boolean" || typeof value === "string") return true;
     if (typeof value === "number") return Number.isFinite(value);
-    if (Array.isArray(value)) return value.every(item => jsonValue(item, depth + 1));
-    return record(value) && Object.entries(value).every(([key, item]) => !["__proto__", "constructor", "prototype"].includes(key) && jsonValue(item, depth + 1));
+    if (typeof value !== "object") return false;
+    // A completed subtree may be shared. Encountering one still being checked is a cycle.
+    const cached = seen.get(value);
+    if (cached !== undefined) return cached;
+    seen.set(value, false);
+    const valid = Array.isArray(value) ? value.every(item => jsonValue(item, seen)) :
+        Object.entries(value).every(([key, item]) => !["__proto__", "constructor", "prototype"].includes(key) && jsonValue(item, seen));
+    seen.set(value, valid);
+    return valid;
 }
 
 export function validateDefinition(value: unknown): asserts value is AttributeDefinition {
     if (!record(value) || typeof value.id !== "string" || !attributeTypes.includes(value.type as never) || !record(value.metadata)) throw new LabloomError({ kind: "attribute-invalid-definition" });
-    if (typeof value.name !== "string" || !value.name.trim() || value.name.length > 100) throw new LabloomError({ kind: "attribute-invalid-name" });
+    if (typeof value.name !== "string" || !value.name.trim()) throw new LabloomError({ kind: "attribute-invalid-name" });
     if ([value.hidden, value.readonly].some(flag => flag !== undefined && typeof flag !== "boolean")) throw new LabloomError({ kind: "attribute-invalid-permissions" });
     validateMetadata(value.type as AttributeType, value.metadata);
 }

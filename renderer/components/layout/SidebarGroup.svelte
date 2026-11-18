@@ -71,7 +71,7 @@
                 if (filter) {
                     const matched: PageSummary[] = [];
                     const ids = [...changed];
-                    for (let i = 0; i < ids.length; i += 200) matched.push(...(await window.api.knowledge.list({ ...JSON.parse(JSON.stringify(query)), ids: ids.slice(i, i + 200), limit: 200 })).items.filter(page => page.title.toLocaleLowerCase().includes(filter)));
+                    for (let i = 0; i < ids.length; i += 200) matched.push(...(await window.api.pages.list({ ...JSON.parse(JSON.stringify(query)), ids: ids.slice(i, i + 200), limit: 200 })).items.filter(page => page.title.toLocaleLowerCase().includes(filter)));
                     if (token !== generation) return;
                     rows = [...rows.filter(page => !changed.has(page.id)), ...matched].sort((a, b) => Number(b.attributes.modified_at) - Number(a.attributes.modified_at) || a.id.localeCompare(b.id));
                 }
@@ -87,7 +87,7 @@
                     // can update metadata without hydrating all ten thousand blocks for a summary.
                     if (blockIds.length <= 20) {
                         for (const id of [...changed].filter(id => cache.has(id))) {
-                            const objects = await window.api.knowledge.readObjects(id, [id, ...blockIds]);
+                            const objects = await window.api.pages.readObjects(id, [id, ...blockIds]);
                             if (token !== generation) return;
                             if (objects.page && !objects.blocks.some(block => block.type === "title")) {
                                 cache.set(id, { ...cache.get(id)!, attributes: objects.page.attributes });
@@ -98,7 +98,7 @@
                     let total = 0;
                     for (let i = 0; i < count; i += 200) {
                         const unchanged = rows.slice(i, i + 200).filter(page => !changed.has(page.id) || unchangedTitles.has(page.id)).map(page => page.id);
-                        const result = await window.api.knowledge.listUpdates({ ...JSON.parse(JSON.stringify(query)), offset: i, limit: Math.min(200, count - i) }, unchanged);
+                        const result = await window.api.pages.listUpdates({ ...JSON.parse(JSON.stringify(query)), offset: i, limit: Math.min(200, count - i) }, unchanged);
                         if (token !== generation) return;
                         order.push(...result.order); total = result.total;
                         for (const page of result.items) cache.set(page.id, page);
@@ -123,7 +123,7 @@
         try {
             let found: PageSummary[] = [];
             do {
-                const result = await window.api.knowledge.list({ ...JSON.parse(JSON.stringify(query)), offset, limit: filter ? 200 : 40 });
+                const result = await window.api.pages.list({ ...JSON.parse(JSON.stringify(query)), offset, limit: filter ? 200 : 40 });
                 if (current !== generation) return;
                 offset += result.items.length;
                 found = [...found, ...result.items.filter(page => !filter || page.title.toLocaleLowerCase().includes(filter))];

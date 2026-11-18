@@ -333,9 +333,9 @@ export async function fetchFeed(request: FeedRequest, fetcher: Fetcher = fetch):
     if (host !== "arxiv.org" && !host.endsWith(".arxiv.org")) {
         const result = await download(request, fetcher);
         if (!result.entries) return result;
-        // Blog sources import their latest ten entries; an entry without an identifier is told apart by its address.
+        // An entry without an identifier is told apart by its address.
         const unique = [...new Map(result.entries.map(entry => [entry.externalId ?? entry.url ?? `${entry.title}\n${entry.publishedAt}`, entry])).values()];
-        return { ...result, entries: unique.sort((a, b) => (b.publishedAt ?? -Infinity) - (a.publishedAt ?? -Infinity)).slice(0, 10) };
+        return { ...result, entries: unique.sort((a, b) => (b.publishedAt ?? -Infinity) - (a.publishedAt ?? -Infinity)) };
     }
     // arXiv requests share one connection queue, at least three seconds apart.
     const queued = arxivQueue.then(async () => {

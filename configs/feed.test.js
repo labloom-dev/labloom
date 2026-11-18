@@ -294,7 +294,7 @@ test("a web page leads to the feed it advertises only while a source is being sa
     await assert.rejects(fetchFeed({ url: "https://lab.example/", discover: true }, async () => new Response("<!doctype html><html><body>No feeds</body></html>")), hasFailure("feed-no-discovery"));
 });
 
-test("blog feeds import the latest ten unique entries and retain older saved articles", async t => {
+test("blog feeds import every unique entry and preserve earlier articles and read state", async t => {
     let latest = 12;
     const load = request => fetchFeed(request, async () => {
         const items = Array.from({ length: latest }, (_, i) => `<item><guid>blog-${i + 1}</guid><title>Post ${i + 1}</title>
@@ -304,9 +304,9 @@ test("blog feeds import the latest ten unique entries and retain older saved art
     });
     const { service } = fixture(t, load);
     const { entries } = await load({ url: "https://openai.com/news/rss.xml" });
-    assert.equal(entries.length, 10);
+    assert.equal(entries.length, 13);
     assert.equal(entries[0].externalId, "blog-12");
-    assert.equal(entries.at(-1).externalId, "blog-3");
+    assert.deepEqual(entries.map(item => item.externalId), [...Array.from({ length: 12 }, (_, i) => "blog-" + (12 - i)), "undated"]);
     // Without a name, the source takes the feed's own title.
     const id = await service.saveSource({ name: "  ", url: "https://openai.com/news/rss.xml" });
     assert.equal(service.getState({}).sources[0].name, "Blog");
@@ -315,7 +315,7 @@ test("blog feeds import the latest ten unique entries and retain older saved art
     latest = 13;
     await service.refresh(id);
     const state = service.getState({});
-    assert.equal(state.total, 11);
+    assert.equal(state.total, 14);
     assert.equal(state.sources[0].lastAdded, 1);
     assert.equal(state.items.find(item => item.id === oldest.id).isRead, true);
 });
@@ -355,8 +355,8 @@ test("Anthropic pages provide the section's own articles with safe links, summar
             return new Response(html);
         });
         assert.deepEqual(entries.map(entry => entry.title), [
-            "Article linked-only", "Latest announcement", ...Array.from({ length: 8 }, (_, i) => `Article post-${12 - i}`)
-        ], "the ten newest articles of this page, without menu entries, unsafe links or articles that have no address");
+            "Article linked-only", "Latest announcement", ...Array.from({ length: 12 }, (_, i) => `Article post-${12 - i}`)
+        ], "all articles of this page, without menu entries, unsafe links or articles that have no address");
         // Articles are addressed by kind: engineering posts are published under /research.
         assert.equal(entries[0].url, `https://www.anthropic.com/${kind}/linked-only`);
         assert.deepEqual([entries[1].url, entries[1].summary, entries[1].publishedAt], ["https://www.anthropic.com/announcement", "Featured summary.", Date.UTC(2026, 9, 13)]);
@@ -364,7 +364,7 @@ test("Anthropic pages provide the section's own articles with safe links, summar
         assert.equal(repeated.summary, "A summary with \"quotes\", ] brackets and 中文。", "fields of a repeated article are combined");
         // Identifiers keep their earlier, section-based form so saved items are recognised.
         assert.deepEqual(entries.map(entry => entry.externalId).slice(0, 3), ["linked-only", "moved", "post-12"].map(slug => `https://www.anthropic.com/${section}/${slug}`));
-        assert.equal(new Set(entries.map(entry => entry.externalId)).size, 10);
+        assert.equal(new Set(entries.map(entry => entry.externalId)).size, 14);
         assert.ok(entries.every(entry => entry.content === "" && entry.fullContent === false));
     }
     await assert.rejects(fetchFeed({ url: "https://www.anthropic.com/news" }, async () => new Response("<!DOCTYPE html><h1>Unavailable</h1>")), hasFailure("feed-anthropic-empty"));
@@ -767,8 +767,10 @@ test("items are filtered by read state and followed keywords, ordered either way
     assert.deepEqual(titles({ followed: true }), ["Agents", "Diffusion models"]);
     assert.deepEqual(titles({ followed: true, keyword: "sampling" }), ["Diffusion models"]);
     assert.deepEqual(service.getState({}).keywords, ["diffusion", "Large Language"]);
-    assert.throws(() => service.setKeywords(["x".repeat(101)]), hasFailure("feed-keyword-too-long"));
-    assert.throws(() => service.setKeywords(Array.from({ length: 51 }, (_, i) => `k${i}`)), hasFailure("feed-too-many-keywords"));
+    const keywords = [...Array.from({ length: 1100 }, (_, i) => String(i).padStart(200, "k")), "sampling"];
+    service.setKeywords(keywords);
+    assert.deepEqual(service.getState({}).keywords, keywords);
+    assert.deepEqual(titles({ followed: true }), ["Diffusion models"]);
     assert.throws(() => service.setKeywords("diffusion"));
 
     service.setRead(service.getState({}).items[1].id, true);

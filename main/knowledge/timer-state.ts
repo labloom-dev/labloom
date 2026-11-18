@@ -66,7 +66,7 @@ export function recalculateAll(): void {
 export function notices(): Notice[] {
 
     return (data.statement(`SELECT t.${columns.replaceAll(",", ",t.")} FROM timers t JOIN page_attrs d ON d.page_id=t.page_id AND d.attr_id='deleted'
-        WHERE t.fired_at IS NOT NULL AND d.value=0 ORDER BY t.fired_at DESC,t.page_id,t.attr_id,t.lead_seconds LIMIT 100`).all() as TimerRow[]).map(row => notice(row));
+        WHERE t.fired_at IS NOT NULL AND d.value=0 ORDER BY t.fired_at DESC,t.page_id,t.attr_id,t.lead_seconds`).all() as TimerRow[]).map(row => notice(row));
 }
 
 export function notice(row: TimerRow): Notice {

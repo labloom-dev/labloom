@@ -7,6 +7,6 @@
     let { tabId }: { tabId: string } = $props();
     let definitions = $state<AttributeDefinition[]>([]);
     onMount(() => registerList(tabId, change => change.definition ? [change.definition] : [], async () => {
-        definitions = await window.api.knowledge.definitions();
+        definitions = await window.api.attributes.definitions();
     }));
 </script>

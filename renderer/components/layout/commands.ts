@@ -48,7 +48,7 @@ export function runCommand(id: Command): void {
     }
     else if (id === "sidebar") togglePanel();
     else if (id === "search") shell.search = true;
-    else if (id === "devtools") window.api.openDevTools();
+    else if (id === "devtools") window.api.app.openDevTools();
     else if (id === "splitRight" || id === "splitDown") splitCurrent(group.id, id === "splitRight" ? "horizontal" : "vertical");
     else if (id === "nextTab" || id === "previousTab") {
         const index = group.tabs.findIndex(tab => tab.id === group.activeTabId), count = group.tabs.length;
@@ -65,7 +65,7 @@ export function runCommand(id: Command): void {
         }
     }
     else if (id === "importPDF") void perform(async () => {
-        const action = (): ReturnType<typeof window.api.knowledge.importPDF> => window.api.knowledge.importPDF(undefined, group.activeTabId ?? undefined);
+        const action = (): ReturnType<typeof window.api.papers.importPDF> => window.api.papers.importPDF(undefined, group.activeTabId ?? undefined);
         const result = group.activeTabId ? await writeFromTab(group.activeTabId, action) : await saveAll() && await action();
         if (result) openPage(result.pageId);
     });
@@ -74,9 +74,9 @@ export function runCommand(id: Command): void {
             const tabId = group.activeTabId;
             void perform(async () => {
                 await writeFromTab(tabId, async () => {
-                    const history = await window.api.knowledge.history(tabId);
+                    const history = await window.api.history.state(tabId);
                     if (id === "undo" ? !history.canUndo : !history.redo.length) return;
-                    await confirmed(token => window.api.knowledge.undo(tabId, id as "undo" | "redo", undefined, token));
+                    await confirmed(token => window.api.history.apply(tabId, id as "undo" | "redo", undefined, token));
                 });
             });
         }

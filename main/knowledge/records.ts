@@ -210,7 +210,7 @@ function listRows(query: PageQuery): { selected: ListRow[]; total: number } {
         (query.sort && !["modified", "created", "title"].includes(query.sort)) || (query.tags && (!Array.isArray(query.tags) || !query.tags.every(t => typeof t === "string"))) ||
         (query.attributes && !record(query.attributes))) throw new LabloomError({ kind: "page-invalid-query" });
     const offset = query.offset ?? 0, limit = query.limit ?? 50;
-    if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > 200) throw new LabloomError({ kind: "page-invalid-range" });
+    if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1) throw new LabloomError({ kind: "page-invalid-range" });
     const where = ["d.value = ?"], params: unknown[] = [Number(!!query.deleted)];
     if (query.ids !== undefined) {
         if (!Array.isArray(query.ids) || !query.ids.every(validUUID)) throw new LabloomError({ kind: "page-invalid-ids" });
@@ -287,7 +287,7 @@ export function list(query: PageQuery = {}): PageList {
 
 export function listUpdates(query: PageQuery, unchanged: string[]): PageList & { order: string[] } {
     workspace.requireWorkspace();
-    if (!Array.isArray(unchanged) || unchanged.length > 200 || !unchanged.every(validUUID)) throw new LabloomError({ kind: "page-invalid-ids" });
+    if (!Array.isArray(unchanged) || !unchanged.every(validUUID)) throw new LabloomError({ kind: "page-invalid-ids" });
     const { selected, total } = listRows(query), keep = new Set(unchanged);
     return { order: selected.map(row => row.id), items: summaries(selected.filter(row => !keep.has(row.id))), total };
 }

@@ -32,10 +32,10 @@ export async function confirmed(commit: (token?: string) => Promise<CommitResult
     return true;
 }
 export async function define(id: string, value: AttributeDefinition | null, tabId: string): Promise<boolean> {
-    let impact = await window.api.knowledge.define(id, value, tabId);
+    let impact = await window.api.attributes.define(id, value, tabId);
     while (impact) {
         if (!await ask(() => t("dialog.sharedAttribute"), () => t("dialog.attributeImpact") + (impact?.recycled?.length ? t("dialog.attributeRecycle", { count: impact.recycled.length }) : ""), [...impact.pages, ...(impact.recycled ?? [])].map(page => page.title))) return false;
-        impact = await window.api.knowledge.define(id, value, tabId, impact.token);
+        impact = await window.api.attributes.define(id, value, tabId, impact.token);
     }
     return true;
 }
@@ -116,7 +116,7 @@ export function registerList(tabId: string, intersection: TabView["intersection"
 }
 
 function makeSession(tabId: string, pageId: string): PageSession {
-    const state = new PageState(), api = window.api.knowledge, input = new PendingInput();
+    const state = new PageState(), api = window.api, input = new PendingInput();
     // Unacknowledged container edits may change a sync border in another page.
     // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const pendingUses = new Set<string>();
@@ -170,7 +170,7 @@ function makeSession(tabId: string, pageId: string): PageSession {
             for (const [read, own] of observers.get(id) ?? []) if (own || change.highlightPages?.includes(id)) void perform(read);
         }
         if (change.backlinks?.includes(pageId)) void perform(async () => {
-            state.backlinks = await api.backlinks(pageId);
+            state.backlinks = await api.pages.backlinks(pageId);
         });
     }
     // Only uncommitted newly allocated IDs can disappear entirely within a debounce interval.
@@ -180,7 +180,7 @@ function makeSession(tabId: string, pageId: string): PageSession {
     let reviewing: Promise<void> | undefined, load = 0;
     const prompt = (p: ChangePreview): Promise<boolean> => ask(() => t("dialog.change"), () => confirmationText(p, t));
     const history = async (): Promise<void> => {
-        const epoch = historyEpoch, value = await api.history(tabId);
+        const epoch = historyEpoch, value = await api.history.state(tabId);
         if (epoch === historyEpoch) state.history = value;
     };
     function updateCounts(ids: string[], uses: Record<string, number>): void {
@@ -196,13 +196,13 @@ function makeSession(tabId: string, pageId: string): PageSession {
         if (changed) for (const listener of listeners) listener([], false);
     }
     const writes = new PageWrites(tabId, pageId, async input => {
-        let result = await api.commitEdit(input);
+        let result = await api.pages.commitEdit(input);
         while (result.status === "confirmation") {
             // Retention can change between preview and commit. Restore only the disputed fields.
             const causes = new Set(result.preview.causes);
             const disputed = input.blocks.filter(b => causes.has(b.id));
             const ids = [pageId, ...disputed.map(b => b.id)];
-            const stored = await api.readObjects(pageId, ids);
+            const stored = await api.pages.readObjects(pageId, ids);
             const { safe, restore, proposed } = fallbackFields(input, causes, stored, key => writes.current(key));
             apply(fields(restore));
             notify(ids);
@@ -210,7 +210,7 @@ function makeSession(tabId: string, pageId: string): PageSession {
                 writes.retain(fields(safe));
                 return;
             }
-            result = await api.commitEdit(input, result.preview.token);
+            result = await api.pages.commitEdit(input, result.preview.token);
             if (result.status === "saved") {
                 for (const key of proposed.keys()) if (!writes.current(key)) proposed.delete(key);
                 apply(fields(proposed));
@@ -317,11 +317,11 @@ function makeSession(tabId: string, pageId: string): PageSession {
         state.loading = true;
         try {
             const epoch = historyEpoch;
-            const [page, undo] = await Promise.all([api.get(pageId).then(record => {
+            const [page, undo] = await Promise.all([api.pages.get(pageId).then(record => {
                 performance.clearMarks("labloom:page-read");
                 performance.mark("labloom:page-read", { detail: pageId });
                 return record;
-            }), api.history(tabId)]);
+            }), api.history.state(tabId)]);
             if (request !== load) return;
             newBlocks.clear();
             state.page = page;
@@ -344,7 +344,7 @@ function makeSession(tabId: string, pageId: string): PageSession {
         const seen = new Set<string>();
         let needed = [...new Set(ids)], structural = false;
         while (needed.length) {
-            const data = await api.readObjects(pageId, needed);
+            const data = await api.pages.readObjects(pageId, needed);
             needed.forEach(id => seen.add(id));
             page.sharedUses ??= {};
             for (const id of needed) {
@@ -383,8 +383,8 @@ function makeSession(tabId: string, pageId: string): PageSession {
             const input = writes.input(edit);
             try {
                 let savedResult: Extract<CommitResult, { status: "saved" }> | undefined;
-                await reviewEdit(input, value => api.previewEdit(value), prompt, async (value, token) => {
-                    const result = await api.commitEdit(value, token);
+                await reviewEdit(input, value => api.pages.previewEdit(value), prompt, async (value, token) => {
+                    const result = await api.pages.commitEdit(value, token);
                     if (result.status === "saved") savedResult = result;
                     return result;
                 }, rollback, saved => {
@@ -431,7 +431,7 @@ function makeSession(tabId: string, pageId: string): PageSession {
         }
     }
     const trackedAction = (commit: (token?: string) => Promise<CommitResult>): Promise<void> => trackWrite(tabId, action(commit));
-    const undo = (direction: "undo" | "redo", branch?: string): Promise<void> => trackedAction(token => api.undo(tabId, direction, branch, token));
+    const undo = (direction: "undo" | "redo", branch?: string): Promise<void> => trackedAction(token => api.history.apply(tabId, direction, branch, token));
     let definitionsDirty = false;
     const intersection = (change: TabChange): string[] => [
         ...change.pages.filter(id => id === pageId),
@@ -474,7 +474,7 @@ function makeSession(tabId: string, pageId: string): PageSession {
                 if (initial || definitionsDirty) {
                     definitionsDirty = false;
                     try {
-                        state.definitions = await api.definitions();
+                        state.definitions = await api.attributes.definitions();
                     }
                     catch (error) {
                         definitionsDirty = true;
@@ -482,7 +482,7 @@ function makeSession(tabId: string, pageId: string): PageSession {
                     }
                 }
                 if (initial || ids.includes(pageId) || ids.some(id => state.backlinks.some(link => link.sourceId === id)))
-                    state.backlinks = await api.backlinks(pageId);
+                    state.backlinks = await api.pages.backlinks(pageId);
                 for (const id of ids) if (observers.has(id)) await Promise.all([...observers.get(id)!.keys()].map(read => read()));
             }
             finally {
@@ -556,7 +556,7 @@ export async function closeSession(tabId: string): Promise<boolean> {
         return false;
     }
     await Promise.all(otherWrites(tabId));
-    await window.api.knowledge.closeTab(tabId);
+    await window.api.history.closeTab(tabId);
     for (const [key, value] of sessions) if (value.tabId === tabId) {
         value.release();
         sessions.delete(key);

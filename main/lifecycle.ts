@@ -1,7 +1,6 @@
 import { app, dialog, type BrowserWindow, type WebContents } from "electron";
 import { randomUUID } from "node:crypto";
-import { appChannels } from "../shared/ipc";
-import { on } from "./ipc";
+import { beforeQuit as beforeQuitChannel } from "../shared/ipc";
 import * as settings from "./settings/store";
 import * as session from "./session";
 import { t } from "./ui/i18n";
@@ -65,7 +64,7 @@ function requestSave(current: Binding | null): Promise<boolean> {
     }, 15000);
     current.pending = pending;
     try {
-        contents.send(appChannels.beforeQuit, id);
+        contents.send(beforeQuitChannel, id);
     }
     catch (error) {
         console.error(error); pending.finish(true);
@@ -111,13 +110,13 @@ function attempt(): void {
 export function editorStarted(contents: WebContents): void {
     if (binding?.window.webContents === contents) binding.started = true;
 }
+export function saveResult(contents: WebContents, id: string, blocked: boolean): void {
+    if (binding?.window.webContents === contents && binding.pending?.id === id) binding.pending.finish(blocked);
+}
 export function registerWindowLifecycle(window: BrowserWindow): void {
     const current: Binding = { window, started: false, allowClose: false, pending: null };
     binding = current;
     const contents = window.webContents;
-    on(contents, appChannels.beforeQuitResult, (id, block) => {
-        if (id === current.pending?.id) current.pending?.finish(block !== false);
-    });
     contents.on("did-start-navigation", (_event, _url, inPlace, mainFrame) => {
         if (mainFrame && !inPlace) current.pending?.finish(true);
     });

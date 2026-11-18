@@ -58,7 +58,7 @@
     $effect(() => {
         const current = [...ids];
         let active = true;
-        void window.api.knowledge.files(current).then(result => {
+        void window.api.papers.files(current).then(result => {
             if (active) files = result;
         }, problem => {
             if (active) error = failure(problem);
@@ -71,7 +71,7 @@
         if (!expanded || session || disabled) return;
         void knowledgeState.change.seq;
         let active = true;
-        void window.api.knowledge.files().then(result => {
+        void window.api.papers.files().then(result => {
             if (active) choices = result;
         }, problem => {
             if (active) error = failure(problem);
@@ -90,7 +90,7 @@
     async function openFile(file: Attachment): Promise<void> {
         try {
             if (file.mediaType === "application/pdf") preview = file;
-            else await window.api.knowledge.openFile(file.id);
+            else await window.api.papers.openFile(file.id);
         }
         catch (problem) {
             error = failure(problem); expanded = true;
@@ -102,7 +102,7 @@
         try {
             const current = session;
             await writeFromTab(current.tabId, async () => {
-                if (await window.api.knowledge.importFiles(current.state.page!.id, definition.id, current.tabId)) await current.reread([current.state.page!.id]);
+                if (await window.api.papers.importFiles(current.state.page!.id, definition.id, current.tabId)) await current.reread([current.state.page!.id]);
             });
             error = "";
         }

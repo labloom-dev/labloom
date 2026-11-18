@@ -10,7 +10,7 @@
     </nav>
     <div class="manager-body">
         {#if draft}
-            <label>名称<input bind:value={draft.name} maxlength="100" disabled={isBuiltin(draft.id)} /></label>
+            <label>名称<input bind:value={draft.name} disabled={isBuiltin(draft.id)} /></label>
             <label>类型<select value={draft.type} onchange={event => {
                 const type = event.currentTarget.value as AttributeType;
                 draft = { ...draft!, type, metadata: convertMetadata(draft!.type, type, draft!.metadata) };

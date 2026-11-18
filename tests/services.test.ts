@@ -17,9 +17,8 @@ import * as timers from "../main/knowledge/timers";
 import * as commit from "../main/knowledge/commit";
 import * as events from "../main/knowledge/events";
 import * as feed from "../main/feed/service";
-import { registerKnowledgeIPCs } from "../main/knowledge/ipc";
-import { registerFeedIPCs } from "../main/feed/ipc";
-import { knowledgeChannels, feedChannels } from "../shared/ipc";
+import { registerIPCs } from "../main/register";
+import { pagesChannels, attributesChannels, historyChannels, papersChannels, timersChannels, workspaceChannels, settingsChannels, startupChannels, feedChannels } from "../shared/ipc";
 import { type CommitResult, type PageRecord } from "../shared/types/content";
 import { type AnnotationInput } from "../shared/types/papers";
 import { type FeedEntry } from "../shared/types/feed";
@@ -329,18 +328,18 @@ test("IPC can register again for a recreated window without replacing the worksp
     const page = edits.create("editable", "A");
     const create = (): { window: BrowserWindow; handlers: Map<string, (event: unknown, ...args: unknown[]) => Promise<unknown>>; frame: object } => {
         const window = new EventEmitter(), frame = {}, handlers = new Map();
-        Object.assign(window, { webContents: { mainFrame: frame, ipc: { handle: (name: string, handler: unknown) => handlers.set(name, handler), on: () => { } } } });
+        Object.assign(window, { webContents: Object.assign(new EventEmitter(), { mainFrame: frame, isDestroyed: () => false, ipc: { handle: (name: string, handler: unknown) => handlers.set(name, handler), on: () => { } } }) });
         return { window: window as unknown as BrowserWindow, handlers, frame };
     };
     const a = create();
-    registerKnowledgeIPCs(a.window);
-    registerFeedIPCs(a.window);
-    assert.deepEqual(new Set(a.handlers.keys()), new Set([...Object.values(knowledgeChannels), ...Object.values(feedChannels)]));
+    registerIPCs(a.window, () => { });
+    assert.deepEqual(new Set(a.handlers.keys()), new Set([pagesChannels, attributesChannels, historyChannels, papersChannels, timersChannels, workspaceChannels, settingsChannels, startupChannels, feedChannels].flatMap(group => Object.values(group))));
+    a.window.webContents.emit("destroyed");
     a.window.emit("closed");
     const b = create();
-    registerKnowledgeIPCs(b.window);
-    registerFeedIPCs(b.window);
-    assert.deepEqual(await b.handlers.get(knowledgeChannels.get)!({ senderFrame: b.frame }, page.id), { ok: true, value: records.get(page.id) });
+    registerIPCs(b.window, () => { });
+    t.after(() => b.window.webContents.emit("destroyed"));
+    assert.deepEqual(await b.handlers.get(pagesChannels.get)!({ senderFrame: b.frame }, page.id), { ok: true, value: records.get(page.id) });
     assert.deepEqual(await b.handlers.get(feedChannels.getState)!({ senderFrame: b.frame }, {}), { ok: true, value: feed.getState({}) });
 });
 
@@ -377,8 +376,8 @@ test("service architecture has no singleton classes, connection WeakMaps, Electr
         done.add(file);
     }
     for (const file of graph.keys()) walk(file);
-    for (const file of ["main/knowledge/ipc.ts", "main/feed/ipc.ts", "main/startup/ipc.ts"]) {
-        const text = readFileSync(join(root, file), "utf8");
+    for (const file of sources.filter(file => /[/\\]ipc\.ts$/.test(file))) {
+        const text = readFileSync(join(main, file), "utf8");
         assert.ok(!/\b(SELECT|INSERT INTO|UPDATE \w+ SET|WITH RECURSIVE)\b/.test(text), file + " contains SQL");
     }
 });

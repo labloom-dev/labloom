@@ -501,7 +501,7 @@
         pending = true;
         error = "";
         try {
-            const [result, pages, papers, todo, doing] = await Promise.all([window.api.feed.getState({}), window.api.knowledge.list({ limit: 5 }), window.api.knowledge.list({ kind: "paper", limit: 1 }), window.api.knowledge.list({ kind: "task", attributes: { task_status: "todo" }, limit: 1 }), window.api.knowledge.list({ kind: "task", attributes: { task_status: "doing" }, limit: 1 })]);
+            const [result, pages, papers, todo, doing] = await Promise.all([window.api.feed.getState({}), window.api.pages.list({ limit: 5 }), window.api.pages.list({ kind: "paper", limit: 1 }), window.api.pages.list({ kind: "task", attributes: { task_status: "todo" }, limit: 1 }), window.api.pages.list({ kind: "task", attributes: { task_status: "doing" }, limit: 1 })]);
             if (active) {
                 feedState = result; counts = { pages: pages.total, papers: papers.total, tasks: todo.total + doing.total }; recent = pages.items;
             }

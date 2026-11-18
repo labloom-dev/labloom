@@ -78,7 +78,7 @@
         const query = keyword.trim(); let active = true; selected = 0; pending = !!query; const timer = setTimeout(() => {
             if (!query) {
                 pages = []; return;
-            } void window.api.knowledge.list({ keyword: query, limit: 30 }).then(result => {
+            } void window.api.pages.list({ keyword: query, limit: 30 }).then(result => {
                 if (active) {
                     pages = result.items; pending = false; error = "";
                 }

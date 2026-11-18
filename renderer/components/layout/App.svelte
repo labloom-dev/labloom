@@ -104,7 +104,7 @@
                 knowledgeState.error = failure(error); return false;
             }
         };
-        const stopChanges = window.api.knowledge.onChanged(receiveChange);
+        const stopChanges = window.api.pages.onChanged(receiveChange);
         function blur(): void {
             if (document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement) document.activeElement.blur();
             window.dispatchEvent(new Event("workspace-flush"));
@@ -117,7 +117,7 @@
         }
         window.addEventListener("blur", blur);
         window.addEventListener("focus", focus);
-        const stopClose = window.api.beforeQuit(async () => {
+        const stopClose = window.api.app.beforeQuit(async () => {
             if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
             if (!await saveAll()) {
                 knowledgeState.error = { kind: "workspace-close-unsaved" }; return true;
@@ -141,7 +141,7 @@
         const snapshot = JSON.stringify(tabState);
         if (startup?.status !== "ready") return;
         const timer = setTimeout(() => {
-            void window.api.knowledge.saveTabs(JSON.parse(snapshot)).catch(error => knowledgeState.error = failure(error));
+            void window.api.workspace.saveTabs(JSON.parse(snapshot)).catch(error => knowledgeState.error = failure(error));
         }, 300);
         return () => clearTimeout(timer);
     });

@@ -72,7 +72,7 @@
     const pdfs = $derived(resources.files.filter(file => file.mediaType === "application/pdf"));
     let request = 0, resourceRequest = 0;
     async function unlock(password: string): Promise<void> {
-        await window.api.knowledge.unlockPDF(fileId, password);
+        await window.api.papers.unlockPDF(fileId, password);
         await load();
     }
     async function selectText(value: AnnotationInput | null, at?: { x: number; y: number }): Promise<void> {
@@ -87,7 +87,7 @@
     async function load(): Promise<void> {
         const sequence = ++resourceRequest;
         try {
-            const next = await window.api.knowledge.resources(page.id);
+            const next = await window.api.papers.resources(page.id);
             if (sequence !== resourceRequest) return;
             resources = next;
             if (annotationId && !next.annotations.some(item => item.id === annotationId)) annotationId = null;
@@ -124,7 +124,7 @@
         annotationId = null;
         const sequence = ++request;
         try {
-            const data = await window.api.knowledge.readFile(id);
+            const data = await window.api.papers.readFile(id);
             if (sequence !== request) return;
             window.dispatchEvent(new Event("workspace-flush"));
             source = null;
@@ -147,7 +147,7 @@
     function savePosition(state: ReaderViewState, current: ReaderSource): void {
         const id = sourceFiles.get(current);
         if (page.attributes.deleted || !id || !Array.isArray(page.attributes.paper_files) || !page.attributes.paper_files.includes(id)) return;
-        const request = window.api.knowledge.position(page.id, id, { page: state.pageNumber, scale: state.scale, rotation: state.rotation, left: state.left, top: state.top }, tabId);
+        const request = window.api.papers.position(page.id, id, { page: state.pageNumber, scale: state.scale, rotation: state.rotation, left: state.left, top: state.top }, tabId);
         trackWrite(tabId, request);
         void request.catch(problem => {
             error = failure(problem);
@@ -157,7 +157,7 @@
     async function attach(): Promise<void> {
         busy = true;
         try {
-            if (await writeFromTab(tabId, () => window.api.knowledge.importFiles(page.id, "paper_files", tabId))) await load();
+            if (await writeFromTab(tabId, () => window.api.papers.importFiles(page.id, "paper_files", tabId))) await load();
         }
         catch (problem) {
             error = failure(problem);
@@ -187,8 +187,8 @@
         try {
             const anchor = selection ? $state.snapshot(selection) : null, id = activeHighlight;
             await writeFromTab(tabId, async () => {
-                if (id) await window.api.knowledge.changeAnnotation(id, color, tabId);
-                else if (anchor) await window.api.knowledge.annotate(page.id, anchor, tabId, color);
+                if (id) await window.api.papers.changeAnnotation(id, color, tabId);
+                else if (anchor) await window.api.papers.annotate(page.id, anchor, tabId, color);
                 dismiss();
                 await load();
             });
@@ -207,7 +207,7 @@
         busy = true;
         try {
             await writeFromTab(tabId, async () => {
-                const id = await window.api.knowledge.annotate(page.id, anchor, tabId, existing?.color);
+                const id = await window.api.papers.annotate(page.id, anchor, tabId, existing?.color);
                 await session.reread([page.id]);
                 dismiss();
                 await load();
@@ -224,7 +224,7 @@
     function remove(id: string): void {
         void perform(async () => {
             await writeFromTab(tabId, async () => {
-                if (await confirmed(token => window.api.knowledge.deleteAnnotation(id, tabId, token))) {
+                if (await confirmed(token => window.api.papers.deleteAnnotation(id, tabId, token))) {
                     dismiss();
                     await session.reread([page.id]);
                 }

@@ -1,8 +1,14 @@
 import { LabloomError } from "../shared/failure";
-import { normalizeKeywords, validateTabs, type WorkspaceSettings, type WorkspaceSettingsPatch } from "../shared/settings/workspace";
+import { normalizeKeywords, type WorkspaceSettings, type WorkspaceSettingsPatch } from "../shared/settings/workspace";
 import * as workspace from "./workspace-state";
 import * as data from "./knowledge/records";
 import * as commit from "./knowledge/commit";
+import { record } from "../shared/attrs/values";
+import type { SavedTabs } from "../shared/workspace/tabs";
+
+function checkStoredLayout(value: unknown): void {
+    if (!record(value) || !Array.isArray(value.groups) || !record(value.layout) || typeof value.focusedGroupId !== "string") throw new LabloomError({ kind: "tabs-invalid-layout" });
+}
 let settings: WorkspaceSettings | undefined;
 
 function decode(value: unknown): WorkspaceSettings {
@@ -14,7 +20,7 @@ function decode(value: unknown): WorkspaceSettings {
     const input = value as Record<string, unknown>;
     if (input.tabs !== undefined && input.tabs !== null) {
         try {
-            validateTabs(input.tabs); result.tabs = input.tabs;
+            checkStoredLayout(input.tabs); result.tabs = input.tabs;
         }
         catch (error) {
             console.warn("Invalid workspace tab layout; using defaults", error);
@@ -55,7 +61,7 @@ export function get(): WorkspaceSettings {
 export function update(patch: WorkspaceSettingsPatch): WorkspaceSettings {
     workspace.requireWorkspace();
     if (!patch || typeof patch !== "object" || Array.isArray(patch) || Object.keys(patch).some(key => !["tabs", "feedKeywords"].includes(key))) throw new LabloomError({ kind: "invalid-argument" });
-    if (Object.hasOwn(patch, "tabs") && patch.tabs !== null) validateTabs(patch.tabs);
+    if (Object.hasOwn(patch, "tabs") && patch.tabs !== null) checkStoredLayout(patch.tabs);
     const keywords = Object.hasOwn(patch, "feedKeywords") ? normalizeKeywords(patch.feedKeywords) : undefined;
     return commit.run({ sourceTab: "", history: false, updateModified: false, feed: keywords !== undefined }, context => {
         const next: WorkspaceSettings = { ...read(), ...structuredClone(patch), ...(keywords ? { feedKeywords: keywords } : {}) };
@@ -69,8 +75,7 @@ export function update(patch: WorkspaceSettingsPatch): WorkspaceSettings {
 export function loadTabs(): unknown {
     return get().tabs;
 }
-export function saveTabs(value: unknown): void {
+export function saveTabs(value: SavedTabs): void {
     workspace.requireWorkspace();
-    validateTabs(value);
     update({ tabs: value });
 }

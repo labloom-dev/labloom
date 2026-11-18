@@ -12,14 +12,14 @@ Feed 用于追踪论文和实验室博客，完成“添加来源 → 自动抓�
 
 | 添加方式 | 抓取方式 | 每次导入范围 |
 | --- | --- | --- |
-| 订阅地址（RSS、Atom、JSON Feed） | 下载后按格式解析 | 非 arXiv 来源去重后按日期取最新 10 条 |
+| 订阅地址（RSS、Atom、JSON Feed） | 下载后按格式解析 | 本次返回的全部条目，去重并按日期排序 |
 | 网站地址 | 读取网页声明的订阅地址，再按订阅地址处理 | 同上 |
 | arXiv 仅填写领域 | 使用领域对应的 Atom 每日公告 | 来源返回的全部公告条目，可能超过 10 篇 |
 | arXiv 填写关键词 | 调用 arXiv 查询接口，返回 Atom | 最近提交的最多 10 篇匹配论文 |
-| OpenAI News | 使用 `https://openai.com/news/rss.xml` | 最新 10 篇 |
-| Anthropic News、Engineering | 解析官网列表页 | 最新 10 篇 |
+| OpenAI News | 使用 `https://openai.com/news/rss.xml` | 本次返回的全部文章 |
+| Anthropic News、Engineering | 解析官网列表页 | 本次返回的全部文章 |
 
-“10 篇”是单次抓取的导入上限，已保存的文章会继续累积。arXiv 的查询条件见[下文](#arxiv)。
+每次刷新都会保留已保存的文章和阅读状态。arXiv 的查询条件见[下文](#arxiv)。
 
 每个来源可以单独设置是否自动刷新和刷新间隔（15 分钟至 24 小时，默认 1 小时）。不自动刷新的来源只在手动刷新时抓取。来源有三种状态：
 
@@ -124,7 +124,7 @@ flowchart TD
 | `fullContent` | 来源是否给出了正文。RSS 看 `content:encoded`，Atom 看 `content`，JSON Feed 看 `content_html` 或 `content_text` |
 | `publishedAt` | 发布时间的毫秒时间戳，缺失或无效时为 `null` |
 
-非 arXiv 来源先去重，再按日期从新到旧取 10 条，缺失日期的条目排在后面。
+非 arXiv 来源先去重，再按日期从新到旧保存全部条目，缺失日期的条目排在后面。
 
 ### 从网站地址发现订阅
 
@@ -153,7 +153,7 @@ flowchart TD
 | News | `articleType` 为 `news` | `/news/<slug>` |
 | Engineering | `articleType` 为 `research`，且分类为 Engineering 或页面中有指向它的链接 | `/research/<slug>` |
 
-文章带 `linkedUrl` 时以它为原文地址。条目标识沿用 `https://www.anthropic.com/<页面>/<slug>` 的形式，与原文地址无关，这样官网调整地址后已保存的条目仍能对上。合并后按日期选取最新 10 篇。页面中没有识别出文章时刷新会报错并保留旧数据。
+文章带 `linkedUrl` 时以它为原文地址。条目标识沿用 `https://www.anthropic.com/<页面>/<slug>` 的形式，与原文地址无关，这样官网调整地址后已保存的条目仍能对上。合并后按日期排序，保存列表中的全部文章。页面中没有识别出文章时刷新会报错并保留旧数据。
 
 这个适配器依赖官网的页面数据结构。2026 年 11 月官网把文章类型从 `post`、`engineeringArticle` 统一成 `article`，适配器随之重写过一次；今后结构再变时需要再次调整。
 
@@ -184,7 +184,7 @@ flowchart TD
 | 来源给的内容 | `title`、`url`、`authors`、`summary`、`raw_content`、`has_full_content`、`published_at`、`pdf_url` |
 | 个人状态，刷新不覆盖 | `is_read`、`reading_position`、`paper_id` |
 
-`paper_id` 故意不加外键：文献被永久删除后，条目仍能显示“已删除”并允许重新入库。关注关键词保存在 `workspace_meta.settings.feed.keywords`，最多 50 个。
+`paper_id` 故意不加外键：文献被永久删除后，条目仍能显示“已删除”并允许重新入库。关注关键词保存在 `workspace_meta.settings.feedKeywords`。
 
 ### 自动刷新
 
@@ -271,7 +271,7 @@ flowchart TD
 ## 当前限制
 
 - 未实现订阅分组和自动入库。
-- 非 arXiv 来源单次只导入最新 10 条，两次刷新之间新增超过 10 条时会错过较早的条目；不补齐历史。
+- 博客只导入来源本次返回的文章。两次刷新之间已从来源移除的文章无法补回。
 - 只显示来源自己提供的正文，不抓取原文网页提取全文。只支持 HTTPS 图片。
 - Anthropic 适配器随官网页面结构变化而失效，届时该来源会报“未找到 Anthropic 文章”，需要更新适配器。
 - 调度只使用用户设置的间隔，不读取来源的 `Cache-Control` 或 `ttl`；来源永久重定向后不会自动改写保存的地址。

@@ -1,4 +1,4 @@
-import { eq, inArray } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -102,7 +102,7 @@ async function loadPDF(data: Uint8Array, password?: string): Promise<PDFDocument
 
 export async function unlockPDF(fileId: string, password: string): Promise<void> {
     workspace.requireWorkspace();
-    if (typeof password !== "string" || password.length > 10000) throw new LabloomError({ kind: "pdf-invalid-password" });
+    if (typeof password !== "string") throw new LabloomError({ kind: "pdf-invalid-password" });
     requirePDF(fileId);
     const session = workspace.requireWorkspace();
     const document = await loadPDF(read(fileId), password).catch(error => {
@@ -130,7 +130,7 @@ function paper(id: string, writable = false): PageRecord {
 
 export function createReference(paper: { title: string; authors: string; url: string | null; abstract: string; published: string | null; origin: Record<string, string | null> }): string {
     workspace.requireWorkspace();
-    return edits.createPage("paper", paper.title.slice(0, 1000), {
+    return edits.createPage("paper", paper.title, {
         paper_authors: paper.authors, paper_url: paper.url ?? "", paper_abstract: paper.abstract, paper_year: paper.published ?? "", source_snapshot: paper.origin
     }).id;
 }
@@ -143,9 +143,9 @@ export function state(id: string): "saved" | "recycled" | "missing" {
 
 export function files(ids?: string[]): Attachment[] {
     workspace.requireWorkspace();
-    if (ids !== undefined && (!Array.isArray(ids) || ids.length > 10000 || ids.some(id => !validUUID(id)))) throw new LabloomError({ kind: "attachment-invalid-list" });
+    if (ids !== undefined && (!Array.isArray(ids) || ids.some(id => !validUUID(id)))) throw new LabloomError({ kind: "attachment-invalid-list" });
     if (ids && !ids.length) return [];
-    const rows = workspace.database().select().from(attachments).where(ids ? inArray(attachments.id, ids) : undefined).all();
+    const rows = workspace.database().select().from(attachments).where(ids ? sql`${attachments.id} IN (SELECT value FROM json_each(${JSON.stringify(ids)}))` : undefined).all();
     const byId = new Map(rows.map(file => [file.id, file]));
     const localFiles = ids ? ids.map(id => byId.get(id)).filter(file => file !== undefined) : rows;
     return localFiles.map(({ storedName: _name, ...file }) => file);
@@ -201,7 +201,7 @@ function append(pageId: string, attributeId: string, files: Attachment[], tabId?
 
 export function attachFiles(paths: string[], pageId: string, attributeId: string, tabId?: string): Attachment[] {
     workspace.requireWorkspace();
-    if (!Array.isArray(paths) || !paths.length || paths.length > 10000) throw new LabloomError({ kind: "attachment-selection-required" });
+    if (!Array.isArray(paths) || !paths.length) throw new LabloomError({ kind: "attachment-selection-required" });
     return importing(store => {
         const localFiles = paths.map(store);
         append(pageId, attributeId, localFiles, tabId);
@@ -296,7 +296,7 @@ export async function resources(pageId: string): Promise<PaperResources> {
 
 async function prepareAnnotation(pageId: string, value: AnnotationInput): Promise<AnnotationInput> {
     paper(pageId, true);
-    if (!record(value) || !validUUID(value.fileId) || !Number.isInteger(value.pageNumber) || value.pageNumber < 1 || !Array.isArray(value.rectangles) || !value.rectangles.length || value.rectangles.length > 500 || typeof value.quote !== "string" || value.quote.length > 100000 || typeof value.context !== "string" || value.context.length > 100000 || typeof value.extractorVersion !== "string" || value.extractorVersion.length > 200) throw new LabloomError({ kind: "annotation-invalid-input" });
+    if (!record(value) || !validUUID(value.fileId) || !Number.isInteger(value.pageNumber) || value.pageNumber < 1 || !Array.isArray(value.rectangles) || !value.rectangles.length || typeof value.quote !== "string" || typeof value.context !== "string" || typeof value.extractorVersion !== "string") throw new LabloomError({ kind: "annotation-invalid-input" });
     const file = paperFiles(pageId).find(file => file.id === value.fileId);
     if (!file) throw new LabloomError({ kind: "paper-file-removed" });
     if (file.mediaType !== "application/pdf") throw new LabloomError({ kind: "attachment-pdf-required" });

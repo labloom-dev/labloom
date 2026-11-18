@@ -179,7 +179,7 @@ test("timezone subscriptions recalculate date reminders and notify the workspace
 test("workspace settings merge, survive reopen and stay out of page timestamps and undo", t => {
     const opened = session.open(folder(), "create"); t.after(() => session.close());
     const page = edits.create(), modified = records.get(page.id).attributes.modified_at;
-    const tabs = { groups: [], focusedGroupId: "a", layout: {} };
+    const tabs = { groups: [{ id: "a", tabs: [], activeTabId: null }], focusedGroupId: "a", layout: { type: "group" as const, groupId: "a" } };
     commit.run({ sourceTab: "a", history: false }, () => {
         workspaceSettings.saveTabs(tabs);
         workspaceSettings.update({ feedKeywords: ["  Large   Models ", "large models", "AI"] });
@@ -196,8 +196,10 @@ test("workspace settings merge, survive reopen and stay out of page timestamps a
     session.close(); session.open(opened.info.path, "open");
     assert.deepEqual(workspaceSettings.get(), expected);
     assert.throws(() => workspaceSettings.saveTabs({ groups: [] }), hasFailure("tabs-invalid-layout"));
-    assert.throws(() => workspaceSettings.update({ feedKeywords: ["a".repeat(101)] }), hasFailure("feed-keyword-too-long"));
-    assert.throws(() => workspaceSettings.update({ feedKeywords: Array.from({ length: 51 }, (_, i) => String(i)) }), hasFailure("feed-too-many-keywords"));
+    const feedKeywords = Array.from({ length: 100 }, (_, index) => String(index).padStart(200, "a"));
+    workspaceSettings.update({ feedKeywords });
+    session.close(); session.open(opened.info.path, "open");
+    assert.deepEqual(workspaceSettings.get().feedKeywords, feedKeywords);
 });
 
 test("invalid workspace tab layout falls back independently of valid keywords and logs the problem", t => {

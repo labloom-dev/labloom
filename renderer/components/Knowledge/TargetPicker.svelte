@@ -74,7 +74,7 @@
         const query = keyword;
         let active = true;
         const timer = setTimeout(() => {
-            void window.api.knowledge.list({ keyword: query, limit: 50 }).then(result => {
+            void window.api.pages.list({ keyword: query, limit: 50 }).then(result => {
                 if (active) pages = result.items;
             }, problem => {
                 if (active) error = failure(problem);
@@ -87,13 +87,13 @@
     });
     async function choose(id: string): Promise<void> {
         try {
-            const page = await window.api.knowledge.get(id);
+            const page = await window.api.pages.get(id);
             chosen = page;
             referenceLabels = {};
             error = "";
             const labels = await Promise.all(Object.values(page.blocks).filter(block => block.type === "blocked_reference" && block.payload.target).map(async block => {
                 try {
-                    const resolved = await window.api.knowledge.resolve(block.payload.target!);
+                    const resolved = await window.api.pages.resolve(block.payload.target!);
                     return [block.id, resolved ? resolved.title || "未命名目标" : "引用目标缺失"];
                 }
                 catch {

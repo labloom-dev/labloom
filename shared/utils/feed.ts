@@ -21,7 +21,7 @@ export function arxivURL(categories: string, keyword: string): string {
     }
     const phrase = keyword.trim().replace(/\s+/g, " ");
     if (!fields.length && !phrase) throw new LabloomError({ kind: "arxiv-empty-query" });
-    if (phrase.length > 200 || /["\\]/.test(phrase)) throw new LabloomError({ kind: "arxiv-invalid-keyword" });
+    if (/["\\]/.test(phrase)) throw new LabloomError({ kind: "arxiv-invalid-keyword" });
     if (!phrase) return `https://rss.arxiv.org/atom/${fields.join("+")}`;
 
     const query: string[] = [];
