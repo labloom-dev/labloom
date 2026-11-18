@@ -19,7 +19,7 @@ export class SessionViews implements TabView {
         return changes[0];
     }
     async flush(): Promise<boolean> {
-        // Sequential commits preserve the single tab history's order across pages.
+        // Flush the paper and its annotation buffers in the order the views opened.
         for (const view of this.views.keys()) if (!await view.flush()) return false;
         return true;
     }

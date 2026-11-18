@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { EventEmitter } from "node:events";
+import { fixture } from "./support/ipc";
+import { pageHistory, workspaceHistory } from "./support/history";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { test, type TestContext } from "node:test";
-import type { BrowserWindow } from "electron";
-import { registerIPCs } from "../main/register";
+import { test } from "node:test";
 import * as settings from "../main/settings/store";
 import * as session from "../main/session";
 import * as edits from "../main/knowledge/edits";
@@ -24,32 +23,7 @@ import type { PaperAnnotation } from "../shared/types/papers";
 import { route } from "../main/ipc";
 import { routes as pages } from "../main/pages/ipc";
 import type { ContentBlock, PageRecord, RichNode } from "../shared/types/content";
-import { appChannels, attributesChannels, feedChanged, feedChannels, historyChannels, pagesChanged, pagesChannels, papersChannels, settingsChanged, settingsChannels, startupChannels, timersChannels, workspaceChannels, type IPCReply } from "../shared/ipc";
-
-type Fixture = {
-    call<Value>(channel: string, ...args: unknown[]): Promise<Value>;
-    invoke(channel: string, ...args: unknown[]): Promise<IPCReply<unknown>>;
-    send(channel: string, ...args: unknown[]): boolean;
-    contents: EventEmitter; sent: string[]; devTools: { opened: number };
-};
-function fixture(t?: TestContext): Fixture {
-    const frame = {}, sent: string[] = [], messages = new EventEmitter();
-    const handlers = new Map<string, (event: { senderFrame: object }, ...args: unknown[]) => Promise<IPCReply<unknown>>>();
-    const devTools = { opened: 0 };
-    const contents = Object.assign(new EventEmitter(), { mainFrame: frame, isDestroyed: () => false, send: (channel: string) => sent.push(channel), openDevTools: () => devTools.opened++, ipc: Object.assign(messages, { handle: handlers.set.bind(handlers) }) });
-    registerIPCs({ webContents: contents } as unknown as BrowserWindow, () => { });
-    const invoke = (channel: string, ...args: unknown[]): Promise<IPCReply<unknown>> => handlers.get(channel)!({ senderFrame: frame }, ...args);
-    async function call<Value>(channel: string, ...args: unknown[]): Promise<Value> {
-        const reply = await invoke(channel, ...args);
-        if (!reply.ok) assert.fail(channel + ": " + JSON.stringify(reply.failure));
-        return reply.value as Value;
-    }
-    t?.after(() => {
-        contents.emit("destroyed");
-        session.close();
-    });
-    return { invoke, call, send: (channel: string, ...args: unknown[]) => messages.emit(channel, { senderFrame: frame }, ...args), contents, sent, devTools };
-}
+import { appChannels, attributesChannels, feedChanged, feedChannels, historyChannels, pagesChanged, pagesChannels, papersChannels, settingsChanged, settingsChannels, startupChannels, timersChannels, workspaceChannels } from "../shared/ipc";
 
 test("every group rejects malformed IPC arguments before side effects and accepts its declared shape", async t => {
     const root = (): string => mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "ipc-"));
@@ -61,10 +35,13 @@ test("every group rejects malformed IPC arguments before side effects and accept
     });
     const malformed: [string, unknown[][]][] = [
         [pagesChannels.get, [[42]]],
-        [pagesChannels.commitEdit, [[{ pageId: "A", tabId: "B", batch: 0, blocks: [3] }], [{ tabId: "B", batch: 0, blocks: [] }], [{ pageId: "A", tabId: "", batch: 0, blocks: [] }]]],
+        [pagesChannels.commitEdit, [[{ pageId: "A", tabId: "B", batch: 0, blocks: [3] }, workspaceHistory],
+            [{ tabId: "B", batch: 0, blocks: [] }, workspaceHistory], [{ pageId: "A", tabId: "", batch: 0, blocks: [] }, workspaceHistory],
+            [{ pageId: "A", tabId: "B", batch: 0, blocks: [] }]]],
         [pagesChannels.syncBlocks, [["A", []]]],
         [attributesChannels.define, [["A", { id: "A", name: 3, type: "string", metadata: {} }, "B"], ["A", { id: "A", type: "string" }, "B"], ["A", { id: "A", type: "string", name: "A", metadata: { options: 1 } }, "B"]]],
-        [historyChannels.apply, [["B", "wrong"], [], ["", "undo"]]],
+        [historyChannels.state, [["B"], [{ kind: "page" }], [{ kind: "tab", id: "B" }]]],
+        [historyChannels.apply, [[workspaceHistory, "wrong"], [], ["", "undo"]]],
         [papersChannels.position, [["A", "B", { page: "1" }], ["A", "B", {}], ["A", "B", { page: 1, scale: false, rotation: 0, left: 0, top: 0 }]]],
         [timersChannels.set, [["A", "B", false, 4, "C"], [], ["A", null, 0, true, "C"]]],
         [workspaceChannels.saveTabs, [[{ groups: "A", layout: {}, focusedGroupId: "B" }], [{ groups: [] }], [{ groups: [], layout: { type: "group", groupId: null }, focusedGroupId: "B" }]]],
@@ -91,7 +68,7 @@ test("every group rejects malformed IPC arguments before side effects and accept
     ipc.send(appChannels.openDevTools);
     assert.equal(ipc.devTools.opened, 1);
     const page = edits.create();
-    const valid: [string, ...unknown[]][] = [[pagesChannels.list, { extra: true }], [attributesChannels.definitions], [historyChannels.state, "A"], [papersChannels.files, []], [timersChannels.settings, page.id], [workspaceChannels.saveTabs, { groups: [], layout: { type: "group", groupId: "A" }, focusedGroupId: "A" }], [settingsChannels.update, { layout: { width: 320 } }], [startupChannels.getState], [feedChannels.getState, {}]];
+    const valid: [string, ...unknown[]][] = [[pagesChannels.list, { extra: true }], [attributesChannels.definitions], [historyChannels.state, workspaceHistory], [papersChannels.files, []], [timersChannels.settings, page.id], [workspaceChannels.saveTabs, { groups: [], layout: { type: "group", groupId: "A" }, focusedGroupId: "A" }], [settingsChannels.update, { layout: { width: 320 } }], [startupChannels.getState], [feedChannels.getState, {}]];
     for (const [channel, ...args] of valid) assert.equal((await ipc.invoke(channel, ...args)).ok, true, channel);
     events.feedChanged();
     for (const channel of [pagesChanged, settingsChanged, feedChanged]) assert.ok(ipc.sent.includes(channel), channel);
@@ -122,7 +99,7 @@ test("registered page handlers preserve long block text and attribute values on 
     blocks.push({ id: randomUUID(), type: "paragraph", children: [], payload: { type: "paragraph", schemaVersion: 1, inline: [{ type: "inlineReference", attrs: { target: { kind: "page", id: page.id }, label: initial } }] } });
     const commit = { pageId: page.id, tabId: "A", batch: 1, blocks, pageChildren: blocks.map(block => block.id), attributes: { [attr]: edited } };
     assert.equal(await invoke(pagesChannels.previewEdit, commit), null);
-    await invoke(pagesChannels.commitEdit, commit);
+    await invoke(pagesChannels.commitEdit, commit, pageHistory(page.id));
     session.close();
     session.open(workspace, "open");
     const stored = await readPage();
@@ -149,7 +126,7 @@ test("page titles, select options and deep JSON values round-trip through IPC", 
     assert.equal((await call<PageRecord>(pagesChannels.get, page.id)).title, title);
     const block = { ...page.blocks[page.titleBlockId], payload: payload("title", edited) };
     const change = { pageId: page.id, tabId: tab, batch: 0, blocks: [block] };
-    await call(pagesChannels.commitEdit, change);
+    await call(pagesChannels.commitEdit, change, pageHistory(page.id));
     session.close(); session.open(path, "open");
     const stored = await call<PageRecord>(pagesChannels.get, page.id);
     assert.equal(stored.title, edited);
@@ -160,8 +137,8 @@ test("page titles, select options and deep JSON values round-trip through IPC", 
     assert.deepEqual(definitions.find(item => item.id === id), definition);
 
     const invalid = [
-        [pagesChannels.commitEdit, [{ ...change, blocks: [{ ...block, id: "not-a-uuid" }] }], "block-invalid-identity"],
-        [pagesChannels.commitEdit, [{ ...change, blocks: [{ ...block, children: [page.children[0]] }] }], "block-invalid-title"],
+        [pagesChannels.commitEdit, [{ ...change, blocks: [{ ...block, id: "not-a-uuid" }] }, pageHistory(page.id)], "block-invalid-identity"],
+        [pagesChannels.commitEdit, [{ ...change, blocks: [{ ...block, children: [page.children[0]] }] }, pageHistory(page.id)], "block-invalid-title"],
         [attributesChannels.define, [id, { ...definition, metadata: { options: [options[0], { ...options[1], id: options[0].id }] } }, tab], "attribute-invalid-metadata"]
     ] as const;
     for (const [channel, args, kind] of invalid) {
@@ -228,9 +205,9 @@ test("registered annotation handlers extract and store a 200000-character PDF se
     const [file] = (await papers.resources(pageId)).files;
     const rectangles = lines.map((_, i) => ({ x: 40, y: baseline(i) - 0.1, width: 65, height: 0.7 }));
     const selection = { fileId: file.id, pageNumber: 1, rectangles, quote, context: quote, extractorVersion: "A".repeat(201) };
-    const empty = await invoke(papersChannels.annotate, pageId, { ...selection, rectangles: [] }, "A");
+    const empty = await invoke(papersChannels.annotate, pageId, { ...selection, rectangles: [] }, "A", pageHistory(pageId));
     assert.equal(empty.ok ? "success" : empty.failure.kind, "invalid-argument");
-    const id = await call<string>(papersChannels.annotate, pageId, selection, "A");
+    const id = await call<string>(papersChannels.annotate, pageId, selection, "A", pageHistory(pageId));
     session.close(); session.open(path, "open");
     const stored = await call<PaperAnnotation>(papersChannels.getAnnotation, id);
     assert.deepEqual(stored.rectangles, rectangles);
@@ -250,7 +227,7 @@ test("a registered sync paste preserves 12000 shared blocks on disk", async t =>
     const blocks = await call<ContentBlock[]>(pagesChannels.syncBlocks, workspace.id, ids);
     const resolved = performance.now();
     const children = [...target.children, ...ids];
-    const result = await call<{ status: string }>(pagesChannels.commitEdit, { pageId: target.id, tabId: "A", batch: 1, blocks: [], pageChildren: children, sync: ids });
+    const result = await call<{ status: string }>(pagesChannels.commitEdit, { pageId: target.id, tabId: "A", batch: 1, blocks: [], pageChildren: children, sync: ids }, pageHistory(target.id));
     t.diagnostic(`12000-block paste | resolve ${(resolved - started).toFixed(2)} ms | resolve + commit ${(performance.now() - started).toFixed(2)} ms`);
     assert.equal(result.status, "saved");
     assert.equal(blocks.length, ids.length);

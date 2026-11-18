@@ -1,3 +1,4 @@
+import { pageHistory, workspaceHistory } from "./support/history";
 import { knowledgeServices, feedServices, paperServices, historyServices, purgeServices, session } from "./support/session";
 import { hasFailure } from "./failures";
 import assert from "node:assert/strict";
@@ -50,8 +51,8 @@ test("feed pages own settings and timers while refresh preserves item state and 
     assert.equal(knowledge.get(source.id).attributes.modified_at, modified);
     assert.equal(knowledge.list({ kind: "feed" }).total, 2);
     assert.equal(knowledge.list({ keyword: "Saved feed" }).total, 1);
-    assert.throws(() => knowledge.commitEdit({ pageId: source.id, tabId: "feed", batch: 0, blocks: [], attributes: { feed_refresh: { every: 5, unit: "minute" } } }), hasFailure("feed-invalid-interval"));
-    assert.throws(() => knowledge.commitEdit({ pageId: source.id, tabId: "feed", batch: 0, blocks: [], pageChildren: [source.titleBlockId] }), hasFailure("feed-body-forbidden"));
+    assert.throws(() => knowledge.commitEdit({ pageId: source.id, tabId: "feed", batch: 0, blocks: [], attributes: { feed_refresh: { every: 5, unit: "minute" } } }, pageHistory(source.id)), hasFailure("feed-invalid-interval"));
+    assert.throws(() => knowledge.commitEdit({ pageId: source.id, tabId: "feed", batch: 0, blocks: [], pageChildren: [source.titleBlockId] }, pageHistory(source.id)), hasFailure("feed-body-forbidden"));
     assert.deepEqual(database.pragma("foreign_key_check"), []);
 });
 
@@ -94,8 +95,8 @@ test("a subscription item becomes a paper page in the library and stays linked t
     assert.deepEqual([second.title, second.attributes.paper_url, second.attributes.paper_year, second.attributes.paper_authors], ["No link or date", "", "", ""]);
 
     // A paper in the recycle bin is reported, and only replaced when the reader asks.
-    const removal = knowledge.trash([pageId], "feed-test");
-    if (removal.status === "confirmation") knowledge.trash([pageId], "feed-test", removal.preview.token);
+    const removal = knowledge.trash([pageId], "feed-test", workspaceHistory);
+    if (removal.status === "confirmation") knowledge.trash([pageId], "feed-test", workspaceHistory, removal.preview.token);
     assert.equal(service.getItem(item.id).paperState, "recycled");
     assert.throws(() => service.importItem(item.id), hasFailure("feed-reimport-confirmation"));
     const replacement = service.importItem(item.id, true);
@@ -155,7 +156,7 @@ test("a downloaded PDF attaches to its committed paper as independent bytes, and
     await service.fetchPDF(item.id);
     assert.equal(requests, 1);
     assert.deepEqual(knowledge.get(pageId).attributes.paper_files, [downloadedFiles[0].id]);
-    assert.equal(knowledge.commitEdit({ pageId, tabId: "remove-feed-pdf", batch: 0, blocks: [], attributes: { paper_files: [] } }).status, "saved");
+    assert.equal(knowledge.commitEdit({ pageId, tabId: "remove-feed-pdf", batch: 0, blocks: [], attributes: { paper_files: [] } }, pageHistory(pageId)).status, "saved");
     assert.equal(papers.hasPDF(pageId), false);
     assert.notEqual(service.getItem(item.id).pdfStatus, "saved");
     await service.fetchPDF(item.id);
@@ -176,18 +177,18 @@ test("feed settings, recycling and restoration maintain a single timer and enfor
     assert.equal(knowledge.header(id).kind, "feed"); assert.deepEqual(knowledge.get(id).children, []); assert.equal(count(), 1);
     feed.setSourceStatus(id, "pause"); assert.equal(count(), 0);
     feed.setSourceStatus(id, "resume"); assert.equal(count(), 1);
-    assert.equal(knowledge.commitEdit({ pageId: id, tabId: "settings", batch: 0, blocks: [], attributes: { feed_refresh: null } }).status, "saved"); assert.equal(count(), 0);
-    assert.equal(history.apply("settings", "undo").status, "saved"); assert.equal(count(), 1);
+    assert.equal(knowledge.commitEdit({ pageId: id, tabId: "settings", batch: 0, blocks: [], attributes: { feed_refresh: null } }, pageHistory(id)).status, "saved"); assert.equal(count(), 0);
+    assert.equal(history.apply(pageHistory(id), "undo").status, "saved"); assert.equal(count(), 1);
     const page = knowledge.get(id), child = { id: randomUUID(), type: "paragraph" as const, payload: payload("paragraph", "Forbidden"), children: [] };
-    assert.throws(() => knowledge.commitEdit({ pageId: id, tabId: "settings", batch: 0, blocks: [child], pageChildren: [child.id] }), hasFailure("feed-body-forbidden"));
-    assert.throws(() => knowledge.commitEdit({ pageId: id, tabId: "settings", batch: 0, blocks: [{ ...page.blocks[page.titleBlockId], children: [child.id] }] }), hasFailure("feed-body-forbidden"));
-    assert.throws(() => knowledge.place({ position: { pageId: id, containerId: id, index: 0, blockId: page.titleBlockId }, action: "insert", tabId: "settings" }), hasFailure("feed-body-forbidden"));
-    const preview = knowledge.trash([id], "trash"); if (preview.status === "confirmation") knowledge.trash([id], "trash", preview.preview.token);
+    assert.throws(() => knowledge.commitEdit({ pageId: id, tabId: "settings", batch: 0, blocks: [child], pageChildren: [child.id] }, pageHistory(id)), hasFailure("feed-body-forbidden"));
+    assert.throws(() => knowledge.commitEdit({ pageId: id, tabId: "settings", batch: 0, blocks: [{ ...page.blocks[page.titleBlockId], children: [child.id] }] }, pageHistory(id)), hasFailure("feed-body-forbidden"));
+    assert.throws(() => knowledge.place({ position: { pageId: id, containerId: id, index: 0, blockId: page.titleBlockId }, action: "insert", tabId: "settings" }, pageHistory(id)), hasFailure("feed-body-forbidden"));
+    const preview = knowledge.trash([id], "trash", workspaceHistory); if (preview.status === "confirmation") knowledge.trash([id], "trash", workspaceHistory, preview.preview.token);
     assert.equal(count(), 0); assert.equal(feed.getState({}).sources.length, 0);
     await assert.rejects(feed.saveSource({ name: "B", url: "https://example.org/feed" }), hasFailure("feed-duplicate"));
-    knowledge.restore([id], "restore"); assert.equal(count(), 1);
+    knowledge.restore([id], "restore", workspaceHistory); assert.equal(count(), 1);
     const title = knowledge.get(id).blocks[page.titleBlockId];
-    knowledge.commitEdit({ pageId: id, tabId: "rename", batch: 0, blocks: [{ ...title, payload: payload("title", "B") }] });
+    knowledge.commitEdit({ pageId: id, tabId: "rename", batch: 0, blocks: [{ ...title, payload: payload("title", "B") }] }, pageHistory(id));
     assert.equal(feed.getState({}).sources[0].name, "B");
     assert.ok(knowledge.list({ keyword: "B", kind: "feed" }).items.some(page => page.id === id));
 });
@@ -197,7 +198,7 @@ test("permanently deleting a source cascades its entries without deleting import
     const knowledge = knowledgeServices(), history = historyServices(), papers = paperServices();
     const feed = feedServices();
     const source = await feed.saveSource({ name: "A", url: "https://example.org/feed" }), paper = feed.importItem(feed.getState({}).items[0].id);
-    const removal = knowledge.trash([source], "trash"); if (removal.status === "confirmation") knowledge.trash([source], "trash", removal.preview.token);
+    const removal = knowledge.trash([source], "trash", workspaceHistory); if (removal.status === "confirmation") knowledge.trash([source], "trash", workspaceHistory, removal.preview.token);
     const purge = purgeServices(), preview = purge.purge([source], "purge");
     if (preview.status !== "confirmation") throw new Error("Expected confirmation");
     assert.equal(purge.purge([source], "purge", preview.token).status, "deleted");

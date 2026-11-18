@@ -10,5 +10,6 @@ export const maxPanelWidth = 500;
 export const defaultSettings: Settings = {
     version: settingsVersion, lastWorkspace: null, appearance: { ...defaultAppearance },
     window: { width: 1280, height: 860, maximized: false },
+    history: { limit: null },
     layout: { width: 240, collapsed: false }
 };

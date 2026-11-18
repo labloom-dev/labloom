@@ -1,3 +1,4 @@
+import { pageHistory, workspaceHistory } from "./support/history";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
@@ -43,7 +44,7 @@ function entry(id: string, pdfURL: string | null = null): FeedEntry {
 }
 function edit(page: PageRecord, text: string, tabId = "a"): CommitResult {
     const block = page.blocks[page.children[0]];
-    return edits.commitEdit({ pageId: page.id, tabId, batch: 0, blocks: [{ ...block, payload: payload("paragraph", text) }] });
+    return edits.commitEdit({ pageId: page.id, tabId, batch: 0, blocks: [{ ...block, payload: payload("paragraph", text) }] }, pageHistory(page.id));
 }
 function confirm(action: (token?: string) => CommitResult): CommitResult {
     const preview = action();
@@ -69,14 +70,14 @@ test("opening B drops A history, cached queries, timers and database connection"
     const first = edits.create("event", "A", { schedule_start: now / 1000 + 60 });
     edit(first, "A");
     timers.set(first.id, "schedule_start", 0, true);
-    assert.equal(history.state("a").canUndo, true);
+    assert.equal(history.state(pageHistory(first.id)).canUndo, true);
     session.close();
     assert.equal(a.database.open, false);
     assert.equal(a.lock.connection.open, false);
     const b = open(t, { clock: () => now, timeZone: () => "UTC" });
     const second = edits.create("event", "B", { schedule_start: now / 1000 + 60 });
     timers.set(second.id, "schedule_start", 0, true);
-    assert.deepEqual(history.state("a"), { canUndo: false, redo: [] });
+    assert.deepEqual(history.state(pageHistory(first.id)), { canUndo: false, redo: [] });
     assert.deepEqual(records.list().items.map(page => page.id), [second.id]);
     assert.throws(() => records.get(first.id), hasFailure("page-unavailable"));
     now += 60000;
@@ -94,11 +95,11 @@ test("every public service operation rejects a closed session before validating 
         () => records.get(page.id), () => records.list(), () => records.listUpdates({}, []), () => records.readObjects(page.id, []),
         () => records.header(""), () => records.readBatch([]), () => records.sharedUses([]), () => records.backlinks(page.id),
         () => records.resolve({ kind: "page", id: page.id }), () => attributes.definitions(), () => attributes.definition("tags"),
-        () => edits.create(), () => edits.commitEdit({} as never), () => edits.previewEdit({} as never), () => edits.syncBlocks("", []),
-        () => edits.trash([], ""), () => edits.restore([], ""), () => edits.setDefinition("", null, ""),
-        () => history.state("a"), () => history.apply("a", "undo"), () => history.close("a"), () => history.clear(),
+        () => edits.create(), () => edits.commitEdit({} as never, workspaceHistory), () => edits.previewEdit({} as never), () => edits.syncBlocks("", []),
+        () => edits.trash([], "", workspaceHistory), () => edits.restore([], "", workspaceHistory), () => edits.setDefinition("", null, ""),
+        () => history.state(pageHistory(page.id)), () => history.apply(pageHistory(page.id), "undo"),
         () => papers.files([]), () => papers.state(page.id), () => papers.read(""), () => papers.get(page.id),
-        () => papers.resources(page.id), () => papers.annotate(page.id, "", ""), () => papers.getAnnotation(""),
+        () => papers.resources(page.id), () => papers.annotate(page.id, "", "", pageHistory(page.id)), () => papers.getAnnotation(""),
         () => papers.unlockPDF("", ""), () => papers.importFile(""), () => papers.position("", "", {} as never),
         () => purge.purge(null, ""), () => timers.settings(""), () => timers.notices(), () => timers.check(),
         () => timers.set("", "", -1, false), () => timers.read("", "", -1), () => timers.recalculateAll(),
@@ -204,29 +205,29 @@ test("all write paths publish after committing, including direct paper and subsc
     const page = edits.create("event", "A", { schedule_start: now / 1000 + 60 });
     await check("create", () => edits.create("editable", "B"));
     await check("edit", () => edit(page, "A"));
-    await check("undo", () => history.apply("a", "undo"));
-    await check("redo", () => history.apply("a", "redo"));
-    await check("place", () => edits.place({ position: { pageId: page.id, containerId: page.id, index: 0, blockId: page.children[0] }, action: "duplicate", tabId: "place" }));
+    await check("undo", () => history.apply(pageHistory(page.id), "undo"));
+    await check("redo", () => history.apply(pageHistory(page.id), "redo"));
+    await check("place", () => edits.place({ position: { pageId: page.id, containerId: page.id, index: 0, blockId: page.children[0] }, action: "duplicate", tabId: "place" }, pageHistory(page.id)));
     const definition = { id: "custom:" + randomUUID(), name: "A", type: "files" as const, metadata: {} };
     await check("definition", () => edits.setDefinition(definition.id, definition, "definition"));
-    await check("files", () => papers.attachFiles([paths.text], page.id, definition.id, "files"));
-    await check("deleteBlock", () => confirm(token => edits.deleteBlock({ pageId: page.id, blockId: page.children[0], tabId: "delete" }, token)));
-    await check("trash", () => confirm(token => edits.trash([page.id], "trash", token)));
-    await check("restore", () => edits.restore([page.id], "restore"));
+    await check("files", () => papers.attachFiles([paths.text], page.id, definition.id, { tabId: "files", source: pageHistory(page.id) }));
+    await check("deleteBlock", () => confirm(token => edits.deleteBlock({ pageId: page.id, blockId: page.children[0], tabId: "delete" }, pageHistory(page.id), token)));
+    await check("trash", () => confirm(token => edits.trash([page.id], "trash", workspaceHistory, token)));
+    await check("restore", () => edits.restore([page.id], "restore", workspaceHistory));
     let paperId = "";
     await check("import PDF", () => {
         paperId = papers.importFile(paths.pdf).pageId;
     });
-    await check("add PDF", () => papers.importFile(paths.pdf, paperId, "files"));
+    await check("add PDF", () => papers.importFile(paths.pdf, paperId, { tabId: "files", source: pageHistory(paperId) }));
     const fileId = (await papers.resources(paperId)).files[0].id;
     let annotation = "";
     await check("highlight", async () => {
-        annotation = await papers.annotate(paperId, selection(fileId), "annotations");
+        annotation = await papers.annotate(paperId, selection(fileId), "annotations", pageHistory(paperId));
     });
-    await check("color", () => papers.changeAnnotation(annotation, "green", "annotations"));
+    await check("color", () => papers.changeAnnotation(annotation, "green", "annotations", pageHistory(paperId)));
     await check("reading position", () => papers.position(paperId, fileId, { page: 1, rotation: 0, left: 0, top: 0, scale: 1 }, "reader"));
-    await check("delete highlight", () => confirm(token => papers.deleteAnnotation(annotation, "annotations", token)));
-    await check("restore highlight", () => edits.restore([annotation], "restore"));
+    await check("delete highlight", () => confirm(token => papers.deleteAnnotation(annotation, "annotations", pageHistory(paperId), token)));
+    await check("restore highlight", () => edits.restore([annotation], "restore", workspaceHistory));
     edits.cacheAttributes(annotation, { annotation_extractor: "old" });
     await check("source-text cache", () => papers.get(annotation));
     await check("reminder setting", () => timers.set(page.id, "schedule_start", 0, true));
@@ -236,10 +237,10 @@ test("all write paths publish after committing, including direct paper and subsc
     await check("read notice", () => timers.read(page.id, "schedule_start", 0));
     await check("time-zone recalculation", () => timers.recalculateAll());
     await check("rebuild links", () => edits.rebuildLinks());
-    confirm(token => edits.trash([page.id], "trash", token));
+    confirm(token => edits.trash([page.id], "trash", workspaceHistory, token));
     await check("purge", () => erase([page.id]), true);
     const recycled = edits.create();
-    confirm(token => edits.trash([recycled.id], "trash", token));
+    confirm(token => edits.trash([recycled.id], "trash", workspaceHistory, token));
     await check("empty recycle bin", () => erase(null), true);
     let source = "";
     await check("save source", async () => {
@@ -267,7 +268,7 @@ test("all write paths publish after committing, including direct paper and subsc
 test("one shared-block change expands summaries for both pages and reaches every subscriber", t => {
     open(t);
     const a = edits.create(), b = edits.create();
-    edits.commitEdit({ pageId: b.id, tabId: "b", batch: 0, blocks: [], pageChildren: [a.children[0]] });
+    edits.commitEdit({ pageId: b.id, tabId: "b", batch: 0, blocks: [], pageChildren: [a.children[0]] }, pageHistory(b.id));
     const first: events.Event[] = [], second: events.Event[] = [];
     t.after(events.subscribe(event => first.push(event)));
     t.after(events.subscribe(event => second.push(event)));
@@ -291,7 +292,7 @@ test("create rules apply to service calls and rolled-back writes publish no even
         edit(page, "rollback"); throw new Error("rollback");
     }), /rollback/);
     assert.equal(changed.length, 0);
-    assert.equal(history.state("a").canUndo, false);
+    assert.equal(history.state(pageHistory(page.id)).canUndo, false);
     assert.equal(records.get(page.id).blocks[page.children[0]].payload.inline.length, 0);
 });
 
@@ -384,7 +385,7 @@ test("service architecture has no singleton classes, connection WeakMaps, Electr
 test("annotation parsing returning after close leaves B unchanged and reports no stale error", async t => {
     const a = open(t), paths = files(a.info.path), paper = papers.importFile(paths.pdf).pageId;
     const file = (await papers.resources(paper)).files[0].id;
-    const pending = papers.annotate(paper, selection(file), "annotations");
+    const pending = papers.annotate(paper, selection(file), "annotations", pageHistory(paper));
     session.close();
     open(t);
     assert.equal(await pending, "");

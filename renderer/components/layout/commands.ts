@@ -1,6 +1,7 @@
 import { tick } from "svelte";
 import { visits } from "../Tab/activity.svelte";
 import { commands, shortcutCommand, type Command } from "../../../shared/content/commands";
+import { historySource } from "../Knowledge/history";
 import { confirmed, perform, saveAll, writeFromTab } from "../Knowledge/state.svelte";
 import { activateTab, focusGroup, removeTab } from "../Tab/api";
 import type { LayoutNode } from "../Tab/defs";
@@ -65,7 +66,7 @@ export function runCommand(id: Command): void {
         }
     }
     else if (id === "importPDF") void perform(async () => {
-        const action = (): ReturnType<typeof window.api.papers.importPDF> => window.api.papers.importPDF(undefined, group.activeTabId ?? undefined);
+        const action = (): ReturnType<typeof window.api.papers.importPDF> => window.api.papers.importPDF(undefined, group.activeTabId ? { tabId: group.activeTabId, source: historySource(group.activeTabId) } : undefined);
         const result = group.activeTabId ? await writeFromTab(group.activeTabId, action) : await saveAll() && await action();
         if (result) openPage(result.pageId);
     });
@@ -74,9 +75,9 @@ export function runCommand(id: Command): void {
             const tabId = group.activeTabId;
             void perform(async () => {
                 await writeFromTab(tabId, async () => {
-                    const history = await window.api.history.state(tabId);
+                    const source = historySource(tabId), history = await window.api.history.state(source);
                     if (id === "undo" ? !history.canUndo : !history.redo.length) return;
-                    await confirmed(token => window.api.history.apply(tabId, id as "undo" | "redo", undefined, token));
+                    await confirmed(token => window.api.history.apply(source, id as "undo" | "redo", undefined, token));
                 });
             });
         }

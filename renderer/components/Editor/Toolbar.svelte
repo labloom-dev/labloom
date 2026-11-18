@@ -41,13 +41,13 @@
                 </Toolbar.Button>
                 <span class="separator"></span>
                 <div class="history-actions">
-                    <Toolbar.Button class="tool-button" aria-label="撤销" disabled={!toolbarState.canUndo} onclick={() => editor?.chain().focus().undo().run()}>
+                    <Toolbar.Button class="tool-button" aria-label="撤销" disabled={!toolbarState.ready || !(session.state.dirty || session.state.history.canUndo)} onclick={() => editor?.chain().focus().undo().run()}>
                         <span class="icon">
                             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
                             {@html undoIcon}
                         </span>
                     </Toolbar.Button>
-                    <Toolbar.Button class="tool-button" aria-label="重做" disabled={!toolbarState.canRedo} onclick={() => editor?.chain().focus().redo().run()}>
+                    <Toolbar.Button class="tool-button" aria-label="重做" disabled={!toolbarState.ready || !session.state.history.redo.length} onclick={() => editor?.chain().focus().redo().run()}>
                         <span class="icon">
                             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
                             {@html redoIcon}
@@ -183,8 +183,7 @@
     function readState(instance: Editor | null): {
         formats: { name: string; label: string; icon: string | null; active: boolean; disabled: boolean }[];
         canClear: boolean;
-        canUndo: boolean;
-        canRedo: boolean;
+        ready: boolean;
     } {
         const ready = instance !== null && !instance.isDestroyed && instance.isEditable;
         return {
@@ -194,8 +193,7 @@
                 disabled: !ready || !instance.can().toggleMark(format.name)
             })),
             canClear: ready && instance.can().unsetAllMarks(),
-            canUndo: ready && instance.can().undo(),
-            canRedo: ready && instance.can().redo()
+            ready
         };
     }
 

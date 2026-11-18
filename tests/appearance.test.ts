@@ -1,3 +1,4 @@
+import { pageHistory } from "./support/history";
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmdirSync, writeFileSync } from "node:fs";
@@ -41,7 +42,7 @@ test("settings snapshots are frozen, merge groups, flush durably and leave confi
     assert.equal(Object.isFrozen(first.settings.appearance), true);
     assert.equal(Reflect.set(first.settings.layout, "width", 400), false);
     const patches = [
-        { appearance: { theme: "dark" } }, { appearance: { readingSize: 18, motion: false } },
+        { history: { limit: 3 } }, { appearance: { theme: "dark" } }, { appearance: { readingSize: 18, motion: false } },
         { window: { width: 950, height: 730, maximized: true } }, { layout: { width: 310, collapsed: true } },
         { lastWorkspace: { id: "one", name: "One", path: join(root, "one") } }
     ];
@@ -57,6 +58,14 @@ test("settings snapshots are frozen, merge groups, flush durably and leave confi
     assert.deepEqual(settings.get().settings, snapshot.settings);
     assert.equal(readFileSync(join(root, "config.json"), "utf8"), legacy);
     assert.equal(existsSync(join(root, "sessions")), false);
+});
+
+test("existing settings without a history limit retain their layout and default to unlimited", () => {
+    const root = folder(), { history: _history, ...legacy } = defaultSettings;
+    const value = { ...legacy, layout: { width: 311, collapsed: true } };
+    writeFileSync(join(root, "settings.json"), JSON.stringify(value));
+    assert.equal(settings.initialize(root).notice, undefined);
+    assert.deepEqual(settings.get().settings, { ...value, history: { limit: null } });
 });
 
 test("five rapid changes write once within 600ms of the final theme update", async t => {
@@ -99,6 +108,7 @@ test("invalid settings patches cannot change memory or disk", async t => {
     await settings.flush(0);
     const before = settings.get(), bytes = readFileSync(join(root, "settings.json"));
     for (const patch of [null, [], {}, { version: 2 }, { appearance: {} }, { layout: { width: 169 } },
+        ...[0, -1, 1.5, "3", Infinity].map(limit => ({ history: { limit } })),
         { window: { width: minWindowWidth - 1 } }, { window: { height: minWindowHeight - 1 } },
         { appearance: { readingSize: "18" } }, { appearance: { motion: 1 } }, { appearance: { language: "fr" } },
         ...["", null, "+08:00", "Mars/Base"].map(timeZone => ({ appearance: { timeZone } })),
@@ -187,7 +197,7 @@ test("workspace settings merge, survive reopen and stay out of page timestamps a
     const expected = { tabs, feedKeywords: ["Large Models", "AI"] };
     assert.deepEqual(workspaceSettings.get(), expected);
     assert.deepEqual(JSON.parse(opened.database.prepare("SELECT settings FROM workspace_meta").pluck().get() as string), expected);
-    assert.equal(history.state("a").canUndo, false);
+    assert.equal(history.state(pageHistory(page.id)).canUndo, false);
     assert.equal(records.get(page.id).attributes.modified_at, modified);
     assert.throws(() => commit.run({ sourceTab: "a" }, () => {
         workspaceSettings.update({ feedKeywords: ["rollback"] }); throw new Error("rollback");

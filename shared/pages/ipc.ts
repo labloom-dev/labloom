@@ -1,3 +1,4 @@
+import type { HistorySource } from "../history/ipc";
 import type { AttributeValue } from "../types/attributes";
 import type { Backlink, CommitResult, BlockDeletion, ChangePreview, ContentBlock, EditCommit, KnowledgeChange, Placement, ResolvedTarget, PageKind, PageList, PageQuery, PageRecord, PageObjects, Target } from "../types/content";
 import type { PurgeResult } from "../types/knowledge";
@@ -11,12 +12,12 @@ export type PagesAPI = {
     readObjects(pageId: string, ids: string[]): Promise<PageObjects>;
     syncBlocks(workspaceId: string, ids: string[] & tags.MinItems<1>): Promise<ContentBlock[] | null>;
     create(kind: PageKind, title?: string, initial?: Record<string, AttributeValue>, parentId?: string, tabId?: TabId): Promise<PageRecord>;
-    commitEdit(input: EditCommit, confirmation?: string): Promise<CommitResult>;
+    commitEdit(input: EditCommit, source: HistorySource, confirmation?: string): Promise<CommitResult>;
     previewEdit(input: EditCommit): Promise<ChangePreview | null>;
-    deleteBlock(input: BlockDeletion, confirmation?: string): Promise<CommitResult>;
-    place(input: Placement, confirmation?: string): Promise<CommitResult>;
-    trash(ids: string[], tabId: TabId, confirmation?: string): Promise<CommitResult>;
-    restore(ids: string[], tabId: TabId): Promise<CommitResult>;
+    deleteBlock(input: BlockDeletion, source: HistorySource, confirmation?: string): Promise<CommitResult>;
+    place(input: Placement, source: HistorySource, confirmation?: string): Promise<CommitResult>;
+    trash(ids: string[], tabId: TabId, source: HistorySource, confirmation?: string): Promise<CommitResult>;
+    restore(ids: string[], tabId: TabId, source: HistorySource): Promise<CommitResult>;
     purge(ids: string[], tabId: TabId, confirmation?: string): Promise<PurgeResult>;
     emptyTrash(tabId: TabId, confirmation?: string): Promise<PurgeResult>;
     backlinks(id: string): Promise<Backlink[]>;

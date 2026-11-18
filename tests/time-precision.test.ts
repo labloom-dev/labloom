@@ -1,3 +1,4 @@
+import { pageHistory } from "./support/history";
 import { knowledgeServices, historyServices, session, type Knowledge } from "./support/session";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -130,8 +131,8 @@ test("definition preview and commit share conversion, invalidate undo, and refre
     const history = historyServices();
     const page = service.create("editable", "A"), def = definition("minute");
     service.setDefinition(def.id, def, "manager");
-    assert.equal(service.commitEdit({ pageId: page.id, tabId: "editor", batch: 1, blocks: [], attributes: { [def.id]: instant } }).status, "saved");
-    assert.equal(history.state("editor").canUndo, true);
+    assert.equal(service.commitEdit({ pageId: page.id, tabId: "editor", batch: 1, blocks: [], attributes: { [def.id]: instant } }, pageHistory(page.id)).status, "saved");
+    assert.equal(history.state(pageHistory(page.id)).canUndo, true);
     const target = { ...def, type: "day" as const };
     const preview = service.setDefinition(def.id, target, "manager")!;
     assert.deepEqual(preview.pages.map(p => p.id), [page.id]);
@@ -142,7 +143,7 @@ test("definition preview and commit share conversion, invalidate undo, and refre
     assert.equal(service.get(page.id).attributes[def.id], instant);
     assert.equal(service.setDefinition(def.id, target, "manager", updated.token), null);
     assert.equal(service.get(page.id).attributes[def.id], convertValue(def, target, instant, "UTC"));
-    assert.equal(history.state("editor").canUndo, false);
+    assert.equal(history.state(pageHistory(page.id)).canUndo, false);
     const text = { ...target, type: "string" as const };
     const back = service.setDefinition(def.id, text, "manager")!;
     service.setDefinition(def.id, text, "manager", back.token);

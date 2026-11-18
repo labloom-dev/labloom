@@ -157,7 +157,7 @@
     async function attach(): Promise<void> {
         busy = true;
         try {
-            if (await writeFromTab(tabId, () => window.api.papers.importFiles(page.id, "paper_files", tabId))) await load();
+            if (await writeFromTab(tabId, () => window.api.papers.importFiles(page.id, "paper_files", tabId, { kind: "page", id: page.id }))) await load();
         }
         catch (problem) {
             error = failure(problem);
@@ -187,8 +187,8 @@
         try {
             const anchor = selection ? $state.snapshot(selection) : null, id = activeHighlight;
             await writeFromTab(tabId, async () => {
-                if (id) await window.api.papers.changeAnnotation(id, color, tabId);
-                else if (anchor) await window.api.papers.annotate(page.id, anchor, tabId, color);
+                if (id) await window.api.papers.changeAnnotation(id, color, tabId, { kind: "page", id: page.id });
+                else if (anchor) await window.api.papers.annotate(page.id, anchor, tabId, { kind: "page", id: page.id }, color);
                 dismiss();
                 await load();
             });
@@ -207,7 +207,7 @@
         busy = true;
         try {
             await writeFromTab(tabId, async () => {
-                const id = await window.api.papers.annotate(page.id, anchor, tabId, existing?.color);
+                const id = await window.api.papers.annotate(page.id, anchor, tabId, { kind: "page", id: page.id }, existing?.color);
                 await session.reread([page.id]);
                 dismiss();
                 await load();
@@ -224,7 +224,7 @@
     function remove(id: string): void {
         void perform(async () => {
             await writeFromTab(tabId, async () => {
-                if (await confirmed(token => window.api.papers.deleteAnnotation(id, tabId, token))) {
+                if (await confirmed(token => window.api.papers.deleteAnnotation(id, tabId, { kind: "page", id: page.id }, token))) {
                     dismiss();
                     await session.reread([page.id]);
                 }

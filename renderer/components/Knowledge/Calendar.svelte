@@ -6,7 +6,7 @@
             <p>给重要的想法，留出专注的时间。</p>
         </div>
         <div class="actions">
-            <ListHistory {tabId} bind:history />
+            <ListHistory {tabId} />
             <button class="button" onclick={() => createPage("event", { schedule_date: dayToSeconds(selected) })}>新建日程</button>
             <button class="button primary" onclick={() => createPage("task", { schedule_date: dayToSeconds(selected) })}>新建任务</button>
         </div>
@@ -119,7 +119,7 @@
     import { pageMenu } from "./page-menu";
     import { onMount } from "svelte";
     import { type PageSummary } from "../../../shared/types/content";
-    import { type Notice, type HistoryState } from "../../../shared/types/knowledge";
+    import { type Notice } from "../../../shared/types/knowledge";
     import ListHistory from "./ListHistory.svelte";
     import { dayToSeconds, nowSeconds, scheduleDay, secondsToWall } from "../../../shared/content/time";
     import { display } from "../../../shared/attrs/format";
@@ -130,7 +130,6 @@
     import { kindNames } from "./labels";
     import Icon from "../utils/Icon.svelte";
     let { tabId }: { tabId: string } = $props();
-    let history = $state.raw<HistoryState>({ canUndo: false, redo: [] });
     const zone = $derived(currentTimeZone());
     let now = $state(nowSeconds()), viewedMonth = $state<Date>(), selectedDay = $state<string>();
     const today = $derived(secondsToWall(now, zone).slice(0, 10));
@@ -181,7 +180,6 @@
                     throw problem;
                 }
             }
-            history = await window.api.history.state(tabId);
             scheduled = result.sort((a, b) => Number(a.kind === "event") - Number(b.kind === "event")
                 || Number(b.attributes.modified_at) - Number(a.attributes.modified_at) || a.id.localeCompare(b.id));
             error = "";
@@ -204,7 +202,7 @@
             await writeFromTab(tabId, async () => {
                 const { page } = await window.api.pages.readObjects(id, [id]);
                 if (!page) throw new LabloomError({ kind: "page-missing" });
-                await confirmed(token => window.api.pages.commitEdit({ pageId: id, tabId, batch: 0, blocks: [], attributes: { task_status: page.attributes.task_status === "done" ? "todo" : "done" } }, token));
+                await confirmed(token => window.api.pages.commitEdit({ pageId: id, tabId, batch: 0, blocks: [], attributes: { task_status: page.attributes.task_status === "done" ? "todo" : "done" } }, { kind: "workspace" }, token));
             });
         });
     }

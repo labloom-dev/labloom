@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { AppAPI, BridgeAPI } from "../shared/ipc";
 import type { Channels, InvokeKeys } from "../shared/ipc/contract";
-import { appChannels, beforeQuit, feedChanged, pagesChanged, settingsChanged, pagesChannels, attributesChannels, historyChannels, papersChannels, timersChannels, workspaceChannels, settingsChannels, startupChannels, feedChannels } from "../shared/ipc";
+import { appChannels, beforeQuit, feedChanged, historyChanged, pagesChanged, settingsChanged, pagesChannels, attributesChannels, historyChannels, papersChannels, timersChannels, workspaceChannels, settingsChannels, startupChannels, feedChannels } from "../shared/ipc";
 
 function methods<API>(channels: Record<keyof API, string>, call: (channel: string, ...args: unknown[]) => unknown): API {
     return Object.fromEntries(Object.entries<string>(channels).map(([key, channel]) => [key, (...args: unknown[]) => call(channel, ...args)])) as API;
@@ -34,7 +34,7 @@ const api: BridgeAPI<AppAPI> = {
     },
     pages: { ...invokes<AppAPI["pages"]>(pagesChannels), onChanged: listener => subscribe(pagesChanged, listener) },
     attributes: invokes<AppAPI["attributes"]>(attributesChannels),
-    history: invokes<AppAPI["history"]>(historyChannels),
+    history: { ...invokes<AppAPI["history"]>(historyChannels), onChanged: listener => subscribe(historyChanged, listener) },
     papers: invokes<AppAPI["papers"]>(papersChannels),
     timers: invokes<AppAPI["timers"]>(timersChannels),
     workspace: invokes<AppAPI["workspace"]>(workspaceChannels),

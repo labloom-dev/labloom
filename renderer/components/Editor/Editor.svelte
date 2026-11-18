@@ -220,7 +220,7 @@
             pendingPaste = null;
             let saved = false;
             await session.action(async token => {
-                const result = await window.api.pages.commitEdit({ ...planned.edit, pageId: session.state.page!.id, tabId, batch: 0, ...(synced ? { sync: choice.clipboard.ids } : {}) }, token);
+                const result = await window.api.pages.commitEdit({ ...planned.edit, pageId: session.state.page!.id, tabId, batch: 0, ...(synced ? { sync: choice.clipboard.ids } : {}) }, session.source, token);
                 saved = result.status === "saved";
                 return result;
             });
@@ -265,7 +265,7 @@
         const at = instance.state.doc.resolve(loc.pos), index = at.index() - 1;
         if (index + direction < 0 || index + direction >= at.parent.childCount - 1) return;
         const position = { pageId: session.state.page!.id, containerId: at.depth ? at.parent.attrs.blockId as string : session.state.page!.id, index, blockId: loc.node.attrs.blockId as string };
-        void perform(() => session.action(token => window.api.pages.place({ position, action: direction < 0 ? "move-up" : "move-down", tabId }, token)));
+        void perform(() => session.action(token => window.api.pages.place({ position, action: direction < 0 ? "move-up" : "move-down", tabId }, session.source, token)));
     }
     function placeholder(): void {
         if (!editor || !host) return;
@@ -366,7 +366,7 @@
         if (!loc || !instance) return;
         const { node, pos } = loc;
         if (action === "delete") {
-            void perform(() => session.action(token => window.api.pages.deleteBlock({ pageId: session.state.page!.id, tabId, blockId: node.attrs.blockId }, token)));
+            void perform(() => session.action(token => window.api.pages.deleteBlock({ pageId: session.state.page!.id, tabId, blockId: node.attrs.blockId }, session.source, token)));
             return;
         }
         if (action === "row" || action === "column") {

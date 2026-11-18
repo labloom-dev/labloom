@@ -17,10 +17,10 @@ const blocks = Array.from({ length: 1000 }, (_, index) => ({
         { type: "text", text: `Research note ${index}`, marks: [{ type: "link", attrs: { href: "https://example.org", metadata: { references: ["A", "B"] } } }] }
     ] }
 }));
-const commit = [{ pageId: "A", tabId: "B", batch: 1, blocks }];
+const commit = [{ pageId: "A", tabId: "B", batch: 1, blocks }, { kind: "page", id: "A" }];
 const sync = ["A", Array.from({ length: 10000 }, (_, index) => `block-${index}`)];
 measure("IPC | commitEdit 1000 rich blocks", () => pages.commitEdit.check(commit));
 measure("IPC | syncBlocks 10000 ids", () => pages.syncBlocks.check(sync));
 const largeBlock = { ...blocks[0], payload: { ...blocks[0].payload, inline: [{ type: "text", text: "A".repeat(1000000) }] } };
-const largeCommit = [{ ...commit[0], blocks: [largeBlock] }];
+const largeCommit = [{ ...commit[0], blocks: [largeBlock] }, commit[1]];
 measure("IPC | commitEdit 1 block with 1000000 characters", () => pages.commitEdit.check(largeCommit));
