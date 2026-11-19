@@ -5,8 +5,8 @@ import { languages, type Language } from "./locale";
 
 const resources = { "zh-CN": { translation: zhCN }, en: { translation: en } } satisfies Record<Language, { translation: typeof zhCN }>;
 type Keys<T> = { [K in keyof T & string]: T[K] extends string ? K : `${K}.${Keys<T[K]>}` }[keyof T & string];
-export type TranslationKey = Keys<typeof zhCN>;
-export type TranslationOptions = Record<string, unknown>;
+type TranslationKey = Keys<typeof zhCN>;
+type TranslationOptions = Record<string, unknown>;
 export type Translate = (key: TranslationKey, options?: TranslationOptions) => string;
 
 export function createI18n(language: Language): i18n {

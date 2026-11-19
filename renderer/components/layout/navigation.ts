@@ -5,7 +5,7 @@ import type { GroupID, Tab } from "../Tab/defs";
 import { activateTab, addTab, getTabID, splitGroup } from "../Tab/api";
 import { tabState } from "../Tab/state.svelte";
 import { type uuid } from "../../../shared/types/uuid";
-import { type PageKind, type PageRecord } from "../../../shared/types/content";
+import { type PageRecord } from "../../../shared/types/content";
 import { type AttributeValue } from "../../../shared/types/attributes";
 import { perform, saveAll, writeFromTab } from "../Knowledge/state.svelte";
 
@@ -84,10 +84,10 @@ export async function openTarget(target: { kind: "page" | "block"; id: string },
     }
 }
 
-export function createPage(kind: PageKind = "editable", initial: Record<string, AttributeValue> = {}): void {
+export function createPage(initial: Record<string, AttributeValue> = {}): void {
     const source = tabState.groups.find(group => group.id === tabState.focusedGroupId)?.activeTabId;
     void perform(async () => {
-        const create = (): Promise<PageRecord> => window.api.pages.create(kind, "", initial, undefined, source ?? undefined);
+        const create = (): Promise<PageRecord> => window.api.pages.create("", initial, undefined, source ?? undefined);
         const page = source ? await writeFromTab(source, create) : await saveAll() && await create();
         if (page) openPage(page.id);
     });

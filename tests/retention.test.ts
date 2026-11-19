@@ -5,11 +5,11 @@ import { randomUUID } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
-import { rebuildSyncRefs } from "../main/storage/schema";
+import { rebuildSyncRefs } from "./support/sync-refs";
 import { createWorkspace } from "./support/session";
 import { builtinAttrs } from "../shared/attrs/builtins";
 import { payload } from "../shared/content/blocks";
-import { type GraphPage, unreachablePages } from "../shared/content/lifecycle";
+import { type GraphPage, unreachablePages } from "./support/reachability";
 import { type ContentBlock, type EditCommit, type Target } from "../shared/types/content";
 
 type TestPage = GraphPage & { name: string };

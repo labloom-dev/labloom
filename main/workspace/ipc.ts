@@ -6,7 +6,7 @@ import * as workspace from "../workspace-settings";
 
 type Args<Key extends keyof typeof workspaceChannels> = Parameters<WorkspaceAPI[Key]>;
 
-export const routes = {
+const routes = {
     loadTabs: route(typia.createAssert<Args<"loadTabs">>(invalid), workspace.loadTabs),
     saveTabs: route(typia.createAssert<Args<"saveTabs">>(invalid), workspace.saveTabs)
 } satisfies Routes<WorkspaceAPI>;

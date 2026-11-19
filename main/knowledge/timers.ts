@@ -51,7 +51,7 @@ export function check(): Promise<string[]> {
             }
             commit.run({ sourceTab: "", history: false, updateModified: false }, context => {
                 const expected = isTimeType(definition.type) ? reminderDue(definition.type, page.attributes[row.attrId] as number | null, row.leadSeconds, resolveTimeZone(workspace.timeZone())) : null;
-                const allowed = isTimeType(definition.type) && !page.attributes.deleted && !(page.kind === "task" && page.attributes.task_status === "done") && expected === row.dueAt;
+                const allowed = isTimeType(definition.type) && !page.attributes.deleted && !core.completed(row.pageId) && expected === row.dueAt;
                 const changed = data.statement("UPDATE timers SET due_at=NULL,fired_at=CASE WHEN ? THEN ? ELSE fired_at END,seen=CASE WHEN ? THEN 0 ELSE seen END WHERE page_id=? AND attr_id=? AND lead_seconds=? AND due_at=?")
                     .run(Number(allowed), now, Number(allowed), row.pageId, row.attrId, row.leadSeconds, row.dueAt).changes;
                 context.change({ pages: [row.pageId], notices: true });

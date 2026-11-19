@@ -1,5 +1,4 @@
 import type { KnowledgeChange } from "../../../shared/types/content";
-export { message } from "../../i18n.svelte";
 import { failure, type ErrorValue } from "../../i18n.svelte";
 
 export const knowledgeState = $state<{ change: KnowledgeChange & { seq: number }; error: ErrorValue; notice: string; busy: boolean }>({

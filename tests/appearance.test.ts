@@ -175,7 +175,7 @@ test("timezone subscriptions recalculate date reminders and notify the workspace
     fixture(t); effects.initialize(); t.after(() => effects.release());
     settings.update({ appearance: { timeZone: "UTC" } });
     session.open(folder(), "create"); t.after(() => session.close());
-    const page = edits.create("event", "A", { schedule_date: dayToSeconds("2027-01-01") });
+    const page = edits.create("A", { schedule_date: dayToSeconds("2027-01-01") });
     timers.set(page.id, "schedule_date", 0, true);
     const sql = session.getNative(), due = (): number => sql.prepare("SELECT due_at FROM timers WHERE page_id=?").pluck().get(page.id) as number;
     const before = due(), modified = records.get(page.id).attributes.modified_at;

@@ -1,6 +1,6 @@
 import { type FailureInfo } from "../failure";
 
-export type FeedSourceStatus = "enabled" | "paused" | "cancelled";
+type FeedSourceStatus = "enabled" | "paused" | "cancelled";
 export type FeedSourceAction = "pause" | "resume" | "cancel";
 
 export type FeedSourceInput = {

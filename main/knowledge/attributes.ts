@@ -37,12 +37,6 @@ export function definition(id: string): AttributeDefinition {
     return resolveAttributeDefinition(row);
 }
 
-export function values(pageId: string): Record<string, AttributeValue> {
-    workspace.requireWorkspace();
-    const localDefinitions = new Map(definitions().map(definition => [definition.id, definition]));
-    return Object.fromEntries(workspace.database().select().from(pageAttrs).where(eq(pageAttrs.pageId, pageId)).all().map(row => [row.attrId, decodeValue(localDefinitions.get(row.attrId)!, row.value)]));
-}
-
 export function prepareValues(pageId: string, values: Record<string, AttributeValue>, detach: string[] = [], internal = false): PreparedValue[] {
     workspace.requireWorkspace();
     const page = workspace.database().select({ kind: pages.kind }).from(pages).where(eq(pages.id, pageId)).get();
@@ -120,22 +114,18 @@ export function initializePage(pageId: string): void {
     })();
 }
 
-export function persistPageKind(pageId: string, kind: PageKind): void {
-    workspace.requireWorkspace();
-    if (!pageKinds.includes(kind)) throw new LabloomError({ kind: "page-invalid-kind" });
-    if (kind === "feed") {
-        const children = workspace.database().$client.prepare("SELECT children FROM pages WHERE id=?").pluck().get(pageId) as string | undefined;
-        if (children && JSON.parse(children).length) throw new LabloomError({ kind: "feed-body-forbidden" });
-    }
-    workspace.database().$client.transaction(() => {
-        if (!workspace.database().update(pages).set({ kind }).where(eq(pages.id, pageId)).run().changes) throw new LabloomError({ kind: "page-missing" });
-        initializePage(pageId);
-    })();
-}
-
 function prepareDefinition(id: string, input: AttributeDefinition | null, before: AttributeDefinition | undefined): AttributeDefinition | null {
     if (input) {
-        if (before && before.type !== input.type) input = { ...input, metadata: convertMetadata(before.type, input.type, before.metadata) };
+        if (before && before.type !== input.type) {
+            let metadata = convertMetadata(before.type, input.type, before.metadata);
+            if (input.type === "status" && input.metadata.options) {
+                metadata = { options: input.metadata.options.map(option => ({ ...option, group: option.group ?? "incomplete" })) };
+            }
+            else if (before.type === "status" && input.type === "select" && input.metadata.options) {
+                metadata = { options: input.metadata.options.map(({ id, name }) => ({ id, name })) };
+            }
+            input = { ...input, metadata };
+        }
         validateDefinition(input);
         if (id !== input.id) throw new LabloomError({ kind: "attribute-id-immutable" });
     }
@@ -147,7 +137,7 @@ function prepareDefinition(id: string, input: AttributeDefinition | null, before
     }
     else {
         if (input?.type === "recurrence") throw new LabloomError({ kind: "attribute-recurrence-reserved" });
-        if (!id.startsWith("custom:") || !validUUID(id.slice(7))) throw new LabloomError({ kind: "attribute-invalid-id" });
+        if (!before && (!id.startsWith("custom:") || !validUUID(id.slice(7)))) throw new LabloomError({ kind: "attribute-invalid-id" });
         if (input && (input.hidden !== undefined || input.readonly !== undefined)) throw new LabloomError({ kind: "attribute-custom-permissions" });
     }
     return input;

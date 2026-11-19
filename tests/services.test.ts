@@ -67,7 +67,7 @@ function files(root: string): { pdf: string; text: string } {
 test("opening B drops A history, cached queries, timers and database connection", async t => {
     let now = Date.UTC(2026, 10, 15);
     const a = open(t, { clock: () => now, timeZone: () => "UTC" });
-    const first = edits.create("event", "A", { schedule_start: now / 1000 + 60 });
+    const first = edits.create("A", { schedule_start: now / 1000 + 60 });
     edit(first, "A");
     timers.set(first.id, "schedule_start", 0, true);
     assert.equal(history.state(pageHistory(first.id)).canUndo, true);
@@ -75,7 +75,7 @@ test("opening B drops A history, cached queries, timers and database connection"
     assert.equal(a.database.open, false);
     assert.equal(a.lock.connection.open, false);
     const b = open(t, { clock: () => now, timeZone: () => "UTC" });
-    const second = edits.create("event", "B", { schedule_start: now / 1000 + 60 });
+    const second = edits.create("B", { schedule_start: now / 1000 + 60 });
     timers.set(second.id, "schedule_start", 0, true);
     assert.deepEqual(history.state(pageHistory(first.id)), { canUndo: false, redo: [] });
     assert.deepEqual(records.list().items.map(page => page.id), [second.id]);
@@ -99,7 +99,7 @@ test("every public service operation rejects a closed session before validating 
         () => edits.trash([], "", workspaceHistory), () => edits.restore([], "", workspaceHistory), () => edits.setDefinition("", null, ""),
         () => history.state(pageHistory(page.id)), () => history.apply(pageHistory(page.id), "undo"),
         () => papers.files([]), () => papers.state(page.id), () => papers.read(""), () => papers.get(page.id),
-        () => papers.resources(page.id), () => papers.annotate(page.id, "", "", pageHistory(page.id)), () => papers.getAnnotation(""),
+        () => papers.resources(page.id), () => papers.annotate(page.id, "", "", pageHistory(page.id)),
         () => papers.unlockPDF("", ""), () => papers.importFile(""), () => papers.position("", "", {} as never),
         () => purge.purge(null, ""), () => timers.settings(""), () => timers.notices(), () => timers.check(),
         () => timers.set("", "", -1, false), () => timers.read("", "", -1), () => timers.recalculateAll(),
@@ -202,8 +202,8 @@ test("all write paths publish after committing, including direct paper and subsc
         assert.ok(observed.slice(start).some(event => event.type === "knowledge"), name);
         if (feedChange) assert.ok(observed.slice(start).some(event => event.type === "feed"), name + " feed event");
     };
-    const page = edits.create("event", "A", { schedule_start: now / 1000 + 60 });
-    await check("create", () => edits.create("editable", "B"));
+    const page = edits.create("A", { schedule_start: now / 1000 + 60 });
+    await check("create", () => edits.create("B"));
     await check("edit", () => edit(page, "A"));
     await check("undo", () => history.apply(pageHistory(page.id), "undo"));
     await check("redo", () => history.apply(pageHistory(page.id), "redo"));
@@ -236,7 +236,6 @@ test("all write paths publish after committing, including direct paper and subsc
     assert.ok(observed.some(event => event.type === "reminder"));
     await check("read notice", () => timers.read(page.id, "schedule_start", 0));
     await check("time-zone recalculation", () => timers.recalculateAll());
-    await check("rebuild links", () => edits.rebuildLinks());
     confirm(token => edits.trash([page.id], "trash", workspaceHistory, token));
     await check("purge", () => erase([page.id]), true);
     const recycled = edits.create();
@@ -284,8 +283,7 @@ test("one shared-block change expands summaries for both pages and reaches every
 
 test("create rules apply to service calls and rolled-back writes publish no events or history", t => {
     open(t);
-    assert.throws(() => edits.create("annotation"), hasFailure("annotation-selection-required"));
-    assert.throws(() => edits.create("editable", "", { modified_at: 0 }), hasFailure("page-create-readonly"));
+    assert.throws(() => edits.create("", { modified_at: 0 }), hasFailure("page-create-readonly"));
     const page = edits.create(), changed: events.Event[] = [];
     t.after(events.subscribe(event => changed.push(event)));
     assert.throws(() => commit.run({ sourceTab: "outer" }, () => {
@@ -305,11 +303,11 @@ test("closing and reopening owns one fifteen-second scheduler and handles only t
     }));
     const intervals = t.mock.method(globalThis, "setInterval");
     open(t, { clock: () => now, timeZone: () => "UTC" });
-    const a = edits.create("event", "A", { schedule_start: now / 1000 + 15 });
+    const a = edits.create("A", { schedule_start: now / 1000 + 15 });
     timers.set(a.id, "schedule_start", 0, true);
     session.close();
     open(t, { clock: () => now, timeZone: () => "UTC" });
-    const b = edits.create("event", "B", { schedule_start: now / 1000 + 15 });
+    const b = edits.create("B", { schedule_start: now / 1000 + 15 });
     timers.set(b.id, "schedule_start", 0, true);
     assert.equal(intervals.mock.callCount(), 2);
     assert.ok(intervals.mock.calls.every(call => call.arguments[1] === 15000));
@@ -326,7 +324,7 @@ test("closing and reopening owns one fifteen-second scheduler and handles only t
 
 test("IPC can register again for a recreated window without replacing the workspace session", async t => {
     open(t);
-    const page = edits.create("editable", "A");
+    const page = edits.create("A");
     const create = (): { window: BrowserWindow; handlers: Map<string, (event: unknown, ...args: unknown[]) => Promise<unknown>>; frame: object } => {
         const window = new EventEmitter(), frame = {}, handlers = new Map();
         Object.assign(window, { webContents: Object.assign(new EventEmitter(), { mainFrame: frame, isDestroyed: () => false, ipc: { handle: (name: string, handler: unknown) => handlers.set(name, handler), on: () => { } } }) });

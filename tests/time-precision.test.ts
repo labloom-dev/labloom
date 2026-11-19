@@ -10,7 +10,8 @@ import { builtinAttrs } from "../shared/attrs/builtins";
 import { convertValue } from "../shared/attrs/convert";
 import { display, search } from "../shared/attrs/format";
 import { defaultValue, encodeValue, validateDefinition, validateValue } from "../shared/attrs/values";
-import { dayToSeconds, monthToSeconds, scheduleDay, secondsToDay, secondsToMonth, secondsToWall, secondsToYear, timeToSeconds, timeTypes, wallToSeconds, yearToSeconds } from "../shared/content/time";
+import { scheduleDay } from "../renderer/components/Knowledge/calendar-day";
+import { dayToSeconds, monthToSeconds, secondsToDay, secondsToMonth, secondsToWall, secondsToYear, timeToSeconds, timeTypes, wallToSeconds, yearToSeconds } from "../shared/content/time";
 import { type AttributeDefinition, type AttributeType, type AttributeValue } from "../shared/types/attributes";
 
 const definition = (type: AttributeType, id = "custom:" + randomUUID()): AttributeDefinition => ({ name: "属性", id, type, metadata: {} });
@@ -107,7 +108,7 @@ test("retyping truncates or expands calendar precision and preserves seconds bet
 
 test("all precisions persist as SQLite integers and rejected writes roll back atomically", t => {
     const { service, database } = fixture(t);
-    const page = service.create("event", "A", { schedule_date: dayToSeconds("2026-11-11") });
+    const page = service.create("editable", "A", { schedule_date: dayToSeconds("2026-11-11") });
     const values = [instant, instant, dayToSeconds("2026-11-11"), monthToSeconds("2026-11"), yearToSeconds("2026")];
     for (const [index, type] of timeTypes.entries()) {
         const def = definition(type);
@@ -153,8 +154,8 @@ test("definition preview and commit share conversion, invalidate undo, and refre
 test("calendar search and grouping stay on the same day after changing zones and reopening", t => {
     const { service, database, info, setZone } = fixture(t);
     const day = dayToSeconds("2026-11-11");
-    const event = service.create("event", "A", { schedule_date: day });
-    const task = service.create("task", "B", { schedule_date: day, schedule_start: instant });
+    const event = service.create("editable", "A", { schedule_date: day });
+    const task = service.create("editable", "B", { schedule_date: day, schedule_start: instant });
     // Keep system timestamps from also matching the date keyword under test.
     database.prepare("UPDATE page_attrs SET value=? WHERE attr_id IN ('created_at','modified_at')").run(yearToSeconds("2000"));
     for (const timeZone of [zone, "UTC", "America/New_York"]) {

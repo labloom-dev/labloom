@@ -27,7 +27,7 @@ function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { clock: 
 }
 
 test("two leads on the same time attribute fire once, and adding a reminder does not erase another notification", async t => {
-    const f = fixture(t), due = Math.floor(f.clock.now / 1000) + 3600, page = f.knowledge.create("task", "组会", { schedule_start: due });
+    const f = fixture(t), due = Math.floor(f.clock.now / 1000) + 3600, page = f.knowledge.create("editable", "组会", { schedule_start: due });
     f.knowledge.timers.set(page.id, "schedule_start", 600, true); f.knowledge.timers.set(page.id, "schedule_start", 0, true);
     f.clock.now = (due - 600) * 1000;
     await f.check(); assert.equal(f.delivered.length, 1); assert.match(f.bodies[0], /组会 · 开始时间/);
@@ -40,7 +40,7 @@ test("two leads on the same time attribute fire once, and adding a reminder does
 });
 
 test("day, month and year reminders use local 09:00, and changing zones recalculates them", async t => {
-    const f = fixture(t), page = f.knowledge.create("event", "A", { schedule_date: dayToSeconds("2026-11-14") });
+    const f = fixture(t), page = f.knowledge.create("editable", "A", { schedule_date: dayToSeconds("2026-11-14") });
     f.knowledge.timers.set(page.id, "schedule_date", 86400, true);
     const query = f.database.prepare("SELECT due_at FROM timers WHERE page_id=? AND attr_id=?").pluck();
     assert.equal(query.get(page.id, "schedule_date"), wallToSeconds("2026-11-13T09:00", "Asia/Shanghai"));
@@ -54,7 +54,7 @@ test("day, month and year reminders use local 09:00, and changing zones recalcul
 });
 
 test("time edits and undo reschedule reminders; empty values retain their settings and past values do not catch up", async t => {
-    const f = fixture(t), now = Math.floor(f.clock.now / 1000), page = f.knowledge.create("event", "A", { schedule_start: now + 3600 });
+    const f = fixture(t), now = Math.floor(f.clock.now / 1000), page = f.knowledge.create("editable", "A", { schedule_start: now + 3600 });
     f.knowledge.timers.set(page.id, "schedule_start", 0, true);
     f.edit(page.id, { schedule_start: now + 7200 });
     f.clock.now = (now + 3600) * 1000; await f.check(); assert.equal(f.delivered.length, 0);
@@ -70,7 +70,7 @@ test("time edits and undo reschedule reminders; empty values retain their settin
 });
 
 test("recycle, restore, completed tasks, detached attributes and changed types update timer rows", async t => {
-    const f = fixture(t), now = Math.floor(f.clock.now / 1000), page = f.knowledge.create("task", "A", { schedule_start: now + 1000 });
+    const f = fixture(t), now = Math.floor(f.clock.now / 1000), page = f.knowledge.create("editable", "A", { schedule_start: now + 1000 });
     f.knowledge.timers.set(page.id, "schedule_start", 0, true);
     const preview = f.knowledge.trash([page.id], "trash", workspaceHistory); if (preview.status !== "confirmation") throw new Error("Expected confirmation");
     f.knowledge.trash([page.id], "trash", workspaceHistory, preview.preview.token);
@@ -89,7 +89,7 @@ test("recycle, restore, completed tasks, detached attributes and changed types u
 });
 
 test("a scheduled reminder catches up after reopening and subsequent checks do not repeat it", async t => {
-    const f = fixture(t), due = Math.floor(f.clock.now / 1000) + 1000, page = f.knowledge.create("event", "A", { schedule_start: due });
+    const f = fixture(t), due = Math.floor(f.clock.now / 1000) + 1000, page = f.knowledge.create("editable", "A", { schedule_start: due });
     f.knowledge.timers.set(page.id, "schedule_start", 0, true);
     session.close();
     f.clock.now = (due + 1) * 1000;
@@ -119,7 +119,7 @@ test("notification identity and title are derived from the current page, with no
 });
 
 test("unchanged writes, attribute renames and repeated enable requests preserve fired notifications", async t => {
-    const f = fixture(t), due = Math.floor(f.clock.now / 1000) + 1000, page = f.knowledge.create("event", "A"), id = "custom:" + randomUUID();
+    const f = fixture(t), due = Math.floor(f.clock.now / 1000) + 1000, page = f.knowledge.create("editable", "A"), id = "custom:" + randomUUID();
     const definition = { id, name: "A", type: "minute" as const, metadata: {} };
     f.knowledge.setDefinition(id, definition, "types"); f.edit(page.id, { [id]: due }); f.knowledge.timers.set(page.id, id, 0, true);
     f.clock.now = due * 1000; await f.check();

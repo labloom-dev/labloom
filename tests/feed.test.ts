@@ -11,7 +11,6 @@ import Database from "better-sqlite3";
 import { type FeedResult } from "../main/feed/parser";
 import { createWorkspaceDatabase } from "../main/storage/database";
 import { initializeBuiltinAttrs } from "../main/storage/builtin-attrs";
-import { createWorkspaceSchema } from "../main/storage/schema";
 import { payload } from "../shared/content/blocks";
 import { createWorkspace } from "./support/session";
 import { importFeedPDF } from "../main/feed/pdf";

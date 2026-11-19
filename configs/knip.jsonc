@@ -1,0 +1,10 @@
+{
+    "entry": [
+        "main/index.ts", "preload/index.ts", "preload/*.d.ts", "renderer/env.d.ts",
+        "renderer/preview/feed.ts", "renderer/svelte.config.js",
+        "tests/*.test.ts", "tests/support/feed-entry.ts",
+        "tests/perf/{bench,ipc,*-main,editor-preload,editor-renderer}.ts", "tests/perf/{*-run,editor-live}.mjs",
+        "configs/*.{ts,js}"
+    ],
+    "project": ["{main,preload,renderer,shared,tests,scripts,configs}/**/*.{ts,js,mjs,svelte}"]
+}

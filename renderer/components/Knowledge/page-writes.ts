@@ -3,7 +3,7 @@ import { type ContentBlock, type PageObjects, type EditCommit, type ChangePrevie
 
 export type Fields = Pick<EditCommit, "blocks" | "pageChildren" | "attributes" | "detach">;
 export type Entry = { kind: "block"; value: ContentBlock } | { kind: "children"; value: string[] } | { kind: "attr"; id: string; value?: AttributeValue };
-export function entries(edit: Fields): [string, Entry][] {
+function entries(edit: Fields): [string, Entry][] {
     const result: [string, Entry][] = edit.blocks.map(b => ["b:" + b.id, { kind: "block", value: b }]);
     if (edit.pageChildren) result.push(["children", { kind: "children", value: edit.pageChildren }]);
     for (const [id, value] of Object.entries(edit.attributes ?? {})) result.push(["a:" + id, { kind: "attr", id, value }]);

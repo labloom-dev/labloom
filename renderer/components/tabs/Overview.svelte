@@ -501,9 +501,14 @@
         pending = true;
         error = "";
         try {
-            const [result, pages, papers, todo, doing] = await Promise.all([window.api.feed.getState({}), window.api.pages.list({ limit: 5 }), window.api.pages.list({ kind: "paper", limit: 1 }), window.api.pages.list({ kind: "task", attributes: { task_status: "todo" }, limit: 1 }), window.api.pages.list({ kind: "task", attributes: { task_status: "doing" }, limit: 1 })]);
+            const status = (await window.api.attributes.definitions()).find(def => def.id === "task_status" && def.type === "status");
+            const count = async (id: string): Promise<number> => status?.metadata.options?.some(option => option.id === id)
+                ? (await window.api.pages.list({ attributes: { task_status: id }, limit: 1 })).total : 0;
+            const [result, pages, papers, todo, doing] = await Promise.all([
+                window.api.feed.getState({}), window.api.pages.list({ limit: 5 }), window.api.pages.list({ kind: "paper", limit: 1 }), count("todo"), count("doing")
+            ]);
             if (active) {
-                feedState = result; counts = { pages: pages.total, papers: papers.total, tasks: todo.total + doing.total }; recent = pages.items;
+                feedState = result; counts = { pages: pages.total, papers: papers.total, tasks: todo + doing }; recent = pages.items;
             }
         }
         catch (cause) {

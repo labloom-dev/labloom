@@ -84,6 +84,7 @@ CREATE TABLE `pages` (
 	`title_block_id` text NOT NULL,
 	`children` text DEFAULT '[]' NOT NULL,
 	FOREIGN KEY (`title_block_id`) REFERENCES `blocks`(`id`) ON UPDATE no action ON DELETE no action,
+	CONSTRAINT "pages_kind" CHECK("pages"."kind" IN ('editable', 'paper', 'annotation', 'feed')),
 	CONSTRAINT "pages_children_array" CHECK(json_valid("pages"."children") AND json_type("pages"."children") = 'array')
 ) STRICT;
 --> statement-breakpoint

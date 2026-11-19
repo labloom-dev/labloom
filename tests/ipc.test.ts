@@ -17,12 +17,12 @@ import { knownCoordinatePdf } from "./fixtures/pdf-text";
 import { fixture as scaleFixture } from "./perf/fixture";
 import { hasFailure } from "./failures";
 import type { SavedTabs } from "../shared/workspace/tabs";
-import type { AttributeDefinition, AttributeValue } from "../shared/types/attributes";
+import type { AttributeDefinition, AttributeImpact, AttributeValue } from "../shared/types/attributes";
 import type { FeedState } from "../shared/types/feed";
-import type { PaperAnnotation } from "../shared/types/papers";
+import type { PaperResources } from "../shared/types/papers";
 import { route } from "../main/ipc";
 import { routes as pages } from "../main/pages/ipc";
-import type { ContentBlock, PageRecord, RichNode } from "../shared/types/content";
+import type { CommitResult, ContentBlock, PageList, PageRecord, RichNode } from "../shared/types/content";
 import { appChannels, attributesChannels, feedChanged, feedChannels, historyChannels, pagesChanged, pagesChannels, papersChannels, settingsChanged, settingsChannels, startupChannels, timersChannels, workspaceChannels } from "../shared/ipc";
 
 test("every group rejects malformed IPC arguments before side effects and accepts its declared shape", async t => {
@@ -78,6 +78,89 @@ test("every group rejects malformed IPC arguments before side effects and accept
     assert.deepEqual(ipc.sent, []);
 });
 
+test("starter definitions belong to the workspace and dated ordinary pages follow their stable IDs", async t => {
+    const path = mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "starter-attrs-"));
+    session.open(path, "create");
+    const { call, invoke } = fixture(t);
+    const definitions = (): Promise<AttributeDefinition[]> => call(attributesChannels.definitions);
+    const ids = ["schedule_date", "schedule_start", "schedule_end", "task_status", "priority"];
+    const starters = (await definitions()).filter(def => ids.includes(def.id));
+    assert.deepEqual(starters.map(def => [def.id, def.type]).sort(), [
+        ["priority", "select"], ["schedule_date", "day"], ["schedule_end", "minute"], ["schedule_start", "minute"], ["task_status", "status"]
+    ]);
+    assert.deepEqual(starters.find(def => def.type === "status")!.metadata.options?.map(o => [o.id, o.group]),
+        [["todo", "incomplete"], ["doing", "incomplete"], ["done", "complete"]]);
+    assert.equal((await invoke(pagesChannels.create, "paper", "typed title")).ok, false);
+    const page = await call<PageRecord>(pagesChannels.create, "A", { schedule_date: 0 });
+    await call(pagesChannels.create, "B", { schedule_date: null });
+    await call(pagesChannels.create, "C");
+    assert.throws(() => session.getNative().prepare("UPDATE pages SET kind=? WHERE id=?").run("unknown", page.id), /pages_kind/);
+    assert.deepEqual(session.getNative().prepare("SELECT DISTINCT kind FROM pages").pluck().all(), ["editable"]);
+    const calendar = (): Promise<PageList> => call(pagesChannels.list, { hasValue: "schedule_date" });
+    const date = starters.find(def => def.id === "schedule_date")!;
+    assert.equal(await call(attributesChannels.define, date.id, { ...date, name: "会议日期" }, "A"), null);
+    assert.deepEqual((await calendar()).items.map(item => item.id), [page.id]);
+    for (const id of ids) {
+        const impact = await call<AttributeImpact | null>(attributesChannels.define, id, null, "A");
+        if (impact) assert.equal(await call(attributesChannels.define, id, null, "A", impact.token), null);
+    }
+    assert.deepEqual(await calendar(), { items: [], total: 0 });
+    session.close();
+    session.open(path, "open");
+    assert.deepEqual((await definitions()).filter(def => ids.includes(def.id)), []);
+    assert.deepEqual(await calendar(), { items: [], total: 0 });
+});
+
+test("review status values, groups and definition changes reschedule every reminder on the page", async t => {
+    const now = 1800000000;
+    session.open(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "status-reminders-")), "create", { clock: () => now * 1000, timeZone: () => "UTC" });
+    const { call, invoke } = fixture(t);
+    const id = "custom:" + randomUUID(), date = "custom:" + randomUUID();
+    const options = [{ id: "waiting", name: "待审" }, { id: "reviewing", name: "审中" }, { id: "replied", name: "已回复" }];
+    const single: AttributeDefinition = { id, type: "select", name: "审稿进度", metadata: { options } };
+    const save = async (value: AttributeDefinition | null): Promise<void> => {
+        const impact = await call<AttributeImpact | null>(attributesChannels.define, id, value, "A");
+        if (impact) assert.equal(await call(attributesChannels.define, id, value, "A", impact.token), null);
+    };
+    await save(single);
+    await call(attributesChannels.define, date, { id: date, name: "截止日期", type: "minute", metadata: {} }, "A");
+    const page = await call<PageRecord>(pagesChannels.create, "A", { [date]: now + 3600, [id]: "replied" });
+    await call(timersChannels.set, page.id, date, 0, true, "A");
+    await call(timersChannels.set, page.id, date, 300, true, "A");
+    const due = (muted: boolean): void => {
+        assert.deepEqual(session.getNative().prepare("SELECT due_at FROM timers WHERE page_id=? ORDER BY lead_seconds").pluck().all(page.id),
+            muted ? [null, null] : [now + 3600, now + 3300]);
+    };
+    const field = async (): Promise<AttributeDefinition> => (await call<AttributeDefinition[]>(attributesChannels.definitions)).find(def => def.id === id)!;
+    const value = async (): Promise<AttributeValue> => (await call<PageRecord>(pagesChannels.get, page.id)).attributes[id];
+    const edit = async (attributes: Record<string, AttributeValue>): Promise<void> => {
+        assert.equal((await call<CommitResult>(pagesChannels.commitEdit, { pageId: page.id, tabId: "A", batch: 0, blocks: [], attributes }, pageHistory(page.id))).status, "saved");
+    };
+    await save({ ...single, type: "status" });
+    const status = await field();
+    assert.deepEqual(status.metadata.options, options.map(o => ({ ...o, group: "incomplete" })));
+    assert.equal(await value(), "replied"); due(false);
+    const last = status.metadata.options!.at(-1)!;
+    last.group = "complete"; await save(status); due(true);
+    assert.equal((await call<PageList>(pagesChannels.list, { keyword: "已回复" })).total, 1);
+    await edit({ [id]: "reviewing" }); due(false);
+    await edit({ [id]: "replied" }); due(true);
+    await edit({ task_status: "done", [id]: "reviewing" }); due(true);
+    await edit({ task_status: "todo" }); due(false);
+    await edit({ [id]: "replied" }); due(true);
+    last.group = "incomplete"; await save(status); due(false);
+    last.group = "complete"; await save(status); due(true);
+    await save(single); due(false);
+    assert.deepEqual(await field(), single);
+    assert.equal(await value(), "replied");
+    await save({ ...single, type: "status" }); await save(status); due(true);
+    await save({ ...status, metadata: { options: status.metadata.options!.slice(0, 2) } }); due(false);
+    assert.equal(await value(), null);
+    assert.equal((await invoke(attributesChannels.define, id, { ...status, metadata: { options } }, "A")).ok, false);
+    await save(status); await edit({ [id]: "replied" }); due(true);
+    await save(null); due(false);
+});
+
 test("registered page handlers preserve long block text and attribute values on disk", async t => {
     const workspace = mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "ipc-long-text-"));
     session.open(workspace, "create");
@@ -85,7 +168,7 @@ test("registered page handlers preserve long block text and attribute values on 
     const initial = "A".repeat(20000), edited = "B".repeat(20000);
     const attr = "custom:" + randomUUID();
     await invoke(attributesChannels.define, attr, { id: attr, type: "string", name: "Body", metadata: {} }, "A");
-    const page = await invoke(pagesChannels.create, "editable", "Long text", { [attr]: initial }) as PageRecord;
+    const page = await invoke(pagesChannels.create, "Long text", { [attr]: initial }) as PageRecord;
     const readPage = async (): Promise<PageRecord> => await invoke(pagesChannels.get, page.id) as PageRecord;
     assert.equal((await readPage()).attributes[attr], initial);
 
@@ -122,7 +205,7 @@ test("page titles, select options and deep JSON values round-trip through IPC", 
     let nested: AttributeValue = "leaf";
     for (let i = 0; i < 60; i++) nested = { child: nested };
     const title = "甲".repeat(5000), edited = "乙".repeat(5000);
-    const page = await call<PageRecord>(pagesChannels.create, "editable", title, { [id]: options.at(-1)!.id, [jsonId]: nested });
+    const page = await call<PageRecord>(pagesChannels.create, title, { [id]: options.at(-1)!.id, [jsonId]: nested });
     assert.equal((await call<PageRecord>(pagesChannels.get, page.id)).title, title);
     const block = { ...page.blocks[page.titleBlockId], payload: payload("title", edited) };
     const change = { pageId: page.id, tabId: tab, batch: 0, blocks: [block] };
@@ -209,7 +292,8 @@ test("registered annotation handlers extract and store a 200000-character PDF se
     assert.equal(empty.ok ? "success" : empty.failure.kind, "invalid-argument");
     const id = await call<string>(papersChannels.annotate, pageId, selection, "A", pageHistory(pageId));
     session.close(); session.open(path, "open");
-    const stored = await call<PaperAnnotation>(papersChannels.getAnnotation, id);
+    const resources = await call<PaperResources>(papersChannels.resources, pageId);
+    const stored = resources.annotations.find(annotation => annotation.id === id)!;
     assert.deepEqual(stored.rectangles, rectangles);
     assert.equal(stored.quote.length, quote.length);
     assert.equal(stored.quote, quote);
@@ -221,7 +305,7 @@ test("a registered sync paste preserves 12000 shared blocks on disk", async t =>
     const source = sql.transaction(() => makePage(12001, "Source"))();
     service.rebuildLinks();
     const { call } = fixture(t);
-    const target = await call<PageRecord>(pagesChannels.create, "editable", "Destination");
+    const target = await call<PageRecord>(pagesChannels.create, "Destination");
     const workspace = session.getInfo(), ids = source.children;
     const started = performance.now();
     const blocks = await call<ContentBlock[]>(pagesChannels.syncBlocks, workspace.id, ids);

@@ -13,7 +13,7 @@ import { SessionViews, sessionKey } from "./session-views";
 import { knowledgeState, perform } from "./feedback.svelte";
 import { t, failure, type ErrorValue } from "../../i18n.svelte";
 import { LabloomError } from "../../../shared/failure";
-export { knowledgeState, message, perform } from "./feedback.svelte";
+export { knowledgeState, perform } from "./feedback.svelte";
 export const confirmation = $state<{ heading: () => string; text: () => string; names: string[]; resolve: ((value: boolean) => void) | null }>({ heading: () => "", text: () => "", names: [], resolve: null });
 export function ask(heading: () => string, text: () => string, names: string[] = []): Promise<boolean> {
     if (confirmation.resolve) return Promise.resolve(false);

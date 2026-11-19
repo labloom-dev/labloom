@@ -33,7 +33,7 @@ export function release(): void {
     effects = [];
     contexts.length = 0;
 }
-export function current(): Context {
+function current(): Context {
     workspace.requireWorkspace();
     // Internal assertion: mutation helpers are only used inside the common write boundary.
     if (!contexts.length) throw new Error("A write requires a commit context");

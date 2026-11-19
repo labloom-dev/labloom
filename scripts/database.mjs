@@ -36,12 +36,12 @@ try {
         if (!values.workspace?.trim()) throw new Error("Specify --workspace <directory> explicitly.");
         const path = resolve(values.workspace);
         const { default: Database } = await import("better-sqlite3");
-        const { workspaceFormatVersion } = await import("../main/storage/schema.ts");
+        const { baselineVersion } = await import("../main/storage/migrations/generated/index.ts");
         if (command === "status") {
             const database = new Database(join(path, "workspace.sqlite"), { readonly: true, fileMustExist: true });
             try {
                 if (database.pragma("application_id", { simple: true }) !== 0x4c424c4d) throw new Error("Not a Labloom workspace database.");
-                console.log(`Workspace: ${path}\nStored version: ${database.pragma("user_version", { simple: true })}\nApplication version: ${workspaceFormatVersion}\nRead only; no files changed.`);
+                console.log(`Workspace: ${path}\nStored version: ${database.pragma("user_version", { simple: true })}\nApplication version: ${baselineVersion}\nRead only; no files changed.`);
             }
             finally {
                 database.close();

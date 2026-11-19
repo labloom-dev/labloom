@@ -1,11 +1,4 @@
 import type Database from "better-sqlite3";
-import { createBaseline } from "./migrations/runner";
-export { baselineVersion as workspaceFormatVersion } from "./migrations/generated";
-export { validateBaseline as validateWorkspaceSchema } from "./migrations/runner";
-
-export function createWorkspaceSchema(database: Database.Database): void {
-    createBaseline(database);
-}
 
 const syncRefColumns = "container_kind, container_id, slot, position, block_id";
 

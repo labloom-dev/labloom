@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { feedURL } from "../../shared/utils/feed";
 
 type Fetcher = (url: string, init?: RequestInit) => Promise<Response>;
-export const pdfLimits = { timeoutMs: 30000, maxBytes: 50 * 1024 * 1024 };
+const pdfLimits = { timeoutMs: 30000, maxBytes: 50 * 1024 * 1024 };
 
 /** Downloads the supplied PDF address; PaperService stores a new, independent attachment. */
 export async function importFeedPDF(

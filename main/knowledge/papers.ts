@@ -254,7 +254,7 @@ function annotationData(page: PageRecord): PaperAnnotation {
     };
 }
 
-export async function getAnnotation(id: string): Promise<PaperAnnotation> {
+async function getAnnotation(id: string): Promise<PaperAnnotation> {
     const session = workspace.requireWorkspace(), page = data.get(id);
     if (page.attributes.deleted) throw new LabloomError({ kind: "page-deleted" });
     const annotation = annotationData(page);

@@ -7,8 +7,8 @@
         </div>
         <div class="actions">
             <ListHistory {tabId} />
-            <button class="button" onclick={() => createPage("event", { schedule_date: dayToSeconds(selected) })}>新建日程</button>
-            <button class="button primary" onclick={() => createPage("task", { schedule_date: dayToSeconds(selected) })}>新建任务</button>
+            <button class="button" disabled={!hasDate} onclick={() => createPage({ schedule_date: dayToSeconds(selected) })}>新建日程</button>
+            <button class="button primary" disabled={!hasDate} onclick={createTask}>新建任务</button>
         </div>
     </header>
     {#if error}
@@ -34,7 +34,7 @@
                     <button class="day" class:selected={selected === day.key} class:outside={day.date.getUTCMonth() !== month.getUTCMonth()} class:today={day.key === today} onclick={() => selectedDay = day.key}>
                         <strong>{day.date.getUTCDate()}</strong>
                         {#each (byDay[day.key] ?? []).slice(0, 3) as page (page.id)}
-                            <ContextActions items={calendarMenu(page)}><span class:done={page.attributes.task_status === "done"}>{page.title || "未命名"}</span></ContextActions>
+                            <ContextActions items={calendarMenu(page)}><span class:done={isComplete(page.attributes.task_status)}>{page.title || "未命名"}</span></ContextActions>
                         {/each}
                         {#if (byDay[day.key]?.length ?? 0) > 3}
                             <small>更多…</small>
@@ -51,12 +51,12 @@
             {#each byDay[selected] ?? [] as page (page.id)}
                 <ContextActions items={calendarMenu(page)}><div class="agenda-item">
                     <button class="page-link" onclick={() => openPage(page.id)}>
-                        <small>{kindNames[page.kind]}</small>
+                        <small>{Object.hasOwn(page.attributes, "task_status") ? "任务" : "日程"}</small>
                         <strong>{page.title || "未命名"}</strong>
                         <span>{timeLabel(page)}</span>
                     </button>
-                    {#if page.kind === "task"}
-                        <button class="text-button" onclick={() => toggle(page.id)}>{page.attributes.task_status === "done" ? "重新打开" : "完成任务"}</button>
+                    {#if canToggle(page)}
+                        <button class="text-button" onclick={() => toggle(page.id)}>{isComplete(page.attributes.task_status) ? "重新打开" : "完成任务"}</button>
                     {/if}
                 </div></ContextActions>
             {:else}
@@ -64,10 +64,6 @@
                     <Icon name="calendar" size={32} />
                     <p>这一天还没有安排</p>
                 </div>
-            {/each}
-            <h3>未安排日期</h3>
-            {#each (byDay[""] ?? []).slice(0, 20) as page (page.id)}
-                <ContextActions items={calendarMenu(page)}><button class="unscheduled" onclick={() => openPage(page.id)}>{page.title || "未命名"}</button></ContextActions>
             {/each}
         </section>
     </div>
@@ -105,8 +101,6 @@
     .page-link { display: flex; flex-direction: column; gap: 8px; text-align: left; width: 100%; }
     .agenda-item small, .agenda-item span, .notices p { color: var(--c-muted); font-size: 11px; }
     .agenda-item > button:last-child { margin-top: 10px; }
-    h3 { font-size: 13px; margin-top: 28px; }
-    .unscheduled { display: block; margin-top: 12px; font-size: 12px; text-align: left; }
     .notices { margin-top: 22px; padding: 22px; }
     .notices > button { display: flex; gap: 20px; justify-content: space-between; width: 100%; padding: 14px 0; border-bottom: 1px dashed var(--c-line); font-size: 12px; text-align: left; }
     .unread { font-weight: 700; }
@@ -121,13 +115,12 @@
     import { type PageSummary } from "../../../shared/types/content";
     import { type Notice } from "../../../shared/types/knowledge";
     import ListHistory from "./ListHistory.svelte";
-    import { dayToSeconds, nowSeconds, scheduleDay, secondsToWall } from "../../../shared/content/time";
-    import { display } from "../../../shared/attrs/format";
-    import { builtinAttrs } from "../../../shared/attrs/builtins";
+    import { scheduleDay } from "./calendar-day";
+    import { dayToSeconds, nowSeconds, secondsToWall } from "../../../shared/content/time";
+    import type { AttributeDefinition, AttributeValue } from "../../../shared/types/attributes";
     import { createPage, openPage } from "../layout/navigation";
     import { currentTimeZone, displayMilliseconds } from "../layout/preferences.svelte";
     import { confirmed, perform, registerList, writeFromTab } from "./state.svelte";
-    import { kindNames } from "./labels";
     import Icon from "../utils/Icon.svelte";
     let { tabId }: { tabId: string } = $props();
     const zone = $derived(currentTimeZone());
@@ -147,40 +140,47 @@
         viewedMonth = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + amount, 1));
     }
     function timeLabel(page: PageSummary): string {
-        return typeof page.attributes.schedule_start === "number" ? display({ id: "schedule_start", ...builtinAttrs.schedule_start }, page.attributes.schedule_start, { zone }).slice(11) : "全天";
+        return typeof page.attributes.schedule_start === "number" ? secondsToWall(page.attributes.schedule_start, zone).slice(11) : "全天";
     }
-    let noticesDirty = false;
+    let definitions = $state.raw<AttributeDefinition[]>([]);
+    const hasDate = $derived(definitions.some(def => def.id === "schedule_date" && def.type === "day"));
+    const status = $derived(definitions.find(def => def.id === "task_status" && def.type === "status"));
+    const priority = $derived(definitions.find(def => def.id === "priority" && def.type === "select"));
+    const openOption = $derived(status?.metadata.options?.find(o => o.id === "todo" && o.group === "incomplete")
+        ?? status?.metadata.options?.find(o => o.group === "incomplete"));
+    const doneOption = $derived(status?.metadata.options?.find(o => o.id === "done" && o.group === "complete")
+        ?? status?.metadata.options?.find(o => o.group === "complete"));
+    function isComplete(value: AttributeValue): boolean {
+        return !!status?.metadata.options?.some(o => o.id === value && o.group === "complete");
+    }
+    function canToggle(page: PageSummary): boolean {
+        return Object.hasOwn(page.attributes, "task_status") && !!(isComplete(page.attributes.task_status) ? openOption : doneOption);
+    }
+    function createTask(): void {
+        const initial: Record<string, AttributeValue> = { schedule_date: dayToSeconds(selected) };
+        if (status) initial.task_status = openOption?.id ?? null;
+        if (priority) initial.priority = priority.metadata.options?.some(o => o.id === "normal") ? "normal" : null;
+        createPage(initial);
+    }
     onMount(() => {
         const timer = setInterval(() => now = nowSeconds(), 60000);
         return () => clearInterval(timer);
     });
     onMount(() => registerList(tabId, change => {
-        noticesDirty ||= !!change.notices;
-        return (change.summaryPages ?? change.pages).filter(id => !change.kinds || ["task", "event"].includes(change.kinds[id]));
+        return [...(change.summaryPages ?? change.pages), ...(change.definition ? [change.definition] : []), ...(change.notices ? ["notices"] : [])];
     }, load));
     async function load(ids: string[], initial: boolean): Promise<void> {
         pending = initial;
         try {
-            const changed = new Set(ids);
-            const result = initial ? [] : scheduled.filter(row => !changed.has(row.id));
-            for (const kind of ["task", "event"] as const) {
-                for (let offset = 0; ; offset += 200) {
-                    const batch = await window.api.pages.list({ kind, ids: initial ? undefined : ids, offset, limit: 200 });
-                    result.push(...batch.items);
-                    if (offset + batch.items.length >= batch.total) break;
-                }
+            if (initial || ids.some(id => ["schedule_date", "task_status", "priority"].includes(id))) definitions = await window.api.attributes.definitions();
+            const result: PageSummary[] = [];
+            for (let offset = 0; hasDate; offset += 200) {
+                const batch = await window.api.pages.list({ hasValue: "schedule_date", offset, limit: 200 });
+                result.push(...batch.items);
+                if (offset + batch.items.length >= batch.total) break;
             }
-            if (initial || noticesDirty) {
-                noticesDirty = false;
-                try {
-                    notices = await window.api.timers.notices();
-                }
-                catch (problem) {
-                    noticesDirty = true;
-                    throw problem;
-                }
-            }
-            scheduled = result.sort((a, b) => Number(a.kind === "event") - Number(b.kind === "event")
+            notices = await window.api.timers.notices();
+            scheduled = result.sort((a, b) => Number(Object.hasOwn(b.attributes, "task_status")) - Number(Object.hasOwn(a.attributes, "task_status"))
                 || Number(b.attributes.modified_at) - Number(a.attributes.modified_at) || a.id.localeCompare(b.id));
             error = "";
         }
@@ -194,7 +194,7 @@
     }
     function calendarMenu(page: PageSummary): { label: string; run: () => void }[] {
         const items = pageMenu(page, tabId).filter(item => !["取消固定", "固定到侧栏"].includes(item.label)).map(item => ({ label: item.label, run: item.run }));
-        if (page.kind === "task") items.push({ label: page.attributes.task_status === "done" ? "取消完成" : "完成任务", run: () => toggle(page.id) });
+        if (canToggle(page)) items.push({ label: isComplete(page.attributes.task_status) ? "取消完成" : "完成任务", run: () => toggle(page.id) });
         return items;
     }
     function toggle(id: string): void {
@@ -202,7 +202,9 @@
             await writeFromTab(tabId, async () => {
                 const { page } = await window.api.pages.readObjects(id, [id]);
                 if (!page) throw new LabloomError({ kind: "page-missing" });
-                await confirmed(token => window.api.pages.commitEdit({ pageId: id, tabId, batch: 0, blocks: [], attributes: { task_status: page.attributes.task_status === "done" ? "todo" : "done" } }, { kind: "workspace" }, token));
+                const option = isComplete(page.attributes.task_status) ? openOption : doneOption;
+                if (!Object.hasOwn(page.attributes, "task_status") || !option) return;
+                await confirmed(token => window.api.pages.commitEdit({ pageId: id, tabId, batch: 0, blocks: [], attributes: { task_status: option.id } }, { kind: "workspace" }, token));
             });
         });
     }

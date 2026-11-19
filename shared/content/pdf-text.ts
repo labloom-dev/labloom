@@ -25,7 +25,7 @@ export function charactersFromTextContent(content: { items: readonly unknown[] }
 }
 
 /** Inclusive edges make the result stable at exact PDF coordinate boundaries. */
-export function containsPoint(rectangle: Rectangle, x: number, y: number): boolean {
+function containsPoint(rectangle: Rectangle, x: number, y: number): boolean {
     return x >= rectangle.x && x <= rectangle.x + rectangle.width && y >= rectangle.y && y <= rectangle.y + rectangle.height;
 }
 

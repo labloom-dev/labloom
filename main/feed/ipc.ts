@@ -7,7 +7,7 @@ import * as feed from "./service";
 
 type Args<Key extends keyof typeof feedChannels> = Parameters<FeedAPI[Key]>;
 
-export const routes = {
+const routes = {
     getState: route(typia.createAssert<Args<"getState">>(invalid), feed.getState),
     getItem: route(typia.createAssert<Args<"getItem">>(invalid), feed.getItem),
     saveSource: route(typia.createAssert<Args<"saveSource">>(invalid), feed.saveSource),

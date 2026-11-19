@@ -1,7 +1,7 @@
 import type { HistoryOrigin, HistorySource } from "../../shared/history/ipc";
 import { randomUUID } from "node:crypto";
 import { attributeTargets, decodeValue, record, validUUID } from "../../shared/attrs/values";
-import { blockText, payload, references, validateBlock } from "../../shared/content/blocks";
+import { blockText, payload, validateBlock } from "../../shared/content/blocks";
 import { nowSeconds } from "../../shared/content/time";
 import { LabloomError } from "../../shared/failure";
 import { type AttributeDefinition, type AttributeImpact, type AttributeValue } from "../../shared/types/attributes";
@@ -32,12 +32,11 @@ function putBlock(block: ContentBlock): void {
     plan.putBlock(block);
     plan.persist();
 }
-export function create(kind: PageKind = "editable", title = "", initial: Record<string, AttributeValue> = {}, parentId?: string, tabId = ""): PageRecord {
+export function create(title = "", initial: Record<string, AttributeValue> = {}, parentId?: string, tabId = ""): PageRecord {
     workspace.requireWorkspace();
     if (!record(initial)) throw new LabloomError({ kind: "page-invalid-attributes" });
     for (const id of Object.keys(initial)) if (attributes.definition(id).readonly || id === "deleted") throw new LabloomError({ kind: "page-create-readonly" });
-    if (kind === "annotation") throw new LabloomError({ kind: "annotation-selection-required" });
-    return insertPage(kind, title, initial, parentId, tabId, false);
+    return insertPage("editable", title, initial, parentId, tabId, false);
 }
 function writable(id: string): ReturnType<typeof data["header"]> {
     const page = data.header(id);
@@ -66,17 +65,9 @@ function planEdit(input: EditCommit): EditChanges {
     }
     plan.verifyContainment();
     plan.attributes(page.id, input.attributes ?? {}, input.detach);
-    validateSchedule(plan, page.id, input.attributes ?? {});
     plan.pages.add(page.id);
     plan.touches.add(page.id);
     return plan;
-}
-
-function validateSchedule(plan: EditChanges, id: string, attrs: Record<string, AttributeValue>): void {
-    if ("schedule_start" in attrs || "schedule_end" in attrs) {
-        const start = plan.readValue(id, "schedule_start")?.value, end = plan.readValue(id, "schedule_end")?.value;
-        if (typeof start === "number" && typeof end === "number" && end < start) throw new LabloomError({ kind: "schedule-reversed" });
-    }
 }
 
 export function previewEdit(input: EditCommit): ChangePreview | null {
@@ -101,7 +92,7 @@ function writeChildren(plan: EditChanges, source: Target, children: string[]): v
     }
 }
 
-export function removeEverywhere(plan: EditChanges, id: string): ReturnType<typeof data["uses"]> {
+function removeEverywhere(plan: EditChanges, id: string): ReturnType<typeof data["uses"]> {
     workspace.requireWorkspace();
     const uses = data.uses(id);
     if (uses.some(u => u.slot === "title")) throw new LabloomError({ kind: "block-title-delete" });
@@ -259,8 +250,7 @@ function insertPage(kind: PageKind, title: string, initial: Record<string, Attri
         data.statement("INSERT INTO pages(id,kind,title_block_id,children) VALUES (?,?,?,?)").run(id, kind, titleId, JSON.stringify(kind === "feed" ? [] : [bodyId]));
         attributes.initializePage(id);
         const now = nowSeconds();
-        plan.attributes(id, { independent: kind !== "annotation", ...(kind === "task" ? { task_status: "todo", priority: "normal" } : {}), ...(kind === "feed" ? { feed_status: "enabled", feed_refresh: { every: 60, unit: "minute" } } : {}), ...initial, created_at: now, modified_at: now, deleted: false }, [], true);
-        validateSchedule(plan, id, initial);
+        plan.attributes(id, { independent: kind !== "annotation", ...(kind === "feed" ? { feed_status: "enabled", feed_refresh: { every: 60, unit: "minute" } } : {}), ...initial, created_at: now, modified_at: now, deleted: false }, [], true);
         if (parentId && kind === "annotation") {
             if (data.header(parentId).kind !== "paper") throw new LabloomError({ kind: "annotation-paper-required" });
             const current = data.get(parentId).attributes.paper_annotations as string[];
@@ -294,19 +284,8 @@ function insertPage(kind: PageKind, title: string, initial: Record<string, Attri
     return page;
 }
 
-export function rebuildLinks(): void {
-    workspace.requireWorkspace();
-    commit.run({ sourceTab: "" }, () => {
-        data.statement("DELETE FROM link_refs").run();
-        const insert = data.statement("INSERT OR IGNORE INTO link_refs(source_kind,source_id,source_field,target_kind,target_id) VALUES (?,?,?,?,?)");
-        const ids = data.statement("SELECT id FROM blocks").pluck().all() as string[];
-        for (const block of data.readBatch(ids)) for (const t of references(block)) insert.run("block", block.id, "payload", t.kind, t.id);
-        const rows = data.statement("SELECT page_id AS pageId, attr_id AS field, value, type FROM page_attrs JOIN attrs_meta ON attrs_meta.id=attr_id WHERE type IN ('page-link','page-links','file','files') AND value IS NOT NULL").all() as { pageId: string; field: string; value: string; type: AttributeDefinition["type"] }[];
-        for (const row of rows) {
-            const definition = attributes.definition(row.field);
-            for (const target of attributeTargets(row.type, decodeValue(definition, row.value))) insert.run("page", row.pageId, row.field, target.kind, target.id);
-        }
-    });
+function completedOption(definition: AttributeDefinition | undefined, value: AttributeValue | undefined): boolean {
+    return definition?.type === "status" && !!definition.metadata.options?.some(option => option.id === value && option.group === "complete");
 }
 
 export function setDefinition(id: string, definition: AttributeDefinition | null, sourceTab: string, token?: string): AttributeImpact | null {
@@ -336,7 +315,11 @@ export function setDefinition(id: string, definition: AttributeDefinition | null
             if ((impact.pages.length || ids.length) && token !== combined.token) throw new DefinitionRollback(combined);
             commit.recycle(plan, ids);
             context.persist(plan);
-            for (const { pageId } of owners) if (previous?.type !== next?.type || JSON.stringify(previousValues.get(pageId)) !== JSON.stringify(data.valuesFor([pageId]).get(pageId)?.[id])) timerState.recalculate(pageId, [id, "modified_at"]);
+            for (const { pageId } of owners) {
+                const before = previousValues.get(pageId), after = data.valuesFor([pageId]).get(pageId)?.[id];
+                if (completedOption(previous, before) !== completedOption(next, after)) timerState.recalculate(pageId);
+                else if (previous?.type !== next?.type || JSON.stringify(before) !== JSON.stringify(after)) timerState.recalculate(pageId, [id, "modified_at"]);
+            }
             const removedOptions = previous?.metadata.options?.some(option => !next?.metadata.options?.some(value => value.id === option.id));
             commit.invalidate([...new Set([...impact.pages.map(p => p.id), ...ids])].map(id => "page:" + id)
                 .concat(!next || previous?.type !== next.type || removedOptions ? ["attribute:" + id] : []));
@@ -366,20 +349,5 @@ export function cacheAttributes(pageId: string, values: Record<string, Attribute
         plan.attributes(pageId, values, [], true);
         context.persist(plan);
         data.statement("UPDATE workspace_meta SET last_modified_at=?").run(previous);
-    });
-}
-export function detachAttributes(pageId: string, ids: string[]): void {
-    workspace.requireWorkspace();
-    commit.run({ sourceTab: "", history: false, updateModified: false }, context => {
-        const plan = new EditChanges();
-        plan.attributes(pageId, {}, ids);
-        context.persist(plan);
-    });
-}
-export function changePageKind(pageId: string, kind: PageKind): void {
-    workspace.requireWorkspace();
-    commit.run({ sourceTab: "", history: false, updateModified: false }, context => {
-        attributes.persistPageKind(pageId, kind);
-        context.change({ pages: [pageId] });
     });
 }

@@ -8,15 +8,10 @@ export function restoreTabState(state: unknown): TabState | undefined {
         if (!record(group) || typeof group.id !== "string" || groupIds.has(group.id) || !Array.isArray(group.tabs)) return;
         groupIds.add(group.id);
         for (const tab of group.tabs) {
-            if (record(tab) && tab.type === "reader-test") continue;
             if (!record(tab) || typeof tab.id !== "string" || tabIds.has(tab.id) || typeof tab.title !== "string" || !["page", "overview", "library", "papers", "calendar", "feed", "settings", "about", "attributes"].includes(String(tab.type)) || (tab.type === "page" && typeof tab.pageId !== "string")) return;
             tabIds.add(tab.id);
         }
-        const removedActive = group.tabs.some(tab => record(tab) && tab.type === "reader-test" && tab.id === group.activeTabId);
-        const tabs = group.tabs.filter(tab => !record(tab) || tab.type !== "reader-test");
-        group.tabs = tabs;
-        if (removedActive) group.activeTabId = tabs[0]?.id ?? null;
-        if (group.activeTabId !== null && !tabs.some(tab => tab.id === group.activeTabId)) return;
+        if (group.activeTabId !== null && !group.tabs.some(tab => tab.id === group.activeTabId)) return;
     }
     if (!groupIds.has(String(state.focusedGroupId))) return;
     const pending: unknown[] = [state.layout];

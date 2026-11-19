@@ -15,7 +15,7 @@
             <option value="true">是</option>
             <option value="false">否</option>
         </select>
-    {:else if definition.type === "select"}
+    {:else if definition.type === "select" || definition.type === "status"}
         <select value={empty ? "" : String(value)} onchange={event => onchange(event.currentTarget.value || emptyValue(definition.type))}>
             <option value="">未填写</option>
             {#each definition.metadata.options ?? [] as option (option.id)}

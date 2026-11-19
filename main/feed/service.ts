@@ -40,7 +40,7 @@ const concurrency = 4;
 const abstractLimit = 4000;
 
 /** Identifies an entry that has neither an identifier nor an address of its own. */
-export function entryFingerprint(entry: Pick<FeedEntry, "title" | "authors" | "publishedAt">): string {
+function entryFingerprint(entry: Pick<FeedEntry, "title" | "authors" | "publishedAt">): string {
     const date = entry.publishedAt === null ? null : new Date(entry.publishedAt).toISOString();
     return createHash("sha256").update(JSON.stringify([entry.title, entry.authors, date])).digest("hex");
 }

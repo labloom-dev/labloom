@@ -1,6 +1,6 @@
 import type { HistorySource } from "../history/ipc";
 import type { AttributeValue } from "../types/attributes";
-import type { Backlink, CommitResult, BlockDeletion, ChangePreview, ContentBlock, EditCommit, KnowledgeChange, Placement, ResolvedTarget, PageKind, PageList, PageQuery, PageRecord, PageObjects, Target } from "../types/content";
+import type { Backlink, CommitResult, BlockDeletion, ChangePreview, ContentBlock, EditCommit, KnowledgeChange, Placement, ResolvedTarget, PageList, PageQuery, PageRecord, PageObjects, Target } from "../types/content";
 import type { PurgeResult } from "../types/knowledge";
 import type { TabId, Channels } from "../ipc/contract";
 import type { tags } from "typia";
@@ -11,7 +11,7 @@ export type PagesAPI = {
     get(id: string): Promise<PageRecord>;
     readObjects(pageId: string, ids: string[]): Promise<PageObjects>;
     syncBlocks(workspaceId: string, ids: string[] & tags.MinItems<1>): Promise<ContentBlock[] | null>;
-    create(kind: PageKind, title?: string, initial?: Record<string, AttributeValue>, parentId?: string, tabId?: TabId): Promise<PageRecord>;
+    create(title?: string, initial?: Record<string, AttributeValue>, parentId?: string, tabId?: TabId): Promise<PageRecord>;
     commitEdit(input: EditCommit, source: HistorySource, confirmation?: string): Promise<CommitResult>;
     previewEdit(input: EditCommit): Promise<ChangePreview | null>;
     deleteBlock(input: BlockDeletion, source: HistorySource, confirmation?: string): Promise<CommitResult>;

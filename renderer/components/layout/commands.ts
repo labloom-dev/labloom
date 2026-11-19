@@ -19,7 +19,7 @@ export function rememberFocus(): void {
 export function registerEditing(element: HTMLElement, run: (command: EditingCommand) => void): () => void {
     editors.set(element, run); return () => editors.delete(element);
 }
-export function editCommand(command: EditingCommand): void {
+function editCommand(command: EditingCommand): void {
     const group = document.querySelector(`[data-group-id="${CSS.escape(tabState.focusedGroupId)}"]`);
     const active = lastFocus?.isConnected && group?.contains(lastFocus) ? lastFocus : null;
     if (active?.matches("input,textarea")) {

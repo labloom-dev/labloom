@@ -122,10 +122,10 @@ test("shared edits need no version and invalid duplicate records or containment 
     assert.equal(snapshot(service), before);
 });
 
-test("library refresh reorders results without hydrating unchanged summaries, and calendar reads only changed tasks", t => {
+test("library refresh reorders results without hydrating unchanged summaries, and calendar reads only changed dated pages", t => {
     const { service } = fixture(t);
-    const a = service.create("task", "A"), b = service.create("task", "B"), c = service.create("event", "C");
-    const query = { kind: "task" as const, sort: "title" as const };
+    const a = service.create("editable", "A", { schedule_date: 0 }), b = service.create("editable", "B", { schedule_date: 0 }), c = service.create("editable", "C");
+    const query = { hasValue: "schedule_date", sort: "title" as const };
     const updated = service.listUpdates(query, [b.id]);
     assert.deepEqual(updated.order, [a.id, b.id]);
     assert.deepEqual(updated.items.map(row => row.id), [a.id]);
@@ -133,7 +133,7 @@ test("library refresh reorders results without hydrating unchanged summaries, an
     const renamed = edit(service, a, [text(a.blocks[a.titleBlockId], "Z")]);
     assert.equal(renamed.status, "saved");
     assert.deepEqual(service.listUpdates(query, [b.id]).order, [b.id, a.id]);
-    assert.deepEqual(service.list({ ids: [a.id, c.id], kind: "task" }).items.map(row => row.id), [a.id]);
+    assert.deepEqual(service.list({ ids: [a.id, c.id], hasValue: "schedule_date" }).items.map(row => row.id), [a.id]);
     assert.deepEqual(service.list({ ids: [] }), { total: 0, items: [] });
 });
 
@@ -343,13 +343,6 @@ test("new pages have valid typed values, independent retention and system timest
         assert.equal(page.attributes.independent, kind !== "annotation");
         assert.deepEqual(page.attributes.links, []);
         assert.ok(Number.isSafeInteger(page.attributes.created_at) && Number.isSafeInteger(page.attributes.modified_at));
-        if (kind === "task") {
-            assert.equal(page.attributes.task_status, "todo");
-            assert.equal(page.attributes.priority, "normal");
-            assert.equal(service.commitEdit({ pageId: page.id, tabId: "status", batch: 1, blocks: [], attributes: { task_status: null, priority: null } }, pageHistory(page.id)).status, "saved");
-            assert.equal(service.get(page.id).attributes.task_status, null);
-            assert.equal(service.get(page.id).attributes.priority, null);
-        }
     }
 });
 
@@ -358,7 +351,7 @@ test("keywords and display use the current application timezone on the same open
     fixture(t);
     const service = knowledgeServices();
     settings.update({ appearance: { timeZone: "Asia/Shanghai" } });
-    const e = service.create("event", "A");
+    const e = service.create("editable", "A");
     const anchor = randomUUID(), a = service.create("annotation", "B", { independent: true, annotation_context: anchor });
     assert.ok(!("task_status" in e.attributes) && !("priority" in e.attributes));
     const seconds = 1794071576;

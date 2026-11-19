@@ -4,16 +4,15 @@ import { builtinValueFormats, isBuiltin } from "./builtins";
 import { isEmpty } from "./values";
 
 type Context = Parameters<AttributeFormat>[2];
-type Format = AttributeFormat;
-const empty: Format = () => "";
-const plain: Format = (_, value) => String(value);
-const options: Format = (definition, value) => {
+const empty: AttributeFormat = () => "";
+const plain: AttributeFormat = (_, value) => String(value);
+const options: AttributeFormat = (definition, value) => {
     const selected = Array.isArray(value) ? value : [value];
     return selected.map(id => definition.metadata.options?.find(option => option.id === id)?.name).filter(Boolean).join("、");
 };
-const files: Format = (_, value, { fileName }) => (Array.isArray(value) ? value : [value])
+const files: AttributeFormat = (_, value, { fileName }) => (Array.isArray(value) ? value : [value])
     .map(id => fileName?.(String(id))).filter(Boolean).join("、");
-const defaults: Record<AttributeType, { display: Format; search?: Format }> = {
+const defaults: Record<AttributeType, { display: AttributeFormat; search?: AttributeFormat }> = {
     recurrence: { display: (_, value) => {
         const item = value as { every: number; unit: string };
         return `每 ${item.every} ${{ minute: "分钟", hour: "小时", day: "天", week: "周", month: "个月" }[item.unit]}`;
@@ -24,7 +23,7 @@ const defaults: Record<AttributeType, { display: Format; search?: Format }> = {
     day: { display: (_, value) => secondsToDay(value as number) },
     month: { display: (_, value) => secondsToMonth(value as number) },
     year: { display: (_, value) => secondsToYear(value as number) },
-    select: { display: options }, multiselect: { display: options },
+    select: { display: options }, status: { display: options }, multiselect: { display: options },
     boolean: { display: (_, value) => value ? "是" : "否", search: empty },
     file: { display: files }, files: { display: files },
     "page-link": { display: empty }, "page-links": { display: empty }, json: { display: empty }

@@ -1,5 +1,5 @@
 import { annotationColors } from "../content/annotations";
-import { type AttributeDefinition, type AttributeFormat, type AttributeValue } from "../types/attributes";
+import { type AttributeDefinition, type AttributeFormat } from "../types/attributes";
 
 const option = (id: string, name: string): { id: string; name: string } => ({ id, name });
 export const builtinAttrs = {
@@ -38,12 +38,7 @@ export const builtinAttrs = {
     feed_error: { type: "string", name: "错误", hidden: true, readonly: true, metadata: {} },
     feed_failures: { type: "number", name: "连续失败次数", hidden: true, readonly: true, metadata: {} },
     feed_etag: { type: "string", name: "ETag", hidden: true, readonly: true, metadata: {} },
-    feed_last_modified: { type: "string", name: "Last-Modified", hidden: true, readonly: true, metadata: {} },
-    task_status: { type: "select", name: "状态", metadata: { options: [option("todo", "未开始"), option("doing", "进行中"), option("done", "已完成")] } },
-    priority: { type: "select", name: "优先级", metadata: { options: [option("low", "低"), option("normal", "普通"), option("high", "高")] } },
-    schedule_date: { type: "day", name: "日期", metadata: {} },
-    schedule_start: { type: "minute", name: "开始时间", metadata: {} },
-    schedule_end: { type: "minute", name: "结束时间", metadata: {} }
+    feed_last_modified: { type: "string", name: "Last-Modified", hidden: true, readonly: true, metadata: {} }
 } satisfies Record<string, Omit<AttributeDefinition, "id"> & { metadataEditable?: boolean }>;
 
 export function editableBuiltinMetadata(id: BuiltinAttrId): boolean {
@@ -52,15 +47,11 @@ export function editableBuiltinMetadata(id: BuiltinAttrId): boolean {
 }
 
 export type BuiltinAttrId = keyof typeof builtinAttrs;
-export type BuiltinAttrValues = { [Id in BuiltinAttrId]: AttributeValue };
 const common = ["deleted", "independent", "created_at", "modified_at", "recycle_reason", "recycled_at", "pinned", "tags", "links"] as const;
-const schedule = ["schedule_date", "schedule_start", "schedule_end"] as const;
 export const builtinAttrsByPageKind = {
     editable: [...common],
     paper: [...common, "paper_files", "paper_authors", "paper_doi", "paper_year", "paper_venue", "paper_url", "paper_abstract", "paper_keywords", "source_snapshot", "reading_position", "paper_annotations"],
     annotation: [...common, "annotation_file", "annotation_position", "annotation_color", "annotation_quote", "annotation_context", "annotation_extractor"],
-    task: [...common, "task_status", "priority", ...schedule],
-    event: [...common, ...schedule],
     feed: [...common, "feed_url", "feed_status", "feed_refresh", "feed_last_refreshed", "feed_last_checked", "feed_last_added", "feed_error", "feed_failures", "feed_etag", "feed_last_modified"]
 } as const satisfies Record<string, readonly BuiltinAttrId[]>;
 

@@ -1,6 +1,6 @@
 import type { HistoryOrigin, HistorySource } from "../history/ipc";
 import type { CommitResult } from "../types/content";
-import type { PaperAnnotation, AnnotationInput, Attachment, PaperImport, PaperResources, ReadingPosition } from "../types/papers";
+import type { AnnotationInput, Attachment, PaperImport, PaperResources, ReadingPosition } from "../types/papers";
 import type { TabId, Channels } from "../ipc/contract";
 import type { tags } from "typia";
 
@@ -13,7 +13,6 @@ export type PapersAPI = {
     openFile(fileId: string): Promise<void>;
     resources(pageId: string): Promise<PaperResources>;
     readFile(fileId: string): Promise<Uint8Array>;
-    getAnnotation(id: string): Promise<PaperAnnotation>;
     unlockPDF(fileId: string, password: string): Promise<void>;
     changeAnnotation(id: string, color: string, tabId: TabId, source: HistorySource): Promise<CommitResult>;
     position(pageId: string, fileId: string, value: ReadingPosition, tabId?: TabId): Promise<void>;
@@ -28,7 +27,6 @@ export const papersChannels = {
     openFile: "papers:open-file",
     resources: "papers:resources",
     readFile: "papers:read-file",
-    getAnnotation: "papers:get-annotation",
     unlockPDF: "papers:unlock-pdf",
     changeAnnotation: "papers:change-annotation",
     position: "papers:position",

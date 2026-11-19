@@ -13,8 +13,8 @@ import {
 import { EventBus, FindState, PDFFindController, PDFLinkService, PDFViewer } from "pdfjs-dist/legacy/web/pdf_viewer.mjs";
 import viewerCss from "pdfjs-dist/legacy/web/pdf_viewer.css?inline";
 import workerUrl from "pdfjs-dist/legacy/build/pdf.worker.mjs?url";
-import { scalePresets, type ReaderError, type ReaderRotation, type ReaderScalePreset, type ReaderViewState } from "./defs";
-import { LabloomError, diagnostic } from "../../../shared/failure";
+import { scalePresets, type ReaderRotation, type ReaderScalePreset, type ReaderViewState } from "./defs";
+import { type FailureInfo, LabloomError, diagnostic } from "../../../shared/failure";
 
 export { FindState, PasswordResponses, type PDFDocumentProxy };
 
@@ -130,7 +130,7 @@ export async function hasText(pdfDocument: PDFDocumentProxy): Promise<boolean> {
     return false;
 }
 
-export function toReaderError(error: unknown): ReaderError {
+export function toReaderError(error: unknown): FailureInfo {
     if (error instanceof InvalidPDFException) {
         return { kind: "pdf-invalid", diagnostic: diagnostic(error) };
     }

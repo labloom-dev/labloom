@@ -9,7 +9,7 @@ import { getSchema } from "@tiptap/core";
 import { Fragment, Slice } from "@tiptap/pm/model";
 import { EditorState, NodeSelection, TextSelection } from "@tiptap/pm/state";
 import { createWorkspace } from "./support/session";
-import { rebuildSyncRefs } from "../main/storage/schema";
+import { rebuildSyncRefs } from "./support/sync-refs";
 import { payload } from "../shared/content/blocks";
 import { type CommitResult, type ContentBlock, type PageRecord } from "../shared/types/content";
 import { documentExtensions, indexDoc, pageDocument } from "../renderer/components/Editor/document";

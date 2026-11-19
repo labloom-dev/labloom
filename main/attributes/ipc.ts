@@ -7,7 +7,7 @@ import * as edits from "../knowledge/edits";
 
 type Args<Key extends keyof typeof attributesChannels> = Parameters<AttributesAPI[Key]>;
 
-export const routes = {
+const routes = {
     definitions: route(typia.createAssert<Args<"definitions">>(invalid), attributes.definitions),
     define: route(typia.createAssert<Args<"define">>(invalid), edits.setDefinition)
 } satisfies Routes<AttributesAPI>;

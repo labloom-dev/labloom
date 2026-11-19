@@ -9,7 +9,7 @@ import * as data from "./records";
 
 type TimerRow = { pageId: string; attrId: string; leadSeconds: number; dueAt: number | null; firedAt: number | null; seen: number };
 const columns = "page_id AS pageId,attr_id AS attrId,lead_seconds AS leadSeconds,due_at AS dueAt,fired_at AS firedAt,seen";
-export function now(): number {
+function now(): number {
     return Math.floor(workspace.clock() / 1000);
 }
 
@@ -36,20 +36,26 @@ export function set(pageId: string, attrId: string, leadSeconds: number, enabled
     })();
 }
 
+export function completed(pageId: string): boolean {
+    return !!data.statement(`SELECT 1 FROM page_attrs v JOIN attrs_meta a ON a.id=v.attr_id, json_each(a.metadata,'$.options') o
+        WHERE v.page_id=? AND a.type='status' AND o.value->>'$.id'=v.value AND o.value->>'$.group'='complete' LIMIT 1`).get(pageId);
+}
+
 export function recalculate(pageId: string, fields?: string[], leadOnly?: number): void {
-    const all = !fields || fields.some(id => ["deleted", "task_status"].includes(id));
+    const all = !fields || fields.includes("deleted") || fields.some(id => data.statement("SELECT 1 FROM attrs_meta WHERE id=? AND type='status'").get(id));
     const feedChange = fields?.some(id => ["feed_url", "feed_status", "feed_refresh", "deleted"].includes(id));
     const rows = data.statement(`SELECT ${columns} FROM timers WHERE page_id=?` + (all ? "" : " AND attr_id IN (SELECT value FROM json_each(?))")).all(...(all ? [pageId] : [pageId, JSON.stringify(fields)])) as TimerRow[];
     if (!rows.length && !feedChange) return;
     const page = { ...data.header(pageId), attributes: data.valuesFor([pageId]).get(pageId)! };
+    const muted = page.attributes.deleted || completed(pageId);
     for (const row of rows) {
         const definition = attributes.definition(row.attrId);
         if (!isTimeType(definition.type)) {
             if (row.attrId !== "feed_refresh" || page.kind !== "feed" || definition.type !== "recurrence") data.statement("DELETE FROM timers WHERE page_id=? AND attr_id=?").run(pageId, row.attrId);
             continue;
         }
-        if (!all && !fields!.includes(row.attrId) || leadOnly !== undefined && row.leadSeconds !== leadOnly) continue;
-        const due = page.attributes.deleted || page.kind === "task" && page.attributes.task_status === "done" ? null
+        if (leadOnly !== undefined && row.leadSeconds !== leadOnly) continue;
+        const due = muted ? null
             : reminderDue(definition.type, page.attributes[row.attrId] as number | null, row.leadSeconds, resolveTimeZone(workspace.timeZone()));
         data.statement("UPDATE timers SET due_at=?,fired_at=NULL,seen=0 WHERE page_id=? AND attr_id=? AND lead_seconds=?")
             .run(due !== null && due > now() ? due : null, pageId, row.attrId, row.leadSeconds);

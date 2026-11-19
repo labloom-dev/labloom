@@ -18,7 +18,7 @@ test("attribute and timer timestamps use seconds while workspace and published i
     });
     const first = Date.parse("2026-11-07T17:12:56.210Z"), later = Date.parse("2026-11-07T17:32:56.208Z"), seconds = Math.floor(first / 1000), due = Math.floor(later / 1000);
     let now = first;
-    const service = knowledgeServices(), history = historyServices(), page = service.create("event", "A");
+    const service = knowledgeServices(), history = historyServices(), page = service.create("editable", "A");
     service.commitEdit({ pageId: page.id, tabId: "time", batch: 0, blocks: [], attributes: { schedule_start: due } }, pageHistory(page.id));
     service.timers.set(page.id, "schedule_start", 0, true);
     now = due * 1000 - 1; await service.timers.check(() => assert.fail("too early"));
@@ -26,7 +26,7 @@ test("attribute and timer timestamps use seconds while workspace and published i
     assert.deepEqual(notices, [page.id]);
     assert.equal(sql.prepare("SELECT fired_at FROM timers").pluck().get(), due);
     assert.equal(service.get(page.id).attributes.schedule_start, due);
-    history.apply(pageHistory(page.id), "undo"); assert.equal(service.get(page.id).attributes.schedule_start, null);
+    history.apply(pageHistory(page.id), "undo"); assert.equal(service.get(page.id).attributes.schedule_start, undefined);
     history.apply(pageHistory(page.id), "redo"); assert.equal(service.get(page.id).attributes.schedule_start, due);
     const feed = feedServices();
     const source = await feed.saveSource({ name: "A", url: "https://example.org/feed" });

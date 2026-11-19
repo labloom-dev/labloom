@@ -4,8 +4,8 @@ import { closeSync, mkdirSync, openSync, readdirSync, realpathSync, rmdirSync, s
 import { basename, join } from "node:path";
 import Database from "better-sqlite3";
 import type { Workspace } from "../../shared/types/startup";
-import { createWorkspaceSchema, validateWorkspaceSchema } from "./schema";
-import { initializeBuiltinAttrs, validateBuiltinAttrs } from "./builtin-attrs";
+import { createBaseline, validateBaseline } from "./migrations/runner";
+import { initializeWorkspaceAttrs, validateBuiltinAttrs } from "./builtin-attrs";
 import { createWorkspaceDatabase, type WorkspaceDatabase } from "./database";
 import { workspaceMeta } from "./tables";
 import * as locks from "./workspace-lock";
@@ -56,8 +56,8 @@ export function createWorkspace(path: string): OpenWorkspace {
         const info = { id: randomUUID(), name: basename(root), path: root };
         database.transaction(() => {
             database!.pragma(`application_id = ${applicationId}`);
-            createWorkspaceSchema(database!);
-            initializeBuiltinAttrs(db);
+            createBaseline(database!);
+            initializeWorkspaceAttrs(db);
             validateBuiltinAttrs(db);
             const now = Date.now();
             db.insert(workspaceMeta).values({ id: info.id, name: info.name, createdAt: now, lastModifiedAt: now }).run();
@@ -132,7 +132,7 @@ function validateWorkspace(database: Database.Database, root: string, expectedId
     if (database.pragma("application_id", { simple: true }) !== applicationId) {
         throw new LabloomError({ kind: "workspace-not-workspace", path: root });
     }
-    validateWorkspaceSchema(database);
+    validateBaseline(database);
     const db = createWorkspaceDatabase(database);
     const rows = db.select({ id: workspaceMeta.id, name: workspaceMeta.name }).from(workspaceMeta).all();
     const row = rows[0];

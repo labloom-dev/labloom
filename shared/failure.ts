@@ -31,7 +31,7 @@ export function diagnostic(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
-export function isFailureInfo(value: unknown): value is FailureInfo {
+function isFailureInfo(value: unknown): value is FailureInfo {
     return !!value && typeof value === "object" && "kind" in value && typeof value.kind === "string" && Object.hasOwn(zhCN.failure, value.kind);
 }
 

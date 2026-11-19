@@ -4,6 +4,7 @@ import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import * as settings from "../main/settings/store";
+import { createReference } from "../main/knowledge/papers";
 import * as history from "../main/knowledge/history";
 import { blockText, payload } from "../shared/content/blocks";
 import { historyChanged, historyChannels, pagesChannels, settingsChannels, workspaceChannels } from "../shared/ipc";
@@ -20,7 +21,7 @@ type HistoryFixture = {
     path: string; call: ReturnType<typeof fixture>["call"];
     state(source: HistorySource): Promise<HistoryState>;
     apply(source: HistorySource, direction: "undo" | "redo", branch?: string, token?: string): Promise<CommitResult>;
-    read(id: string): Promise<PageRecord>; create(kind?: string): Promise<PageRecord>;
+    read(id: string): Promise<PageRecord>; create(): Promise<PageRecord>;
     edit(page: PageRecord, tabId: string, text: string, source?: HistorySource): Promise<void>;
     text(page: PageRecord): Promise<string>; changed(...expected: HistorySource[]): void;
 };
@@ -35,7 +36,7 @@ function setup(t: TestContext): HistoryFixture {
     const apply = (source: HistorySource, direction: "undo" | "redo", branch?: string, token?: string): Promise<CommitResult> =>
         call<CommitResult>(historyChannels.apply, source, direction, branch, token);
     const read = (id: string): Promise<PageRecord> => call<PageRecord>(pagesChannels.get, id);
-    const create = (kind = "editable"): Promise<PageRecord> => call<PageRecord>(pagesChannels.create, kind);
+    const create = (): Promise<PageRecord> => call<PageRecord>(pagesChannels.create);
     const edit = async (page: PageRecord, tabId: string, text: string, source = pageHistory(page.id)): Promise<void> => {
         const block = page.blocks[page.children[0]];
         assert.equal((await call<CommitResult>(pagesChannels.commitEdit, { pageId: page.id, tabId, batch: 1,
@@ -107,8 +108,8 @@ test("one edit of a nested synced block and its inverses reach exactly the other
 });
 
 test("deleting three papers is one reversible record across the library and all three pages", async t => {
-    const f = setup(t), papers = await Promise.all([f.create("paper"), f.create("paper"), f.create("paper")]);
-    const ids = papers.map(page => page.id), sources = ids.map(pageHistory), all = [workspaceHistory, ...sources];
+    const f = setup(t), ids = ["A", "B", "C"].map(title => createReference({ title, authors: "", url: null, abstract: "", published: null, origin: {} }));
+    const sources = ids.map(pageHistory), all = [workspaceHistory, ...sources];
     const preview = await f.call<CommitResult>(pagesChannels.trash, ids, "library", workspaceHistory);
     assert.equal(preview.status, "confirmation"); f.changed();
     await f.call(pagesChannels.trash, ids, "library", workspaceHistory, preview.preview.token); f.changed(...all);
@@ -183,7 +184,7 @@ test("emptying trash removes shared deleted records while an unrelated edit stay
 
 test("undoing the last retaining link previews recycling and accepts only the current token", async t => {
     const f = setup(t), a = await f.create(), b = await f.create(), B = pageHistory(b.id);
-    const child = await f.call<PageRecord>(pagesChannels.create, "editable", "Child", { independent: false }, a.id);
+    const child = await f.call<PageRecord>(pagesChannels.create, "Child", { independent: false }, a.id);
     await f.call(pagesChannels.commitEdit, { pageId: b.id, tabId: "B", batch: 0, blocks: [], attributes: { links: [child.id] } }, B);
     await f.call(pagesChannels.commitEdit, { pageId: a.id, tabId: "A", batch: 0, blocks: [], pageChildren: a.children }, pageHistory(a.id));
     const before = await f.state(B), preview = await f.apply(B, "undo");

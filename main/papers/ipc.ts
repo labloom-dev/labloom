@@ -25,7 +25,6 @@ export function registerPapersIPCs(window: BrowserWindow): void {
         }),
         resources: route(typia.createAssert<Args<"resources">>(invalid), papers.resources),
         readFile: route(typia.createAssert<Args<"readFile">>(invalid), papers.read),
-        getAnnotation: route(typia.createAssert<Args<"getAnnotation">>(invalid), papers.getAnnotation),
         unlockPDF: route(typia.createAssert<Args<"unlockPDF">>(invalid), papers.unlockPDF),
         changeAnnotation: route(typia.createAssert<Args<"changeAnnotation">>(invalid), papers.changeAnnotation),
         position: route(typia.createAssert<Args<"position">>(invalid), papers.position),
