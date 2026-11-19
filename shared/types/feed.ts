@@ -1,6 +1,6 @@
 import { type FailureInfo } from "../failure";
 
-export type FeedSourceStatus = "enabled" | "paused" | "cancelled";
+type FeedSourceStatus = "enabled" | "paused" | "cancelled";
 export type FeedSourceAction = "pause" | "resume" | "cancel";
 
 export type FeedSourceInput = {
@@ -43,6 +43,9 @@ export type FeedEntry = {
     fullContent: boolean;
     publishedAt: number | null;
 };
+
+export type FeedImport = { pageId: string; downloadPDF: boolean };
+export type FeedDownload = { pageId: string; fileId: string };
 
 export type FeedPosition = { progress: number };
 export type FeedPaperState = "none" | "saved" | "recycled" | "missing";

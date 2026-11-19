@@ -1,35 +1,32 @@
-import { record } from "../../../shared/attrs/values";
+import typia, { type tags } from "typia";
+import type { SavedTabs } from "../../../shared/workspace/tabs";
+import type { View } from "../../../shared/workspace/views";
 import type { TabState } from "./defs";
 
+type Layout = SavedTabs["layout"];
+type StoredGroup = { id: string; tabs: { id: string & tags.MinLength<1>; view: unknown }[]; activeTabId: string | null };
+const isLayout = typia.createIs<{ groups: StoredGroup[]; focusedGroupId: string; layout: Layout }>();
+const isView = typia.createEquals<View>();
+
 export function restoreTabState(state: unknown): TabState | undefined {
-    if (!record(state) || !Array.isArray(state.groups) || !state.groups.length || !record(state.layout)) return;
-    const groupIds = new Set<string>(), tabIds = new Set<string>();
+    if (!isLayout(state)) return;
+    const groupIds = new Set(state.groups.map(group => group.id));
+    if (groupIds.size !== state.groups.length || !groupIds.has(state.focusedGroupId)) return;
+    const visit = (node: Layout): boolean => node.type === "group" ? groupIds.delete(node.groupId) : node.children.every(visit);
+    if (!visit(state.layout) || groupIds.size) return;
+
+    const tabIds = new Set<string>();
+    const groups: SavedTabs["groups"] = [];
     for (const group of state.groups) {
-        if (!record(group) || typeof group.id !== "string" || groupIds.has(group.id) || !Array.isArray(group.tabs)) return;
-        groupIds.add(group.id);
+        if (group.activeTabId !== null && !group.tabs.some(tab => tab.id === group.activeTabId)) return;
+        const tabs: SavedTabs["groups"][number]["tabs"] = [];
         for (const tab of group.tabs) {
-            if (record(tab) && tab.type === "reader-test") continue;
-            if (!record(tab) || typeof tab.id !== "string" || tabIds.has(tab.id) || typeof tab.title !== "string" || !["page", "overview", "library", "papers", "calendar", "feed", "settings", "about", "attributes"].includes(String(tab.type)) || (tab.type === "page" && typeof tab.pageId !== "string")) return;
+            if (!Object.hasOwn(tab, "view") || tabIds.has(tab.id)) return;
             tabIds.add(tab.id);
+            if (isView(tab.view)) tabs.push({ id: tab.id, view: tab.view });
         }
-        const removedActive = group.tabs.some(tab => record(tab) && tab.type === "reader-test" && tab.id === group.activeTabId);
-        const tabs = group.tabs.filter(tab => !record(tab) || tab.type !== "reader-test");
-        group.tabs = tabs;
-        if (removedActive) group.activeTabId = tabs[0]?.id ?? null;
-        if (group.activeTabId !== null && !tabs.some(tab => tab.id === group.activeTabId)) return;
+        const activeTabId = group.activeTabId === null ? null : tabs.find(tab => tab.id === group.activeTabId)?.id ?? tabs[0]?.id ?? null;
+        groups.push({ id: group.id, tabs, activeTabId });
     }
-    if (!groupIds.has(String(state.focusedGroupId))) return;
-    const pending: unknown[] = [state.layout];
-    while (pending.length) {
-        const node = pending.pop();
-        if (!record(node)) return;
-        if (node.type === "group") {
-            if (!groupIds.delete(String(node.groupId))) return;
-        }
-        else {
-            if (node.type !== "split" || !["horizontal", "vertical"].includes(String(node.direction)) || typeof node.ratio !== "number" || !(node.ratio >= 0.1 && node.ratio <= 0.9) || !Array.isArray(node.children) || node.children.length !== 2) return;
-            pending.push(node.children[0], node.children[1]);
-        }
-    }
-    return groupIds.size ? undefined : state as TabState;
+    return { groups, layout: state.layout, focusedGroupId: state.focusedGroupId } as TabState;
 }

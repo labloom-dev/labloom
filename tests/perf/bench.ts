@@ -31,12 +31,12 @@ function measure(label: string, limit: number, prepare: (round: number) => Sampl
 function prepareText(service: Knowledge, pageId: string, round: number) {
     const page = service.get(pageId), block = page.blocks[page.children[0]];
     const value = { ...block, payload: payload("paragraph", "Edited " + round) };
-    return (token?: string): CommitResult => service.commitEdit({ pageId, tabId: "perf", batch: round, blocks: [value] }, pageHistory(pageId), token);
+    return (token?: string): CommitResult => service.commitEdit({ pageId, batch: round, blocks: [value] }, pageHistory(pageId), token);
 }
 
 function prepareDeletion(service: Knowledge, pageId: string) {
     const page = service.get(pageId), blockId = page.children[0];
-    return (token?: string): CommitResult => service.deleteBlock({ pageId, blockId, tabId: "perf" }, pageHistory(pageId), token);
+    return (token?: string): CommitResult => service.deleteBlock({ pageId, blockId }, pageHistory(pageId), token);
 }
 
 function confirmed(operation: (token?: string) => CommitResult, recycled: number): Sample {
@@ -115,7 +115,7 @@ function historyScale(): void {
         const pages = sql.transaction(() => Array.from({ length: 100 }, (_, index) => makePage(index === 0 ? 10000 : 2, "History")))();
         const edits = pages.map(page => {
             const block = service.readObjects(page.id, [page.children[0]]).blocks[0], source = pageHistory(page.id);
-            return (round: number): CommitResult => service.commitEdit({ pageId: page.id, tabId: "perf", batch: round,
+            return (round: number): CommitResult => service.commitEdit({ pageId: page.id, batch: round,
                 blocks: [{ ...block, payload: payload("paragraph", "History " + round) }] }, source);
         });
         for (let i = 0; i < 10000; i++) assert.equal(edits[i % 100](i).status, "saved");
@@ -130,12 +130,11 @@ function historyScale(): void {
         assert.ok(result.success);
         console.log("History | trim to 100 records", elapsed.toFixed(2), "ms | limit 50", elapsed <= 50 ? "PASS" : "FAIL");
         if (elapsed > 50) exceeded = true;
-        // The 21 undone commits form one redo branch. Count every retained node by
-        // walking to the tip and then undoing to the root of each independent page.
+        // Count retained records by redoing to the end and undoing to the start of each page.
         let retained = 0;
         for (const page of pages) {
             const tree = pageHistory(page.id);
-            while (history.state(tree).redo.length) history.apply(tree, "redo");
+            while (history.state(tree).canRedo) history.apply(tree, "redo");
             while (history.state(tree).canUndo) {
                 history.apply(tree, "undo"); retained++;
             }

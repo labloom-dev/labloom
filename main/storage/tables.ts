@@ -1,6 +1,7 @@
 import { desc, sql } from "drizzle-orm";
 import { check, customType, foreignKey, index, integer, primaryKey, sqliteTable, text, unique } from "drizzle-orm/sqlite-core";
-import { type BlockKind } from "../../shared/types/Block";
+import type { FeedPosition } from "../../shared/types/feed";
+import { pageKinds, type ContentBlockKind } from "../../shared/types/content";
 
 // Runtime mappings of the persisted rows. The generated SQL baseline also installs
 // STRICT table options and triggers; business/IPC models remain independent.
@@ -16,7 +17,7 @@ export const workspaceMeta = sqliteTable("workspace_meta", {
 
 export const blocks = sqliteTable("blocks", {
     id: text("id").primaryKey().notNull(),
-    type: text("type").$type<BlockKind>().notNull(),
+    type: text("type").$type<ContentBlockKind>().notNull(),
     content: text("content"),
     children: text("children", { mode: "json" }).$type<string[]>().notNull().default([])
 }, table => [
@@ -25,10 +26,11 @@ export const blocks = sqliteTable("blocks", {
 
 export const pages = sqliteTable("pages", {
     id: text("id").primaryKey().notNull(),
-    kind: text("kind").notNull(),
+    kind: text("kind", { enum: pageKinds }).notNull(),
     titleBlockId: text("title_block_id").notNull().references(() => blocks.id),
     children: text("children", { mode: "json" }).$type<string[]>().notNull().default([])
 }, table => [
+    check("pages_kind", sql`${table.kind} IN (${sql.raw(pageKinds.map(kind => "'" + kind + "'").join(", "))})`),
     check("pages_children_array", sql`json_valid(${table.children}) AND json_type(${table.children}) = 'array'`)
 ]);
 
@@ -89,7 +91,7 @@ export const feedItems = sqliteTable("feed_items", {
     fullContent: integer("has_full_content", { mode: "boolean" }).notNull().default(false),
     publishedAt: integer("published_at"),
     isRead: integer("is_read", { mode: "boolean" }).notNull().default(false),
-    readingPosition: text("reading_position", { mode: "json" }).$type<import("../../shared/types/feed").FeedPosition>(),
+    readingPosition: text("reading_position", { mode: "json" }).$type<FeedPosition>(),
     paperId: text("paper_id"),
     pdfURL: text("pdf_url")
 }, table => [

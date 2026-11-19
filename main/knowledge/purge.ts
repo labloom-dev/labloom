@@ -5,12 +5,10 @@ import { fingerprint } from "./attributes";
 import * as commit from "./commit";
 import * as data from "./records";
 import * as retention from "./retention";
-import { checkTab } from "./validation";
 
-export function purge(ids: string[] | null, tabId: string, confirmation?: string): PurgeResult {
+export function purge(ids: string[] | null, confirmation?: string): PurgeResult {
     workspace.requireWorkspace();
-    checkTab(tabId);
-    return commit.run({ sourceTab: tabId, history: false, cleanup: true, confirmation }, context => {
+    return commit.run({ history: false, cleanup: true, confirmation }, context => {
         const plan = retention.purgePlan(ids), pages = plan.pages.map(id => ({ id, title: data.title(id) }));
         const token = fingerprint({ ids, ...plan, pages });
         if (pages.length && token !== confirmation) return { status: "confirmation", token, pages, links: plan.links };

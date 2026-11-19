@@ -3,7 +3,7 @@ import { type ContentBlock, type PageObjects, type EditCommit, type ChangePrevie
 
 export type Fields = Pick<EditCommit, "blocks" | "pageChildren" | "attributes" | "detach">;
 export type Entry = { kind: "block"; value: ContentBlock } | { kind: "children"; value: string[] } | { kind: "attr"; id: string; value?: AttributeValue };
-export function entries(edit: Fields): [string, Entry][] {
+function entries(edit: Fields): [string, Entry][] {
     const result: [string, Entry][] = edit.blocks.map(b => ["b:" + b.id, { kind: "block", value: b }]);
     if (edit.pageChildren) result.push(["children", { kind: "children", value: edit.pageChildren }]);
     for (const [id, value] of Object.entries(edit.attributes ?? {})) result.push(["a:" + id, { kind: "attr", id, value }]);
@@ -25,15 +25,12 @@ export class PageWrites {
     private retry?: { input: EditCommit; rows: Map<string, Entry> };
     private pending?: Promise<void>;
     private batch = 0;
-    constructor(readonly tabId: string, readonly pageId: string, readonly send: (input: EditCommit) => Promise<void>) { }
+    constructor(readonly pageId: string, readonly send: (input: EditCommit) => Promise<void>) { }
     get unsaved(): boolean {
         return !!this.dirty.size || !!this.retry;
     }
-    changedBlocks(): string[] {
-        return [...this.dirty.values()].flatMap(row => row.kind === "block" ? [row.value.id] : []);
-    }
     input(edit: Fields): EditCommit {
-        return { tabId: this.tabId, pageId: this.pageId, batch: ++this.batch, ...edit };
+        return { pageId: this.pageId, batch: ++this.batch, ...edit };
     }
     stage(edit: Fields): void {
         for (const [key, item] of entries(edit)) this.dirty.set(key, item);

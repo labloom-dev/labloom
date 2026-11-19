@@ -1,36 +1,14 @@
-{#key tab.id}
-    {#if tab.type === "page"}
-        <PageView {tab} />
-    {:else if tab.type === "library" || tab.type === "papers"}
-        <Library tabId={tab.id} initialView={tab.type === "papers" ? "papers" : "all"} />
-    {:else if tab.type === "attributes"}
-        <AttributeManagement tabId={tab.id} />
-    {:else if tab.type === "calendar"}
-        <Calendar tabId={tab.id} />
-    {:else if tab.type === "overview"}
-        <Overview tabId={tab.id} />
-    {:else if tab.type === "about"}
-        <About />
-    {:else if tab.type === "settings"}
-        <Settings />
-    {:else if tab.type === "feed"}
-        <FeedView />
-    {:else}
-        <div>Unknown tab type!</div>
-    {/if}
+{#key source.kind === "page" ? source.id : tab.id}
+    <ViewComponent tabId={tab.id} params={tab.view.params} {source} onparams={params => setViewParams(tab.id, params)} />
 {/key}
 
-
 <script lang="ts">
-    import AttributeManagement from "../Knowledge/AttributeManagement.svelte";
-    import About from "../tabs/About.svelte";
-    import Overview from "../tabs/Overview.svelte";
-    import Settings from "../tabs/Settings.svelte";
-    import PageView from "../Knowledge/PageView.svelte";
-    import Library from "../Knowledge/Library.svelte";
-    import Calendar from "../Knowledge/Calendar.svelte";
-    import FeedView from "../Feed/FeedView.svelte";
+    import { setViewParams } from "./api";
     import type { Tab } from "./defs";
+    import { definitionFor } from "./views";
 
     let { tab }: { tab: Tab } = $props();
+    const definition = $derived(definitionFor(tab.view.type));
+    const ViewComponent = $derived(definition.component);
+    const source = $derived(definition.history(tab.view.params));
 </script>

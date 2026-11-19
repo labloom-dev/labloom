@@ -1,7 +1,6 @@
-import type { TabId } from "../ipc/contract";
 import { type AttributeValue } from "./attributes";
 
-export const pageKinds = ["editable", "paper", "annotation", "task", "event", "feed"] as const;
+export const pageKinds = ["editable", "paper", "annotation", "feed"] as const;
 export type PageKind = typeof pageKinds[number];
 export const blockKinds = ["title", "paragraph", "heading_1", "heading_2", "heading_3", "unordered_list", "ordered_list", "blockquote", "callout", "code", "table", "hr", "blocked_reference"] as const;
 export type ContentBlockKind = typeof blockKinds[number];
@@ -38,19 +37,19 @@ export type PageObjects = {
     blocks: ContentBlock[];
     uses: Record<string, number>;
 };
-export type PageQuery = { ids?: string[]; keyword?: string; kind?: PageKind | ""; deleted?: boolean; pinned?: boolean; tags?: string[]; attributes?: Record<string, AttributeValue>; sort?: "modified" | "created" | "title"; offset?: number; limit?: number };
+export type PageQuery = { ids?: string[]; keyword?: string; kind?: PageKind | ""; deleted?: boolean; pinned?: boolean; tags?: string[]; hasValue?: string; attributes?: Record<string, AttributeValue>; sort?: "modified" | "created" | "title"; offset?: number; limit?: number };
 export type PageList = { items: PageSummary[]; total: number };
 export type EditCommit = {
-    pageId: string; tabId: TabId; batch: number;
+    pageId: string; batch: number;
     blocks: ContentBlock[]; pageChildren?: string[]; attributes?: Record<string, AttributeValue>; detach?: string[];
     sync?: string[];
 };
-export type Position = { pageId: string; containerId: string; index: number; blockId: string };
-export type Placement = { position: Position; action: "insert" | "remove" | "clone" | "duplicate" | "move-up" | "move-down"; blockId?: string; tabId: TabId };
-export type BlockDeletion = { pageId: string; tabId: TabId; blockId: string };
+type Position = { pageId: string; containerId: string; index: number; blockId: string };
+export type Placement = { position: Position; action: "insert" | "remove" | "clone" | "duplicate" | "move-up" | "move-down"; blockId?: string };
+export type BlockDeletion = { pageId: string; blockId: string };
 export type Changed = { pages: string[]; blocks: string[]; backlinks?: string[]; highlightPages?: string[] };
-export type KnowledgeChange = Changed & { sourceTab: string; kinds?: Record<string, PageKind>; summaryPages?: string[]; definition?: string; notices?: boolean; purged?: string[] };
-export type NamedPage = { id: string; title: string };
+export type KnowledgeChange = Changed & { writeId?: string; titlePages?: string[]; kinds?: Record<string, PageKind>; summaryPages?: string[]; definition?: string; notices?: boolean; purged?: string[] };
+type NamedPage = { id: string; title: string };
 export type ChangePreview = {
     token: string; recycled: NamedPage[]; direct: NamedPage[];
     deletedBlocks: { id: string; excerpt: string; pages: number; positions: number; links: number }[];

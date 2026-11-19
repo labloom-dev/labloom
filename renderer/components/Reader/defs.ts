@@ -1,4 +1,3 @@
-import { type FailureInfo } from "../../../shared/failure";
 
 export type ReaderSource = {
     kind: "data";
@@ -21,7 +20,6 @@ export type ReaderViewState = {
     top: number;
 };
 
-export type ReaderError = FailureInfo;
 
 export type ReaderFindStatus =
     | { kind: "idle" }

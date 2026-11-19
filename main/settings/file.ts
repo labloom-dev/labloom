@@ -6,7 +6,7 @@ import { LabloomError } from "../../shared/failure";
 import { defaultSettings, settingsVersion } from "../../shared/settings/defaults";
 import { type Settings } from "../../shared/settings/Settings";
 import { type StartupState } from "../../shared/types/startup";
-import { validSettings } from "./validate";
+import { validSettings } from "../../shared/settings/validate";
 
 export type LoadResult = { settings: Settings; savedText: string | null; notice?: Extract<StartupState, { status: "needs-workspace" }>["notice"] };
 export function readSettings(path: string): LoadResult {

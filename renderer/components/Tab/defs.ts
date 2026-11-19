@@ -1,39 +1,7 @@
-import { type uuid } from "../../../shared/types/uuid";
+import type { View } from "../../../shared/workspace/views";
 import type { XYDirection } from "../types";
 
-type Tab_Page = {
-    type: "page";
-    pageId: uuid;
-    anchorId?: string;
-};
-
-type Tab_Overview = {
-    type: "overview";
-};
-
-type Tab_About = {
-    type: "about";
-};
-
-type Tab_Settings = {
-    type: "settings";
-};
-
-type Tab_Feed = {
-    type: "feed";
-};
-
-export type Tab = {
-    id: TabID;
-    title: string;
-} & (
-    Tab_Page |
-    Tab_Overview |
-    Tab_About |
-    Tab_Settings |
-    Tab_Feed |
-    { type: "library" | "papers" | "calendar" | "attributes" }
-);
+export type Tab = { id: TabID; view: View };
 
 export type TabID = string & {
     __TabIDBrand: never;

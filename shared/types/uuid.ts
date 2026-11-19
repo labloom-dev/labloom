@@ -1,9 +1,3 @@
-import { v4 } from "uuid";
+import type { tags } from "typia";
 
-export type uuid = string & {
-    __uuidBrand: never;
-};
-
-export function getUUID(): uuid {
-    return v4() as uuid;
-}
+export type uuid = string & tags.Pattern<"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$">;

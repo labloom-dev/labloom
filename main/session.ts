@@ -6,6 +6,7 @@ import { fetchFeed } from "./feed/parser";
 import * as state from "./workspace-state";
 import * as records from "./knowledge/records";
 import * as history from "./knowledge/history-state";
+import * as attachments from "./attachments/service";
 import * as papers from "./knowledge/papers";
 import * as feed from "./feed/service";
 import * as timers from "./knowledge/timers";
@@ -27,11 +28,12 @@ export function open(path: string, action: WorkspaceAction, options: state.Sessi
     try {
         state.initialize(workspace, {
             clock: Date.now, timeZone: () => settings.get().settings.appearance.timeZone,
-            loadFeed: request => fetchFeed(request, network), fetchPDF: network, ...options
+            loadFeed: request => fetchFeed(request, network), fetchAttachment: network, ...options
         });
+        attachments.recoverDownloads();
         records.initialize();
         workspaceSettings.initialize();
-        commit.run({ sourceTab: "", history: false, cleanup: true }, context => {
+        commit.run({ history: false, cleanup: true }, context => {
             const blocks = context.cleanup();
             context.change({ blocks, purged: [] });
         });
@@ -55,6 +57,7 @@ export function close(): void {
     feed.release();
     timers.release();
     papers.release();
+    attachments.release();
     commit.release();
     history.release();
     workspaceSettings.release();

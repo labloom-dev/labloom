@@ -15,7 +15,7 @@
             <option value="true">是</option>
             <option value="false">否</option>
         </select>
-    {:else if definition.type === "select"}
+    {:else if definition.type === "select" || definition.type === "status"}
         <select value={empty ? "" : String(value)} onchange={event => onchange(event.currentTarget.value || emptyValue(definition.type))}>
             <option value="">未填写</option>
             {#each definition.metadata.options ?? [] as option (option.id)}
@@ -110,7 +110,7 @@
     import { currentTimeZone } from "../layout/preferences.svelte";
     import { openPage } from "../layout/navigation";
     import FileInput from "./FileInput.svelte";
-    import { type PageSession } from "./state.svelte";
+    import { type PageSession } from "./page-session.svelte";
 
     import TargetPicker from "./TargetPicker.svelte";
     let { definition, value, disabled = false, session, onchange }: { definition: AttributeDefinition; value: AttributeValue; disabled?: boolean; session?: PageSession; onchange: (value: AttributeValue) => void } = $props();

@@ -1,10 +1,10 @@
-import { type AttributeDefinition, type AttributeValue } from "../types/attributes";
-import { type ContentBlock, type Target } from "../types/content";
-import { references } from "./blocks";
+import { type AttributeDefinition, type AttributeValue } from "../../shared/types/attributes";
+import { type ContentBlock, type Target } from "../../shared/types/content";
+import { references } from "../../shared/content/blocks";
 
 export type GraphPage = { id: string; titleBlockId: string; children: string[]; attributes: Record<string, AttributeValue> };
 
-export function pageTargets(page: GraphPage, definitions: AttributeDefinition[]): Target[] {
+function pageTargets(page: GraphPage, definitions: AttributeDefinition[]): Target[] {
     const targets: Target[] = [];
     for (const definition of definitions) {
         const value = page.attributes[definition.id];
@@ -42,19 +42,4 @@ function reachableFromRoots(pages: GraphPage[], blocks: Map<string, ContentBlock
         }
     }
     return visitedPages;
-}
-
-export function containedBlocks(page: Pick<GraphPage, "titleBlockId" | "children">, blocks: Map<string, ContentBlock>): Set<string> {
-    return walkChildren([page.titleBlockId, ...page.children], blocks);
-}
-
-function walkChildren(queue: string[], blocks: Map<string, ContentBlock>): Set<string> {
-    const result = new Set<string>();
-    while (queue.length) {
-        const id = queue.pop()!;
-        if (result.has(id)) continue;
-        result.add(id);
-        queue.push(...blocks.get(id)?.children ?? []);
-    }
-    return result;
 }

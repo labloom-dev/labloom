@@ -140,11 +140,12 @@
 
 
 <script lang="ts">
+    import type { FailureInfo } from "../../../shared/failure";
     import { message, t } from "../../i18n.svelte";
     import { onMount, untrack } from "svelte";
     import Bloom from "../utils/Bloom.svelte";
     import Toolbar from "./Toolbar.svelte";
-    import type { ReaderError, ReaderFindStatus, ReaderScale, ReaderSource, ReaderViewState } from "./defs";
+    import type { ReaderFindStatus, ReaderScale, ReaderSource, ReaderViewState } from "./defs";
     import { type PaperAnnotation, type AnnotationInput } from "../../../shared/types/papers";
     import { annotationColors } from "../../../shared/content/annotations";
     import { charactersFromTextContent, extractText, hitTest, lineRange, wordRange, selectionRectangles, PDF_EXTRACTOR_VERSION, type PdfCharacter } from "../../../shared/content/pdf-text";
@@ -159,7 +160,7 @@
         viewState?: ReaderViewState;
         /** Throttled; also called once more when the document is closed or the reader unmounts. */
         onViewStateChange?: (state: ReaderViewState, source: ReaderSource) => void;
-        onError?: (error: ReaderError) => void;
+        onError?: (error: FailureInfo) => void;
         onPasswordAccepted?: (password: string) => Promise<void>;
         fileId?: string;
         annotations?: PaperAnnotation[];
@@ -172,7 +173,7 @@
         | { kind: "loading" }
         | { kind: "password"; incorrect: boolean }
         | { kind: "ready" }
-        | { kind: "error"; error: ReaderError };
+        | { kind: "error"; error: FailureInfo };
 
     const { source, viewState, onViewStateChange, onError, onPasswordAccepted, fileId, annotations = [], onSelection, onHighlight }: Props = $props();
 
@@ -492,7 +493,7 @@
         };
     }
 
-    function fail(error: ReaderError): void {
+    function fail(error: FailureInfo): void {
         status = { kind: "error", error };
         onError?.(error);
     }

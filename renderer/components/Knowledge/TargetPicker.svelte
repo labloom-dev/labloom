@@ -5,7 +5,7 @@
     element.querySelector("input")?.focus();
 }}>
     <header>
-        <strong>选择{mode === "sync" ? "同步块" : "引用目标"}</strong>
+        <strong>选择{mode === "sync" ? "同步块" : mode === "page" ? "页面" : "引用目标"}</strong>
         <button class="text-button" onclick={onclose}>关闭</button>
     </header>
     <input type="search" placeholder="搜索页面…" bind:value={keyword} />
@@ -24,7 +24,7 @@
             {#each pages as page (page.id)}
                 <div class="result">
                     <button onclick={() => mode === "sync" ? choose(page.id) : onselect({ kind: "page", id: page.id }, page.title || "未命名")}>{page.title || "未命名"}</button>
-                    <button class="text-button" onclick={() => choose(page.id)}>选择其中的块</button>
+                    {#if mode !== "page"}<button class="text-button" onclick={() => choose(page.id)}>选择其中的块</button>{/if}
                 </div>
             {:else}
                 <p>没有找到页面</p>
@@ -46,8 +46,8 @@
     import { type ContentBlock, type PageSummary, type PageRecord, type Target } from "../../../shared/types/content";
     import { blockText } from "../../../shared/content/blocks";
     import { blockKindNames } from "../../../shared/content/block-labels";
-    import { knowledgeState } from "./state.svelte";
-    let { mode = "reference", onselect, onclose }: { mode?: "reference" | "sync"; onselect: (target: Target, label: string) => void; onclose: () => void } = $props();
+    import { knowledgeState } from "./feedback.svelte";
+    let { mode = "reference", onselect, onclose }: { mode?: "reference" | "sync" | "page"; onselect: (target: Target, label: string) => void; onclose: () => void } = $props();
     let keyword = $state(""), error = $state<ErrorValue>("");
     let pages = $state<PageSummary[]>([]), chosen = $state.raw<PageRecord | null>(null);
     let referenceLabels = $state<Record<string, string>>({});

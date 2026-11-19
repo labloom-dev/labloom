@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { resolveAttributeDefinition } from "../../shared/attrs/definitions";
 import { search } from "../../shared/attrs/format";
-import { decodeValue, encodeValue, record, validUUID } from "../../shared/attrs/values";
+import { decodeValue, emptyValue, encodeValue, nullable, record, validUUID } from "../../shared/attrs/values";
 import { blockText, payload, validateBlock, validTarget } from "../../shared/content/blocks";
 import { resolveTimeZone } from "../../shared/content/time";
 import { LabloomError } from "../../shared/failure";
@@ -59,10 +59,9 @@ export function initialize(): void {
 export function release(): void {
     prepared.clear();
 }
-function definition(id: string): AttributeDefinition {
+function definition(id: string): AttributeDefinition | undefined {
     const row = statement("SELECT id,type,name,metadata FROM attrs_meta WHERE id=?").get(id) as { id: string; type: AttributeDefinition["type"]; name: string | null; metadata: string } | undefined;
-    if (!row) throw new LabloomError({ kind: "attribute-missing" });
-    return resolveAttributeDefinition({ ...row, metadata: JSON.parse(row.metadata) });
+    return row && resolveAttributeDefinition({ ...row, metadata: JSON.parse(row.metadata) });
 }
 export function statement(sql: string): Database.Statement {
     workspace.requireWorkspace();
@@ -228,9 +227,19 @@ function listRows(query: PageQuery): { selected: ListRow[]; total: number } {
         where.push("EXISTS (SELECT 1 FROM page_attrs a, json_each(a.value) j WHERE a.page_id=p.id AND a.attr_id='tags' AND j.value=?)");
         params.push(tag);
     }
+    if (query.hasValue !== undefined) {
+        const attr = definition(query.hasValue);
+        if (!attr) return { selected: [], total: 0 };
+        const compare = nullable(attr.type);
+        where.push("EXISTS (SELECT 1 FROM page_attrs a WHERE a.page_id=p.id AND a.attr_id=?" + (compare ? " AND a.value IS NOT ?" : "") + ")");
+        params.push(attr.id);
+        if (compare) params.push(encodeValue(attr, emptyValue(attr.type)));
+    }
     for (const [id, value] of Object.entries(query.attributes ?? {})) {
+        const attr = definition(id);
+        if (!attr) return { selected: [], total: 0 };
         where.push("EXISTS (SELECT 1 FROM page_attrs a WHERE a.page_id=p.id AND a.attr_id=? AND a.value IS ?)");
-        params.push(id, encodeValue(definition(id), value));
+        params.push(id, encodeValue(attr, value));
     }
     const keyword = query.keyword?.trim().toLocaleLowerCase();
     let cte = "";
@@ -257,7 +266,7 @@ function listRows(query: PageQuery): { selected: ListRow[]; total: number } {
         " JOIN page_attrs s ON s.page_id=p.id AND s.attr_id='" + (query.sort === "created" ? "created_at" : "modified_at") + "'";
     // Materialize keyword hits once. The window count precedes pagination.
     const count = keyword ? ", count(*) OVER() AS total" : "";
-    const simple = !query.ids && !keyword && !query.kind && query.pinned === undefined && !query.tags?.length && !Object.keys(query.attributes ?? {}).length && query.sort !== "title";
+    const simple = query.hasValue === undefined && !query.ids && !keyword && !query.kind && query.pinned === undefined && !query.tags?.length && !Object.keys(query.attributes ?? {}).length && query.sort !== "title";
     const dateId = query.sort === "created" ? "created_at" : "modified_at";
     const selected = (simple ? statement(`SELECT p.id, p.kind, p.title_block_id AS titleBlockId, p.children
         FROM page_attrs s INDEXED BY page_attrs_order CROSS JOIN pages p ON p.id=s.page_id

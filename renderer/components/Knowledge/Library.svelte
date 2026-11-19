@@ -1,23 +1,30 @@
 <section class="workspace-page library" bind:this={root} onkeydown={keys}>
     <header class="library-toolbar">
         <input bind:value={keyword} type="search" aria-label="搜索页面" placeholder="搜索标题、正文和属性…" />
-        <select aria-label="页面类型" bind:value={kind} onchange={() => offset = 0}><option value="">全部类型</option>{#each Object.entries(kindNames) as [id, name] (id)}<option value={id}>{name}</option>{/each}</select>
-        <select aria-label="排序" bind:value={sort}><option value="modified">最近修改</option><option value="created">最近创建</option><option value="title">按标题</option></select>
+        <select aria-label="页面类型" bind:value={() => params.pageType?.type ?? "", (type: PageKind | "") => {
+            const { pageType: _previous, ...rest } = params;
+            onparams(type ? { ...rest, pageType: { kind: "page-type", type } } : rest);
+            offset = 0; selected = [];
+        }}><option value="">全部类型</option>{#each Object.entries(kindNames) as [id, name] (id)}<option value={id}>{name}</option>{/each}</select>
+        <select aria-label="排序" bind:value={() => params.sort, sort => change({ sort })}><option value="modified">最近修改</option><option value="created">最近创建</option><option value="title">按标题</option></select>
         <button class="button" disabled={busy} onclick={() => createPage()}>新建</button>
         <button class="button" disabled={busy} onclick={importPDF}>导入 PDF</button>
-        {#if view === "trash"}<button class="button" disabled={busy || !result.total} onclick={() => permanent(true)}>清空回收站</button>{/if}
+        {#if params.scope === "trash"}<button class="button" disabled={busy || !result.total} onclick={() => permanent(true)}>清空回收站</button>{/if}
     </header>
-    <div class="view-tabs">{#each views as item (item.id)}<button class:active={view === item.id} onclick={() => {
-        view = item.id; offset = 0; selected = [];
+    <div class="view-tabs">{#each views as item (item.id)}<button class:active={params.scope === item.id} onclick={() => {
+        change({ scope: item.id });
     }}>{item.label}</button>{/each}</div>
     <div class="tag-filters">
         <span>标签</span>
         {#each definitions.find(item => item.id === "tags")?.metadata.options ?? [] as option (option.id)}
-            <button class:active={tags.includes(option.id)} onclick={() => {
-                tags = tags.includes(option.id) ? tags.filter(id => id !== option.id) : [...tags, option.id]; offset = 0;
+            <button class:active={params.tags.includes(option.id)} onclick={() => {
+                change({ tags: params.tags.includes(option.id) ? params.tags.filter(id => id !== option.id) : [...params.tags, option.id].sort() });
             }}>{option.name}</button>
         {:else}
             <span>在共享属性中添加第一个标签</span>
+        {/each}
+        {#each params.tags.filter(id => !definitions.find(def => def.id === "tags")?.metadata.options?.some(option => option.id === id)) as id (id)}
+            <button onclick={() => change({ tags: params.tags.filter(tag => tag !== id) })}>找不到标签 {id} ×</button>
         {/each}
     </div>
     <details class="property-filters">
@@ -31,23 +38,23 @@
         {#if filterDefinition}
             <AttributeInput definition={filterDefinition} value={filterValue} onchange={value => filterValue = value} />
             <button class="button" onclick={() => {
-                filters = { ...filters, [filterId]: filterValue }; offset = 0;
+                change({ filters: [...params.filters.filter(f => f.attribute.id !== filterId), { attribute: { kind: "attribute", id: filterId }, value: copyData(filterValue) }] });
             }}>添加条件</button>
         {/if}
         {#each Object.entries(filters) as [id, value] (id)}
             <button class="filter-chip" onclick={() => {
-                const next = { ...filters }; delete next[id]; filters = next; offset = 0;
-            }}>{definitions.find(item => item.id === id)?.name}：{attributeText(id, value)} ×</button>
+                change({ filters: params.filters.filter(f => f.attribute.id !== id) });
+            }}>{definitions.find(item => item.id === id)?.name ?? `找不到属性 ${id}`}：{attributeText(id, value)} ×</button>
         {/each}
     </details>
     {#if error}<div class="notice error">{message(error)}<button onclick={() => retry++}>{t("dialog.retry")}</button></div>{/if}
     {#if info}<p class="info">{info}</p>{/if}
     <div class="list-toolbar"><span>{pending ? "正在读取…" : `${result.total} 个页面`}</span><div class="actions">
-        {#if selected.length}<button class="button" disabled={busy} onclick={bulk}>{view === "trash" ? "恢复所选" : "移入回收站"}（{selected.length}）</button>{#if view === "trash"}<button class="button" disabled={busy} onclick={() => permanent()}>永久删除（{selected.length}）</button>{/if}{/if}
+        {#if selected.length}<button class="button" disabled={busy} onclick={bulk}>{params.scope === "trash" ? "恢复所选" : "移入回收站"}（{selected.length}）</button>{#if params.scope === "trash"}<button class="button" disabled={busy} onclick={() => permanent()}>永久删除（{selected.length}）</button>{/if}{/if}
     </div></div>
-    <div class="page-list" role="grid" aria-label={view === "trash" ? "回收站" : "页面列表"} aria-multiselectable="true" tabindex="0">
+    <div class="page-list" role="grid" aria-label={params.scope === "trash" ? "回收站" : "页面列表"} aria-multiselectable="true" tabindex="0">
         {#each result.items as page (page.id)}
-            <ContextActions items={pageMenu(page, tabId, selected.includes(page.id) ? selected : [page.id])}>
+            <ContextActions items={pageMenu(page, source, selected.includes(page.id) ? selected : [page.id])}>
                 <div class="page-row" id={`library-${tabId}-${page.id}`} class:selected={selected.includes(page.id)} role="row" aria-selected={selected.includes(page.id)} tabindex="0" onclick={event => choose(page, event)} onkeydown={() => {}} ondblclick={event => openPage(page.id, { otherGroup: event.ctrlKey })} oncontextmenu={() => {
                     if (!selected.includes(page.id)) {
                         selected = [page.id]; anchor = page.id;
@@ -58,7 +65,7 @@
                     <small class="updated" role="gridcell">{attributeText("modified_at", page.attributes.modified_at)}</small>
                 </div>
             </ContextActions>
-        {:else}<p class="empty-list">{pending ? "正在读取…" : view === "trash" ? "回收站为空" : "没有页面"}</p>{/each}
+        {:else}<p class="empty-list">{pending ? "正在读取…" : params.scope === "trash" ? "回收站为空" : "没有页面"}</p>{/each}
     </div>
     {#if result.total > 40}<div class="pagination"><button class="button" disabled={pending || offset === 0} onclick={() => offset -= 40}>上一页</button><span>{offset + 1}–{Math.min(offset + 40, result.total)} / {result.total}</span><button class="button" disabled={pending || offset + 40 >= result.total} onclick={() => offset += 40}>下一页</button></div>{/if}
 </section>
@@ -106,12 +113,23 @@
     import AttributeInput from "./AttributeInput.svelte";
     import { kindNames, kindIcons } from "./labels";
     import { createPage, openPage } from "../layout/navigation";
-    import { copyData, confirmed, registerList, writeFromTab } from "./state.svelte";
+    import { copyData } from "../copy-data";
+    import { confirmed } from "./confirmation.svelte";
+    import { registerList } from "./page-visits";
+    import { write } from "./page-sessions";
     import { visits } from "../Tab/activity.svelte";
-    let { tabId, initialView = "all" }: { tabId: string; initialView?: string } = $props();
-    const views = [{ id: "all", label: "全部页面" }, { id: "papers", label: "文献" }, { id: "pinned", label: "已固定" }, { id: "trash", label: "回收站" }];
-    let view = $state(untrack(() => initialView)), keyword = $state(""), applied = $state(""), kind = $state<PageKind | "">(""), sort = $state<PageQuery["sort"]>("modified"), offset = $state(0);
-    let selected = $state<string[]>([]), tags = $state<string[]>([]), definitions = $state<AttributeDefinition[]>([]), result = $state<PageList>({ items: [], total: 0 });
+    import type { ViewProps } from "../Tab/views";
+    import type { ViewParams } from "../../../shared/workspace/views";
+
+    let { tabId, params, onparams, source }: ViewProps<"library"> = $props();
+    function change(patch: Partial<ViewParams["library"]>): void {
+        onparams({ ...params, ...patch });
+        offset = 0;
+        selected = [];
+    }
+    const views = [{ id: "all", label: "全部页面" }, { id: "pinned", label: "已固定" }, { id: "trash", label: "回收站" }] as const;
+    let keyword = $state(""), applied = $state(""), offset = $state(0);
+    let selected = $state<string[]>([]), definitions = $state<AttributeDefinition[]>([]), result = $state<PageList>({ items: [], total: 0 });
     let root: HTMLElement;
     let retry = $state(0), anchor = $state("");
     $effect(() => {
@@ -139,7 +157,7 @@
         else if (event.key === "Enter" && selected.length) {
             event.preventDefault(); for (const id of selected) openPage(id, { otherGroup: event.ctrlKey });
         }
-        else if (event.key === "Delete" && selected.length && view !== "trash") {
+        else if (event.key === "Delete" && selected.length && params.scope !== "trash") {
             event.preventDefault(); void bulk();
         }
         else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -153,7 +171,7 @@
     async function permanent(all = false): Promise<void> {
         busy = true;
         try {
-            if (await writeFromTab(tabId, () => purgePages(all ? null : [...selected], tabId))) selected = [];
+            if (await write(() => purgePages(all ? null : [...selected]))) selected = [];
         }
         catch (problem) {
             error = failure(problem);
@@ -162,10 +180,11 @@
             busy = false;
         }
     }
-    let pending = $state(false), busy = $state(false), error = $state<ErrorValue>(""), info = $state(""), filterId = $state(""), filters = $state<Record<string, AttributeValue>>({});
+    let pending = $state(false), busy = $state(false), error = $state<ErrorValue>(""), info = $state(""), filterId = $state("");
+    const filters = $derived(Object.fromEntries(params.filters.map(f => [f.attribute.id, f.value])));
     const filterDefinition = $derived(definitions.find(item => item.id === filterId));
     let filterValue = $derived<AttributeValue>(filterDefinition ? defaultValue(filterDefinition.type) : null);
-    const query = $derived<PageQuery>({ keyword: applied, kind: view === "papers" ? "paper" : kind, sort, offset, limit: 40, deleted: view === "trash", ...(view === "pinned" ? { pinned: true } : {}), tags: [...tags], attributes: { ...filters } });
+    const query = $derived<PageQuery>({ keyword: applied, kind: params.pageType?.type, sort: params.sort, offset, limit: 40, deleted: params.scope === "trash", ...(params.scope === "pinned" ? { pinned: true } : {}), tags: [...params.tags], attributes: { ...filters } });
     let definitionsDirty = false;
     onMount(() => {
         const offEditing = registerEditing(root, command => {
@@ -241,7 +260,7 @@
     async function importPDF(): Promise<void> {
         busy = true;
         try {
-            const result = await writeFromTab(tabId, () => window.api.papers.importPDF(undefined, { tabId, source: { kind: "workspace" } }));
+            const result = await write(() => window.api.papers.importPDF(source));
             if (result) {
                 info = "PDF 已复制到工作区。";
                 openPage(result.pageId);
@@ -258,7 +277,7 @@
         busy = true;
         try {
             const ids = [...selected];
-            if (await writeFromTab(tabId, () => confirmed(token => view === "trash" ? window.api.pages.restore(ids, tabId, { kind: "workspace" }) : window.api.pages.trash(ids, tabId, { kind: "workspace" }, token)))) selected = [];
+            if (await write(() => confirmed(token => params.scope === "trash" ? window.api.pages.restore(ids, source) : window.api.pages.trash(ids, source, token)))) selected = [];
         }
         catch (problem) {
             error = failure(problem);

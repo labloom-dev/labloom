@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { test, type TestContext } from "node:test";
 import { type BrowserWindow } from "electron";
 import ts from "typescript";
@@ -26,6 +26,7 @@ import { type FeedEntry } from "../shared/types/feed";
 import { type FeedResult } from "../main/feed/parser";
 import { payload } from "../shared/content/blocks";
 import { knownCoordinatePdf } from "./fixtures/pdf-text";
+import { annotate, saveFeed } from "./support/session";
 import { hasFailure } from "./failures";
 
 function folder(): string {
@@ -42,17 +43,17 @@ function result(url: string, entries: FeedEntry[] = []): FeedResult {
 function entry(id: string, pdfURL: string | null = null): FeedEntry {
     return { externalId: id, title: id, url: null, pdfURL, authors: "", summary: "", content: "", fullContent: false, publishedAt: null };
 }
-function edit(page: PageRecord, text: string, tabId = "a"): CommitResult {
+function edit(page: PageRecord, text: string): CommitResult {
     const block = page.blocks[page.children[0]];
-    return edits.commitEdit({ pageId: page.id, tabId, batch: 0, blocks: [{ ...block, payload: payload("paragraph", text) }] }, pageHistory(page.id));
+    return edits.commitEdit({ pageId: page.id, batch: 0, blocks: [{ ...block, payload: payload("paragraph", text) }] }, pageHistory(page.id));
 }
 function confirm(action: (token?: string) => CommitResult): CommitResult {
     const preview = action();
     return preview.status === "confirmation" ? action(preview.preview.token) : preview;
 }
 function erase(ids: string[] | null): void {
-    const preview = purge.purge(ids, "purge");
-    if (preview.status === "confirmation") assert.equal(purge.purge(ids, "purge", preview.token).status, "deleted");
+    const preview = purge.purge(ids);
+    if (preview.status === "confirmation") assert.equal(purge.purge(ids, preview.token).status, "deleted");
 }
 function selection(fileId: string): AnnotationInput {
     return { fileId, pageNumber: 1, rectangles: [{ x: 50, y: 690, width: 70, height: 30 }], quote: "", context: "", extractorVersion: "" };
@@ -67,7 +68,7 @@ function files(root: string): { pdf: string; text: string } {
 test("opening B drops A history, cached queries, timers and database connection", async t => {
     let now = Date.UTC(2026, 10, 15);
     const a = open(t, { clock: () => now, timeZone: () => "UTC" });
-    const first = edits.create("event", "A", { schedule_start: now / 1000 + 60 });
+    const first = edits.create(workspaceHistory, "A", { schedule_start: now / 1000 + 60 });
     edit(first, "A");
     timers.set(first.id, "schedule_start", 0, true);
     assert.equal(history.state(pageHistory(first.id)).canUndo, true);
@@ -75,9 +76,9 @@ test("opening B drops A history, cached queries, timers and database connection"
     assert.equal(a.database.open, false);
     assert.equal(a.lock.connection.open, false);
     const b = open(t, { clock: () => now, timeZone: () => "UTC" });
-    const second = edits.create("event", "B", { schedule_start: now / 1000 + 60 });
+    const second = edits.create(workspaceHistory, "B", { schedule_start: now / 1000 + 60 });
     timers.set(second.id, "schedule_start", 0, true);
-    assert.deepEqual(history.state(pageHistory(first.id)), { canUndo: false, redo: [] });
+    assert.deepEqual(history.state(pageHistory(first.id)), { canUndo: false, canRedo: false });
     assert.deepEqual(records.list().items.map(page => page.id), [second.id]);
     assert.throws(() => records.get(first.id), hasFailure("page-unavailable"));
     now += 60000;
@@ -88,20 +89,20 @@ test("opening B drops A history, cached queries, timers and database connection"
 
 test("every public service operation rejects a closed session before validating arguments", async t => {
     open(t);
-    const page = edits.create();
+    const page = edits.create(workspaceHistory);
     session.close();
     const operations: (() => unknown)[] = [
         () => session.getDatabase(), () => session.getNative(), () => session.getPath(), () => session.getInfo(),
         () => records.get(page.id), () => records.list(), () => records.listUpdates({}, []), () => records.readObjects(page.id, []),
         () => records.header(""), () => records.readBatch([]), () => records.sharedUses([]), () => records.backlinks(page.id),
         () => records.resolve({ kind: "page", id: page.id }), () => attributes.definitions(), () => attributes.definition("tags"),
-        () => edits.create(), () => edits.commitEdit({} as never, workspaceHistory), () => edits.previewEdit({} as never), () => edits.syncBlocks("", []),
-        () => edits.trash([], "", workspaceHistory), () => edits.restore([], "", workspaceHistory), () => edits.setDefinition("", null, ""),
+        () => edits.create(workspaceHistory), () => edits.commitEdit({} as never, workspaceHistory), () => edits.previewEdit({} as never), () => edits.syncBlocks("", []),
+        () => edits.trash([], workspaceHistory), () => edits.restore([], workspaceHistory), () => edits.setDefinition("", null),
         () => history.state(pageHistory(page.id)), () => history.apply(pageHistory(page.id), "undo"),
         () => papers.files([]), () => papers.state(page.id), () => papers.read(""), () => papers.get(page.id),
-        () => papers.resources(page.id), () => papers.annotate(page.id, "", "", pageHistory(page.id)), () => papers.getAnnotation(""),
+        () => papers.resources(page.id), () => papers.prepareAnnotation(page.id, ""),
         () => papers.unlockPDF("", ""), () => papers.importFile(""), () => papers.position("", "", {} as never),
-        () => purge.purge(null, ""), () => timers.settings(""), () => timers.notices(), () => timers.check(),
+        () => purge.purge(null), () => timers.settings(""), () => timers.notices(), () => timers.check(),
         () => timers.set("", "", -1, false), () => timers.read("", "", -1), () => timers.recalculateAll(),
         () => feed.getState({}), () => feed.getItem(""), () => feed.saveSource({} as never), () => feed.setSourceStatus("", "pause"),
         () => feed.setRead("", false), () => feed.markAllRead(), () => feed.setPosition("", -1), () => feed.setKeywords([]),
@@ -118,7 +119,7 @@ for (const failed of [false, true]) {
                 resolveRequest = resolve; rejectRequest = reject;
             })
         });
-        const pending = feed.saveSource({ name: "A", url: "https://example.org/a" });
+        const pending = saveFeed({ name: "A", url: "https://example.org/a" });
         session.close();
         open(t);
         if (failed) rejectRequest(new Error("old request"));
@@ -145,7 +146,7 @@ test("closing cancels queued refreshes and ignores in-flight successes and failu
             });
         }
     });
-    for (let i = 0; i < 6; i++) await feed.saveSource({ name: String(i), url: "https://example.org/" + i });
+    for (let i = 0; i < 6; i++) await saveFeed({ name: String(i), url: "https://example.org/" + i });
     delayed = true;
     const pending = feed.refresh();
     assert.equal(releases.length, 4);
@@ -166,11 +167,11 @@ test("a PDF download cannot attach to B after its original session closes", asyn
     let release!: (response: Response) => void, signal: AbortSignal | undefined;
     open(t, {
         loadFeed: request => Promise.resolve(result(request.url, [entry("A", "https://example.org/a.pdf")])),
-        fetchPDF: async (_input, init) => {
+        fetchAttachment: async (_input, init) => {
             signal = init?.signal ?? undefined; return new Promise(resolve => release = resolve);
         }
     });
-    await feed.saveSource({ name: "A", url: "https://example.org/a" });
+    await saveFeed({ name: "A", url: "https://example.org/a" });
     const id = feed.getState({}).items[0].id;
     feed.importItem(id);
     const pending = feed.fetchPDF(id);
@@ -189,7 +190,7 @@ test("all write paths publish after committing, including direct paper and subsc
     const workspace = open(t, {
         clock: () => now, timeZone: () => "UTC",
         loadFeed: request => Promise.resolve(result(request.url, [entry("A", "https://example.org/a.pdf")])),
-        fetchPDF: async () => new Response(knownCoordinatePdf())
+        fetchAttachment: async () => new Response(knownCoordinatePdf())
     });
     const paths = files(workspace.info.path), observed: events.Event[] = [];
     t.after(events.subscribe(event => {
@@ -202,32 +203,32 @@ test("all write paths publish after committing, including direct paper and subsc
         assert.ok(observed.slice(start).some(event => event.type === "knowledge"), name);
         if (feedChange) assert.ok(observed.slice(start).some(event => event.type === "feed"), name + " feed event");
     };
-    const page = edits.create("event", "A", { schedule_start: now / 1000 + 60 });
-    await check("create", () => edits.create("editable", "B"));
+    const page = edits.create(workspaceHistory, "A", { schedule_start: now / 1000 + 60 });
+    await check("create", () => edits.create(workspaceHistory, "B"));
     await check("edit", () => edit(page, "A"));
     await check("undo", () => history.apply(pageHistory(page.id), "undo"));
     await check("redo", () => history.apply(pageHistory(page.id), "redo"));
-    await check("place", () => edits.place({ position: { pageId: page.id, containerId: page.id, index: 0, blockId: page.children[0] }, action: "duplicate", tabId: "place" }, pageHistory(page.id)));
+    await check("place", () => edits.place({ position: { pageId: page.id, containerId: page.id, index: 0, blockId: page.children[0] }, action: "duplicate" }, pageHistory(page.id)));
     const definition = { id: "custom:" + randomUUID(), name: "A", type: "files" as const, metadata: {} };
-    await check("definition", () => edits.setDefinition(definition.id, definition, "definition"));
-    await check("files", () => papers.attachFiles([paths.text], page.id, definition.id, { tabId: "files", source: pageHistory(page.id) }));
-    await check("deleteBlock", () => confirm(token => edits.deleteBlock({ pageId: page.id, blockId: page.children[0], tabId: "delete" }, pageHistory(page.id), token)));
-    await check("trash", () => confirm(token => edits.trash([page.id], "trash", workspaceHistory, token)));
-    await check("restore", () => edits.restore([page.id], "restore", workspaceHistory));
+    await check("definition", () => edits.setDefinition(definition.id, definition));
+    await check("files", () => papers.attachFiles([paths.text], page.id, definition.id, pageHistory(page.id)));
+    await check("deleteBlock", () => confirm(token => edits.deleteBlock({ pageId: page.id, blockId: page.children[0] }, pageHistory(page.id), token)));
+    await check("trash", () => confirm(token => edits.trash([page.id], workspaceHistory, token)));
+    await check("restore", () => edits.restore([page.id], workspaceHistory));
     let paperId = "";
     await check("import PDF", () => {
         paperId = papers.importFile(paths.pdf).pageId;
     });
-    await check("add PDF", () => papers.importFile(paths.pdf, paperId, { tabId: "files", source: pageHistory(paperId) }));
+    await check("add PDF", () => papers.importFile(paths.pdf, paperId, pageHistory(paperId)));
     const fileId = (await papers.resources(paperId)).files[0].id;
     let annotation = "";
     await check("highlight", async () => {
-        annotation = await papers.annotate(paperId, selection(fileId), "annotations", pageHistory(paperId));
+        annotation = await annotate(paperId, selection(fileId), pageHistory(paperId));
     });
-    await check("color", () => papers.changeAnnotation(annotation, "green", "annotations", pageHistory(paperId)));
-    await check("reading position", () => papers.position(paperId, fileId, { page: 1, rotation: 0, left: 0, top: 0, scale: 1 }, "reader"));
-    await check("delete highlight", () => confirm(token => papers.deleteAnnotation(annotation, "annotations", pageHistory(paperId), token)));
-    await check("restore highlight", () => edits.restore([annotation], "restore", workspaceHistory));
+    await check("color", () => papers.changeAnnotation(annotation, "green", pageHistory(paperId)));
+    await check("reading position", () => papers.position(paperId, fileId, { page: 1, rotation: 0, left: 0, top: 0, scale: 1 }));
+    await check("delete highlight", () => confirm(token => papers.deleteAnnotation(annotation, pageHistory(paperId), token)));
+    await check("restore highlight", () => edits.restore([annotation], workspaceHistory));
     edits.cacheAttributes(annotation, { annotation_extractor: "old" });
     await check("source-text cache", () => papers.get(annotation));
     await check("reminder setting", () => timers.set(page.id, "schedule_start", 0, true));
@@ -236,17 +237,16 @@ test("all write paths publish after committing, including direct paper and subsc
     assert.ok(observed.some(event => event.type === "reminder"));
     await check("read notice", () => timers.read(page.id, "schedule_start", 0));
     await check("time-zone recalculation", () => timers.recalculateAll());
-    await check("rebuild links", () => edits.rebuildLinks());
-    confirm(token => edits.trash([page.id], "trash", workspaceHistory, token));
+    confirm(token => edits.trash([page.id], workspaceHistory, token));
     await check("purge", () => erase([page.id]), true);
-    const recycled = edits.create();
-    confirm(token => edits.trash([recycled.id], "trash", workspaceHistory, token));
+    const recycled = edits.create(workspaceHistory);
+    confirm(token => edits.trash([recycled.id], workspaceHistory, token));
     await check("empty recycle bin", () => erase(null), true);
     let source = "";
     await check("save source", async () => {
-        source = await feed.saveSource({ name: "A", url: "https://example.org/feed" });
+        source = await saveFeed({ name: "A", url: "https://example.org/feed" });
     }, true);
-    await check("edit source", () => feed.saveSource({ id: source, name: "B", url: "https://example.org/feed" }), true);
+    await check("edit source", () => saveFeed({ id: source, name: "B", url: "https://example.org/feed" }), true);
     await check("source status", () => feed.setSourceStatus(source, "pause"), true);
     feed.setSourceStatus(source, "resume");
     await check("refresh results", () => feed.refresh(source), true);
@@ -257,18 +257,24 @@ test("all write paths publish after committing, including direct paper and subsc
     await check("keywords", () => feed.setKeywords(["A"]), true);
     let imported = "";
     await check("import item", () => {
-        imported = feed.importItem(item.id);
+        imported = feed.importItem(item.id).pageId;
     }, true);
     const creation = observed.filter(event => event.type === "knowledge" && event.change.kinds?.[imported] === "paper");
     assert.ok(creation.length > 0, "subscription import uses the same page-kind expansion");
-    await check("download PDF", () => feed.fetchPDF(item.id), true);
+    const beforeDownload = observed.length;
+    const file = await feed.fetchPDF(item.id);
+    assert.equal(papers.hasPDF(imported), false);
+    assert.ok(observed.slice(beforeDownload).some(event => event.type === "feed"));
+    assert.ok(observed.slice(beforeDownload).every(event => event.type !== "knowledge"));
+    assert.ok(file);
+    await check("attach downloaded PDF", () => papers.attachFile(file.pageId, "paper_files", file.fileId, workspaceHistory));
     assert.equal(papers.hasPDF(imported), true);
 });
 
 test("one shared-block change expands summaries for both pages and reaches every subscriber", t => {
     open(t);
-    const a = edits.create(), b = edits.create();
-    edits.commitEdit({ pageId: b.id, tabId: "b", batch: 0, blocks: [], pageChildren: [a.children[0]] }, pageHistory(b.id));
+    const a = edits.create(workspaceHistory), b = edits.create(workspaceHistory);
+    edits.commitEdit({ pageId: b.id, batch: 0, blocks: [], pageChildren: [a.children[0]] }, pageHistory(b.id));
     const first: events.Event[] = [], second: events.Event[] = [];
     t.after(events.subscribe(event => first.push(event)));
     t.after(events.subscribe(event => second.push(event)));
@@ -284,11 +290,10 @@ test("one shared-block change expands summaries for both pages and reaches every
 
 test("create rules apply to service calls and rolled-back writes publish no events or history", t => {
     open(t);
-    assert.throws(() => edits.create("annotation"), hasFailure("annotation-selection-required"));
-    assert.throws(() => edits.create("editable", "", { modified_at: 0 }), hasFailure("page-create-readonly"));
-    const page = edits.create(), changed: events.Event[] = [];
+    assert.throws(() => edits.create(workspaceHistory, "", { modified_at: 0 }), hasFailure("page-create-readonly"));
+    const page = edits.createPage(), changed: events.Event[] = [];
     t.after(events.subscribe(event => changed.push(event)));
-    assert.throws(() => commit.run({ sourceTab: "outer" }, () => {
+    assert.throws(() => commit.run({}, () => {
         edit(page, "rollback"); throw new Error("rollback");
     }), /rollback/);
     assert.equal(changed.length, 0);
@@ -305,11 +310,11 @@ test("closing and reopening owns one fifteen-second scheduler and handles only t
     }));
     const intervals = t.mock.method(globalThis, "setInterval");
     open(t, { clock: () => now, timeZone: () => "UTC" });
-    const a = edits.create("event", "A", { schedule_start: now / 1000 + 15 });
+    const a = edits.create(workspaceHistory, "A", { schedule_start: now / 1000 + 15 });
     timers.set(a.id, "schedule_start", 0, true);
     session.close();
     open(t, { clock: () => now, timeZone: () => "UTC" });
-    const b = edits.create("event", "B", { schedule_start: now / 1000 + 15 });
+    const b = edits.create(workspaceHistory, "B", { schedule_start: now / 1000 + 15 });
     timers.set(b.id, "schedule_start", 0, true);
     assert.equal(intervals.mock.callCount(), 2);
     assert.ok(intervals.mock.calls.every(call => call.arguments[1] === 15000));
@@ -326,7 +331,7 @@ test("closing and reopening owns one fifteen-second scheduler and handles only t
 
 test("IPC can register again for a recreated window without replacing the workspace session", async t => {
     open(t);
-    const page = edits.create("editable", "A");
+    const page = edits.create(workspaceHistory, "A");
     const create = (): { window: BrowserWindow; handlers: Map<string, (event: unknown, ...args: unknown[]) => Promise<unknown>>; frame: object } => {
         const window = new EventEmitter(), frame = {}, handlers = new Map();
         Object.assign(window, { webContents: Object.assign(new EventEmitter(), { mainFrame: frame, isDestroyed: () => false, ipc: { handle: (name: string, handler: unknown) => handlers.set(name, handler), on: () => { } } }) });
@@ -360,6 +365,10 @@ test("service architecture has no singleton classes, connection WeakMaps, Electr
             if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
                 const imported = node.moduleSpecifier.text;
                 if (/^(knowledge|feed|startup)\//.test(file.replaceAll("\\", "/")) && !file.endsWith("ipc.ts")) assert.notEqual(imported, "electron", file);
+                if (file.replaceAll("\\", "/").startsWith("storage/") && imported.startsWith(".")) {
+                    const target = relative(root, resolve(dirname(absolute), imported)).replaceAll("\\", "/");
+                    assert.ok(target.startsWith("main/storage/") || target.startsWith("shared/"), file + " imports " + imported);
+                }
                 const valueImport = !node.importClause?.isTypeOnly && (!node.importClause?.namedBindings || !ts.isNamedImports(node.importClause.namedBindings) || node.importClause.namedBindings.elements.some(element => !element.isTypeOnly));
                 if (valueImport && imported.startsWith(".")) dependencies.push(resolve(dirname(absolute), imported) + ".ts");
             }
@@ -385,7 +394,7 @@ test("service architecture has no singleton classes, connection WeakMaps, Electr
 test("annotation parsing returning after close leaves B unchanged and reports no stale error", async t => {
     const a = open(t), paths = files(a.info.path), paper = papers.importFile(paths.pdf).pageId;
     const file = (await papers.resources(paper)).files[0].id;
-    const pending = papers.annotate(paper, selection(file), "annotations", pageHistory(paper));
+    const pending = annotate(paper, selection(file), pageHistory(paper));
     session.close();
     open(t);
     assert.equal(await pending, "");

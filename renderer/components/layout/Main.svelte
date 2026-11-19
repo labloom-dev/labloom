@@ -1,7 +1,5 @@
 <main>
-    <Tab.Root initialTabs={[
-        { id: getTabID(), title: "我的花园", type: "overview" }
-    ]} />
+    <TabRoot />
 </main>
 
 
@@ -18,6 +16,5 @@
 
 
 <script lang="ts">
-    import { getTabID } from "../Tab/api";
-    import * as Tab from "../Tab";
+    import TabRoot from "../Tab/Root.svelte";
 </script>

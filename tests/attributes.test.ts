@@ -108,7 +108,7 @@ test("every attribute type has display and search text, with independent builtin
 test("each attribute type round-trips its canonical empty or required default", () => {
     const cases: Record<AttributeType, [AttributeValue, string | number | null]> = {
         string: ["", ""], url: ["", ""], number: [null, null], minute: [null, null], hour: [null, null], day: [null, null], month: [null, null], year: [null, null],
-        select: [null, null], "page-link": [null, null], multiselect: [[], "[]"], "page-links": [[], "[]"], file: [null, null], files: [[], "[]"], recurrence: [null, null],
+        select: [null, null], status: [null, null], "page-link": [null, null], multiselect: [[], "[]"], "page-links": [[], "[]"], file: [null, null], files: [[], "[]"], recurrence: [null, null],
         json: [null, "null"], boolean: [false, 0]
     };
     for (const type of attributeTypes) {

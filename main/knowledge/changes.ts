@@ -132,7 +132,7 @@ export class EditChanges {
     setValue(pageId: string, id: string, value: ValueRow | null, def: AttributeDefinition): void {
         const before = this.readValue(pageId, id);
         if (same(before, value)) return;
-        if (isTimeType(def.type) || ["deleted", "task_status", "feed_url", "feed_status", "feed_refresh"].includes(id)) {
+        if (isTimeType(def.type) || def.type === "status" || ["deleted", "feed_url", "feed_status", "feed_refresh"].includes(id)) {
             const fields = this.schedules.get(pageId) ?? new Set<string>();
             fields.add(id); this.schedules.set(pageId, fields);
         }

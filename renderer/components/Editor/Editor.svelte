@@ -114,7 +114,8 @@
     import { type Target, type ContentBlockKind } from "../../../shared/types/content";
     import { payload } from "../../../shared/content/blocks";
     import { kinds } from "../../../shared/content/block-labels";
-    import { type PageSession, perform } from "../Knowledge/state.svelte";
+    import { type PageSession } from "../Knowledge/page-session.svelte";
+    import { perform } from "../Knowledge/feedback.svelte";
     import { readingTabs } from "../Tab/activity.svelte";
     import { tabState } from "../Tab/state.svelte";
     import ReferenceView from "../Knowledge/ReferenceView.svelte";
@@ -125,7 +126,8 @@
     import { pasteBlocks, readClipboard, writeClipboard, type BlockClipboard } from "./clipboard";
     import { borders, borderPlugin } from "./sync-border";
     import { inverse, patchDocument, replay } from "./reconcile";
-    let { session, tabId, anchorId }: { session: PageSession; tabId: string; anchorId?: string } = $props();
+    import { anchors } from "../Tab/anchors";
+    let { session, tabId, pageAnchor = false }: { session: PageSession; tabId: string; pageAnchor?: boolean } = $props();
     let root: HTMLDivElement, host: HTMLDivElement, editor = $state.raw<Editor | null>(null);
     let contextMenu = $state<HTMLDivElement>();
     let workspaceId = "", pasting = $state(false);
@@ -219,8 +221,8 @@
             const planned = pasteBlocks(state, choice.clipboard, current ?? undefined);
             pendingPaste = null;
             let saved = false;
-            await session.action(async token => {
-                const result = await window.api.pages.commitEdit({ ...planned.edit, pageId: session.state.page!.id, tabId, batch: 0, ...(synced ? { sync: choice.clipboard.ids } : {}) }, session.source, token);
+            await session.action(async (token, writeId) => {
+                const result = await window.api.pages.commitEdit({ ...planned.edit, pageId: session.state.page!.id, batch: 0, ...(synced ? { sync: choice.clipboard.ids } : {}) }, session.source, token, writeId);
                 saved = result.status === "saved";
                 return result;
             });
@@ -265,7 +267,7 @@
         const at = instance.state.doc.resolve(loc.pos), index = at.index() - 1;
         if (index + direction < 0 || index + direction >= at.parent.childCount - 1) return;
         const position = { pageId: session.state.page!.id, containerId: at.depth ? at.parent.attrs.blockId as string : session.state.page!.id, index, blockId: loc.node.attrs.blockId as string };
-        void perform(() => session.action(token => window.api.pages.place({ position, action: direction < 0 ? "move-up" : "move-down", tabId }, session.source, token)));
+        void perform(() => session.action((token, writeId) => window.api.pages.place({ position, action: direction < 0 ? "move-up" : "move-down" }, session.source, token, writeId)));
     }
     function placeholder(): void {
         if (!editor || !host) return;
@@ -366,7 +368,7 @@
         if (!loc || !instance) return;
         const { node, pos } = loc;
         if (action === "delete") {
-            void perform(() => session.action(token => window.api.pages.deleteBlock({ pageId: session.state.page!.id, tabId, blockId: node.attrs.blockId }, session.source, token)));
+            void perform(() => session.action((token, writeId) => window.api.pages.deleteBlock({ pageId: session.state.page!.id, blockId: node.attrs.blockId }, session.source, token, writeId)));
             return;
         }
         if (action === "row" || action === "column") {
@@ -400,12 +402,14 @@
         const history = History.extend({
             addProseMirrorPlugins: () => [], addCommands: () => ({
                 undo: () => ({ dispatch }) => {
-                    if (dispatch) void session.undo("undo");
-                    return session.state.dirty || session.state.history.canUndo;
+                    const available = session.state.dirty || session.state.history.canUndo;
+                    if (dispatch && available) void session.undo("undo");
+                    return available;
                 },
                 redo: () => ({ dispatch }) => {
-                    if (dispatch) void session.undo("redo");
-                    return !!session.state.history.redo.length;
+                    const available = session.state.history.canRedo && !session.state.dirty;
+                    if (dispatch && available) void session.undo("redo");
+                    return available;
                 }
             })
         });
@@ -588,8 +592,10 @@
         if (instance && instance.isEditable !== enabled) untrack(() => instance.setEditable(enabled, false));
     });
     $effect(() => {
-        if (editor && anchorId) {
-            const loc = indexDoc(editor.state.doc).get(anchorId)?.[0];
+        const request = pageAnchor && anchors.get(tabId);
+        if (editor && request) {
+            anchors.delete(tabId);
+            const loc = indexDoc(editor.state.doc).get(request.blockId)?.[0];
             if (loc) (editor.view.nodeDOM(loc.pos) as HTMLElement | null)?.scrollIntoView({ block: "center" });
         }
     });

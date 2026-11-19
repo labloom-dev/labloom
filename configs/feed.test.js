@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { mkdirSync, mkdtempSync, readFileSync, existsSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, existsSync, rmSync, writeFileSync } from "node:fs";
 import { EventEmitter } from "node:events";
 import { createServer } from "node:http";
+import { Readable } from "node:stream";
+import { setTimeout as delay } from "node:timers/promises";
 import { runInNewContext } from "node:vm";
 import { createRequire } from "node:module";
 import { resolve, join } from "node:path";
@@ -23,7 +25,7 @@ const require = createRequire(import.meta.url);
 const hasFailure = (...kinds) => error => kinds.includes(error?.failure?.kind);
 const {
     session, createWorkspace, openWorkspace, openTest, feedServices, knowledgeServices, paperServices, purgeServices,
-    watchFeed, events, importFeedPDF, parseFeed, parseJSONFeed, fetchFeed, discoverFeeds, retryAfter, FeedError,
+    watchFeed, events, attachments, parseFeed, parseJSONFeed, fetchFeed, discoverFeeds, retryAfter, FeedError,
     arxivURL, feedURL, normalizeURL
 } = require(join(output, "modules.cjs"));
 after(() => session.close());
@@ -674,8 +676,8 @@ test("a few sources are fetched at a time, and those waiting their turn already 
         assert.ok(!started.includes("/6"), "the source under test is definitely queued");
         if (action === "pause") service.setSourceStatus(ids[6], "pause");
         else if (action === "delete") {
-            const result = service.knowledge.trash([ids[6]], "queue-test", { kind: "workspace" });
-            if (result.status === "confirmation") service.knowledge.trash([ids[6]], "queue-test", { kind: "workspace" }, result.preview.token);
+            const result = service.knowledge.trash([ids[6]], { kind: "workspace" });
+            if (result.status === "confirmation") service.knowledge.trash([ids[6]], { kind: "workspace" }, result.preview.token);
         }
         else service.knowledge.attributes.write(ids[6], { feed_url: "https://example.org/changed" });
         while (releases.length) {
@@ -803,11 +805,11 @@ test("an item becomes a real paper and only replaces a recycled or missing paper
     assert.equal(knowledge.get(current).attributes.source_snapshot.feedURL, "https://rss.arxiv.org/atom/cs.LG");
     assert.equal(service.importItem(item.id), current);
     for (const state of ["recycled", "missing"]) {
-        const trash = knowledge.trash([current], "trash", { kind: "workspace" });
-        knowledge.trash([current], "trash", { kind: "workspace" }, trash.preview.token);
+        const trash = knowledge.trash([current], { kind: "workspace" });
+        knowledge.trash([current], { kind: "workspace" }, trash.preview.token);
         if (state === "missing") {
-            const preview = purge.purge([current], "purge");
-            purge.purge([current], "purge", preview.token);
+            const preview = purge.purge([current]);
+            purge.purge([current], preview.token);
         }
         assert.equal(service.getItem(item.id).paperState, state);
         assert.throws(() => service.importItem(item.id), hasFailure("feed-reimport-confirmation"));
@@ -854,60 +856,165 @@ test("JSON Feed PDF attachments are selected by MIME type without guessing from 
     assert.deepEqual(entries.map(item => item.pdfURL), ["https://example.org/paper.pdf", null, null]);
 });
 
+function downloadWorkspace(t) {
+    const ws = createWorkspace(mkdtempSync(join(output, "download-")));
+    t.after(() => session.close());
+    return { db: ws.database, directory: join(ws.info.path, "attachments"), root: ws.info.path };
+}
+
 async function pdfServer(t) {
-    const pdf = Buffer.from("%PDF-1.4\nlocal test\n%%EOF");
-    const calls = new Map();
+    const pdf = Buffer.from("%PDF-1.4\nlocal test\n%%EOF"), zip = Buffer.from("504b0506" + "00".repeat(18), "hex");
+    const calls = new Map(), accept = new Map(), continueLarge = Promise.withResolvers();
+    const mb = 1024 * 1024, largeSize = pdf.length + 51 * mb;
     let retry = false;
     const server = createServer((request, response) => {
         const path = request.url;
         calls.set(path, (calls.get(path) ?? 0) + 1);
-        if (path === "/404" || (path === "/retry" && !retry)) {
-            response.writeHead(404).end();
+        accept.set(path, request.headers.accept);
+        if (path === "/404" || (path === "/retry" && !retry)) response.writeHead(404).end();
+        else if (path === "/html") response.writeHead(200, { "Content-Type": "text/html" }).end("<html>Sign in</html>");
+        else if (path === "/prefixed") response.writeHead(200, { "Content-Type": "application/pdf" }).end(Buffer.concat([Buffer.from("HTML before PDF"), pdf]));
+        else if (path === "/interrupted") {
+            response.writeHead(200, { "Content-Length": 1000 });
+            response.write("%PDF-");
+            setTimeout(() => response.destroy(), 20);
         }
-        else if (path === "/html") response.end("<!DOCTYPE html><html>arXiv unavailable</html>");
-        else if (path === "/prefixed") response.end(Buffer.concat([Buffer.from("HTML before PDF"), pdf]));
-        else if (path === "/timeout") { /* Wait until the client aborts. */ }
-        else if (path === "/body-timeout") {
- response.writeHead(200); response.write("%PDF-");
-}
-        else if (path === "/large") response.end(Buffer.concat([pdf, Buffer.alloc(1024)]));
-        else if (path === "/large-stream") {
- response.write(pdf); response.end(Buffer.alloc(1024));
-}
+        else if (path === "/timeout") { /* No headers. */ }
+        else if (path === "/body-timeout") response.write("%PDF-");
+        else if (path === "/headers-only") response.writeHead(200).flushHeaders();
+        else if (path === "/slow") {
+            Readable.from((async function* () {
+                for (const part of ["%", "P", "D", "F", "-", "1.4", "\n%%EOF"]) {
+                    yield Buffer.from(part);
+                    await delay(75);
+                }
+            })()).pipe(response);
+        }
+        else if (path === "/large" || path === "/large-stream") {
+            if (path === "/large") response.setHeader("content-length", largeSize);
+            const chunk = Buffer.alloc(mb, 42);
+            Readable.from((async function* () {
+                yield pdf;
+                yield chunk;
+                if (path === "/large-stream") await continueLarge.promise;
+                for (let i = 1; i < 51; i++) yield chunk;
+            })()).pipe(response);
+        }
+        else if (path === "/archive.txt") response.writeHead(200, {
+            "Content-Disposition": "attachment; filename=\"fallback.zip\"; filename*=UTF-8''%E7%A0%94%E7%A9%B6%20data.zip",
+            "Content-Type": "application/zip; version=1"
+        }).end(zip);
+        else if (path === "/malformed") response.writeHead(200, {
+            "Content-Disposition": "attachment; filename=\"../supplement;1.ZIP\"; filename*=UTF-8''bad%ZZ"
+        }).end(zip);
+        else if (path === "/fig%201.png") response.end(Buffer.from("89504e470d0a1a0a", "hex"));
+        else if (path === "/") response.end();
         else response.end(pdf);
     });
     t.after(() => {
- server.closeAllConnections(); return new Promise(resolve => server.close(resolve));
-});
+        continueLarge.resolve();
+        server.closeAllConnections();
+        return new Promise(resolve => server.close(resolve));
+    });
     await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
-    return { url: `http://127.0.0.1:${server.address().port}`, pdf, calls, recover: () => retry = true };
+    return { url: "http://127.0.0.1:" + server.address().port, pdf, zip, calls, accept, largeSize, continueLarge, recover: () => retry = true };
 }
 
-for (const address of ["/ok", "/404", "/html", "/prefixed", "/timeout", "/body-timeout", "/large", "/large-stream", "/retry"]) {
-    test(`PDF download through a local server: ${address}`, async t => {
-        const server = await pdfServer(t);
-        const temporary = [];
-        let saved;
-        const download = () => importFeedPDF(server.url + address, file => {
-            temporary.push(file);
-            saved = readFileSync(file);
-        }, fetch, { maxBytes: 128, timeoutMs: 100 });
-        if (address === "/ok") {
-            await download();
-            assert.deepEqual(saved, server.pdf);
+function assertClean({ db, directory }) {
+    assert.deepEqual(readdirSync(directory), []); // Includes the temporary staging files.
+    assert.equal(db.prepare("SELECT count(*) FROM attachments").pluck().get(), 0);
+}
+
+for (const [address, error] of [
+    ["/ok"], ["/404", "download-http"], ["/html", "pdf-invalid-response"], ["/prefixed", "pdf-invalid-response"],
+    ["/interrupted", "download-failed"], ["/timeout", "download-timeout"], ["/headers-only", "download-timeout"], ["/body-timeout", "download-timeout"], ["/retry", "download-http"]
+]) {
+    test("required PDF over HTTP: " + address, async t => {
+        const ws = downloadWorkspace(t), server = await pdfServer(t);
+        const download = () => attachments.download(server.url + address, { expectedType: "application/pdf", timeoutMs: 250 });
+        if (error) {
+            await assert.rejects(download(), hasFailure(error));
+            assertClean(ws);
+            if (address !== "/retry") return;
+            server.recover();
         }
-        else {
-            await assert.rejects(download());
-            assert.equal(saved, undefined);
-            if (address === "/retry") {
-                server.recover();
-                await download();
-                assert.deepEqual(saved, server.pdf);
-            }
-        }
-        assert.ok(temporary.every(file => !existsSync(file)));
+        const file = await download();
+        assert.equal(server.accept.get(address), "application/pdf");
+        assert.equal(paperServices().files([file])[0].mediaType, "application/pdf");
+        assert.deepEqual(Buffer.from(paperServices().read(file)), server.pdf);
+        assert.equal(readdirSync(ws.directory).length, 1);
     });
 }
+
+test("steady network progress can take longer than the inactivity timeout", async t => {
+    downloadWorkspace(t);
+    const server = await pdfServer(t), start = performance.now(), timeoutMs = 250;
+    const id = await attachments.download(server.url + "/slow", { expectedType: "application/pdf", timeoutMs });
+    assert.ok(performance.now() - start > timeoutMs);
+    assert.equal(Buffer.from(paperServices().read(id)).toString(), "%PDF-1.4\n%%EOF");
+});
+
+async function stagedBytes(directory) {
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+        const staged = readdirSync(directory).find(name => name.endsWith(".part"));
+        const bytes = staged ? statSync(join(directory, staged)).size : 0;
+        if (bytes) return bytes;
+        await delay(10);
+    }
+    throw new Error("No staged bytes while the HTTP response was held open");
+}
+
+for (const address of ["/large", "/large-stream"]) {
+    test("download above 50 MiB with and without Content-Length: " + address, async t => {
+        const { directory, db } = downloadWorkspace(t), server = await pdfServer(t);
+        const pending = attachments.download(server.url + address, { expectedType: "application/pdf" });
+        if (address === "/large-stream") {
+            try {
+                assert.ok(await stagedBytes(directory) < server.largeSize);
+                assert.equal(db.prepare("SELECT count(*) FROM attachments").pluck().get(), 0);
+            }
+            finally {
+                server.continueLarge.resolve();
+            }
+        }
+        const id = await pending;
+        const row = db.prepare("SELECT stored_name, size FROM attachments WHERE id=?").get(id);
+        assert.equal(row.size, server.largeSize);
+        assert.equal(statSync(join(directory, row.stored_name)).size, server.largeSize);
+        assert.deepEqual(readdirSync(directory), [row.stored_name]);
+    });
+}
+
+test("closing and reopening a workspace during transfer clears the staged bytes and returns no attachment", async t => {
+    const ws = downloadWorkspace(t), server = await pdfServer(t);
+    const pending = attachments.download(server.url + "/large-stream");
+    try {
+        await stagedBytes(ws.directory);
+        session.close();
+        const reopened = openWorkspace(ws.root);
+        assert.equal(await pending, null);
+        assertClean({ db: reopened.database, directory: ws.directory });
+    }
+    finally {
+        server.continueLarge.resolve();
+    }
+});
+
+test("generic downloads honor response metadata and fall back to the URL and a generic name", async t => {
+    const ws = downloadWorkspace(t), server = await pdfServer(t);
+    const fetchFile = async path => paperServices().files([await attachments.download(server.url + path)])[0];
+    await assert.rejects(attachments.download(server.url + "/archive.txt", { expectedType: "image/png" }), hasFailure("download-type-mismatch"));
+    assertClean(ws);
+    const archive = await fetchFile("/archive.txt");
+    assert.equal(server.accept.get("/archive.txt"), "*/*");
+    assert.deepEqual([archive.originalName, archive.mediaType], ["研究 data.zip", "application/zip"]);
+    assert.deepEqual(Buffer.from(paperServices().read(archive.id)), server.zip);
+    const fallback = await fetchFile("/malformed"), url = await fetchFile("/fig%201.png"), empty = await fetchFile("/");
+    assert.deepEqual([fallback.originalName, fallback.mediaType], ["supplement;1.ZIP", "application/zip"]);
+    assert.deepEqual([url.originalName, url.mediaType], ["fig 1.png", "image/png"]);
+    assert.deepEqual([empty.originalName, empty.mediaType, empty.size], ["attachment", "application/octet-stream", 0]);
+});
 
 test("an imported paper can download its preserved PDF address after a later refresh", async t => {
     const server = await pdfServer(t);
@@ -916,7 +1023,9 @@ test("an imported paper can download its preserved PDF address after a later ref
     await service.saveSource({ name: "PDF", url: server.url + "/feed" });
     const [item] = service.getState({}).items;
     const page = service.importItem(item.id);
-    await service.fetchPDF(item.id);
+    const downloaded = await service.fetchPDF(item.id);
+    assert.equal(paperServices().hasPDF(page), false);
+    paperServices().attachFile(page, "paper_files", downloaded.fileId, { kind: "workspace" });
     assert.equal(paperServices().hasPDF(page), true);
     withAddress = false;
     await service.refresh();
@@ -924,12 +1033,9 @@ test("an imported paper can download its preserved PDF address after a later ref
     assert.equal(service.getItem(item.id).pdfStatus, "saved");
 });
 
-test("temporary PDF files are removed when the paper module refuses an attachment", async t => {
-    const server = await pdfServer(t);
-    let temporary;
-    await assert.rejects(importFeedPDF(server.url + "/ok", file => {
-        temporary = file;
-        throw new Error("Paper was deleted");
-    }), /Paper was deleted/);
-    assert.equal(existsSync(temporary), false);
+test("a failed attachment insert cleans up the staged and published file", async t => {
+    const ws = downloadWorkspace(t), server = await pdfServer(t);
+    ws.db.exec("CREATE TEMP TRIGGER refuse_file BEFORE INSERT ON attachments BEGIN SELECT RAISE(ABORT,'cannot store'); END");
+    await assert.rejects(attachments.download(server.url + "/ok", { expectedType: "application/pdf" }), /cannot store/);
+    assertClean(ws);
 });

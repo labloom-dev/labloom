@@ -192,7 +192,7 @@ for (let sample = 0; sample <= (process.env.LABLOOM_COMPACT_UI_ONLY ? 0 : 20); s
     if (preview.status !== "confirmation") throw new Error("Missing confirmation");
     const start = performance.now(); purge.purge(ids, "benchmark", preview.token); if (sample) deletion.push(performance.now() - start);
 }
-const group = randomUUID(), tabs = Array.from({ length: 20 }, () => ({ id: randomUUID(), type: "library", title: "知识库" }));
+const group = randomUUID(), tabs = Array.from({ length: 20 }, () => ({ id: randomUUID(), view: { type: "library", params: { scope: "all", sort: "modified", tags: [], filters: [] } } }));
 f.sql.prepare("UPDATE workspace_meta SET settings=?").run(JSON.stringify({ tabs: { groups: [{ id: group, tabs, activeTabId: tabs[0].id }], focusedGroupId: group, layout: { type: "group", groupId: group } } }));
 session.close();
 void app.whenReady().then(async () => {

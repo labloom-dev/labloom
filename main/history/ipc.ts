@@ -7,7 +7,7 @@ import * as events from "../knowledge/events";
 
 type Args<Key extends keyof typeof historyChannels> = Parameters<HistoryAPI[Key]>;
 
-export const routes = {
+const routes = {
     state: route(typia.createAssert<Args<"state">>(invalid), history.state),
     apply: route(typia.createAssert<Args<"apply">>(invalid), history.apply)
 } satisfies Routes<HistoryAPI>;

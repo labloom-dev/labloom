@@ -6,12 +6,13 @@ import { LabloomError, toFailureInfo, type FailureInfo } from "../../shared/fail
 import { type AttributeValue } from "../../shared/types/attributes";
 import {
     feedIntervals, feedPageSize,
-    type FeedEntry, type FeedItemDetail, type FeedPaperState, type FeedQuery, type FeedSource, type FeedSourceAction, type FeedSourceInput, type FeedState
+    type FeedDownload, type FeedImport, type FeedEntry, type FeedItemDetail, type FeedPaperState, type FeedQuery, type FeedSource, type FeedSourceAction, type FeedSourceInput, type FeedState
 } from "../../shared/types/feed";
 import { feedURL, normalizeURL } from "../../shared/utils/feed";
 import * as commit from "../knowledge/commit";
 import * as edits from "../knowledge/edits";
 import * as events from "../knowledge/events";
+import * as attachments from "../attachments/service";
 import * as papers from "../knowledge/papers";
 import * as knowledge from "../knowledge/records";
 import { feedItems } from "../storage/tables";
@@ -23,10 +24,10 @@ import { FeedError, type FeedRequest, type FeedResult } from "./parser";
 export type FeedLoader = (request: FeedRequest) => Promise<FeedResult>;
 
 type SourceRow = Omit<FeedSource, "unreadCount" | "refreshing"> & { failures: number; etag: string | null; lastModified: string | null; deleted: boolean };
-type Shared = { pending: Map<string, Promise<void>>; pdfDownloads: Map<string, Promise<void>>; pdfFailures: Map<string, FailureInfo>; active: number; waiting: (() => void)[] };
+type Shared = { resolutions: Map<string, { input: FeedSourceInput; feed: FeedResult | null }>; pending: Map<string, Promise<void>>; pdfDownloads: Map<string, Promise<FeedDownload | null>>; pdfFailures: Map<string, FailureInfo>; active: number; waiting: (() => void)[] };
 let state: Shared = newState();
 function newState(): Shared {
-    return { pending: new Map(), pdfDownloads: new Map(), pdfFailures: new Map(), active: 0, waiting: [] };
+    return { resolutions: new Map(), pending: new Map(), pdfDownloads: new Map(), pdfFailures: new Map(), active: 0, waiting: [] };
 }
 export function release(): void {
     for (const resume of state.waiting.splice(0)) resume();
@@ -40,7 +41,7 @@ const concurrency = 4;
 const abstractLimit = 4000;
 
 /** Identifies an entry that has neither an identifier nor an address of its own. */
-export function entryFingerprint(entry: Pick<FeedEntry, "title" | "authors" | "publishedAt">): string {
+function entryFingerprint(entry: Pick<FeedEntry, "title" | "authors" | "publishedAt">): string {
     const date = entry.publishedAt === null ? null : new Date(entry.publishedAt).toISOString();
     return createHash("sha256").update(JSON.stringify([entry.title, entry.authors, date])).digest("hex");
 }
@@ -110,56 +111,75 @@ export function getItem(id: string): FeedItemDetail {
 }
 
 function updateSource(id: string, name: string, values: Record<string, AttributeValue>): void {
-    return commit.run({ sourceTab: "", feed: true, history: false, updateModified: false }, () => {
+    return commit.run({ feed: true, history: false, updateModified: false }, () => {
         const page = knowledge.get(id), title = page.blocks[page.titleBlockId];
-        edits.commitEdit({ pageId: id, tabId: "feed-settings", batch: 0, blocks: name === page.title ? [] : [{ ...title, payload: payload("title", name) }], attributes: values }, false);
+        edits.commitEdit({ pageId: id, batch: 0, blocks: name === page.title ? [] : [{ ...title, payload: payload("title", name) }], attributes: values }, false);
         commit.invalidate(["page:" + id, "block:" + page.titleBlockId]);
 
     });
 }
 
-export async function saveSource(input: FeedSourceInput): Promise<string> {
-    const session = workspace.requireWorkspace();
+function sourceForInput(input: FeedSourceInput): SourceRow | undefined {
     if (!input || typeof input.name !== "string" || typeof input.url !== "string" || input.id !== undefined && typeof input.id !== "string" || input.autoRefresh !== undefined && typeof input.autoRefresh !== "boolean") throw new LabloomError({ kind: "feed-invalid-source" });
     const interval = input.intervalMinutes;
     if (interval !== undefined && (!Number.isSafeInteger(interval) || interval < feedIntervals.min || interval > feedIntervals.max)) throw new LabloomError({ kind: "feed-invalid-interval" });
-    let name = input.name.trim();
     const url = feedURL(input.url);
-    let existing = input.id ? source(input.id) : undefined;
-    if (existing?.status === "cancelled") throw new LabloomError({ kind: "feed-cancelled" });
-    if (existing) duplicate(url, existing.id);
-    else existing = duplicate(url);
-    const revived = input.id === undefined && existing !== undefined;
-    const localRefresh = input.autoRefresh ?? existing?.autoRefresh ?? true;
-    const values = { feed_url: url, feed_refresh: localRefresh ? { every: interval ?? existing?.intervalMinutes ?? feedIntervals.default, unit: "minute" } : null };
-    if (existing && !revived && existing.url === url) {
-        updateSource(existing.id, name || existing.name, values); return existing.id;
+    if (!input.id) return duplicate(url);
+    const existing = source(input.id);
+    if (existing.status === "cancelled") throw new LabloomError({ kind: "feed-cancelled" });
+    duplicate(url, existing.id);
+    return existing;
+}
+
+export async function resolveSource(input: FeedSourceInput): Promise<string | null> {
+    const session = workspace.requireWorkspace(), existing = sourceForInput(input);
+    const url = feedURL(input.url);
+    let feed: FeedResult | null = null;
+    if (!input.id || existing?.url !== url) {
+        feed = await session.loadFeed({ url, discover: true, signal: session.controller.signal }).catch(error => {
+            if (workspace.isCurrent(session)) throw error;
+            return null;
+        });
+        if (!workspace.isCurrent(session) || !feed) return null;
+        if (!feed.entries) throw new LabloomError({ kind: "feed-empty" });
     }
-    const result = await session.loadFeed({ url, discover: true, signal: session.controller.signal }).catch(error => {
-        if (workspace.isCurrent(session)) throw error; return null;
-    });
-    if (!workspace.isCurrent(session) || !result) return existing?.id ?? "";
-    if (!result.entries) throw new LabloomError({ kind: "feed-empty" });
-    const address = feedURL(result.url);
-    const id = commit.run({ sourceTab: "", feed: true, history: false, updateModified: false }, () => {
-        const localDuplicate = duplicate(address, existing?.id);
-        if (localDuplicate && localDuplicate.id !== existing?.id) throw new LabloomError({ kind: "feed-duplicate" });
-        name ||= existing?.name || result.title || new URL(address).hostname;
+    // Keep the parsed entries in this session. The renderer uses the one-shot key for the local save.
+    const key = randomUUID();
+    state.resolutions.set(key, { input, feed });
+    return key;
+}
+
+export function discardSource(key: string): void {
+    state.resolutions.delete(key);
+}
+
+export function saveSource(key: string): string {
+    workspace.requireWorkspace();
+    const resolution = state.resolutions.get(key);
+    if (!resolution) return "";
+    state.resolutions.delete(key);
+    const { input, feed } = resolution, existing = sourceForInput(input);
+    const address = feedURL(feed?.url ?? input.url);
+    const other = duplicate(address, existing?.id);
+    if (other && other.id !== existing?.id) throw new LabloomError({ kind: "feed-duplicate" });
+    const name = input.name.trim() || existing?.name || feed?.title || new URL(address).hostname;
+    const refresh = input.autoRefresh ?? existing?.autoRefresh ?? true;
+    const values = { feed_url: address, feed_refresh: refresh ? { every: input.intervalMinutes ?? existing?.intervalMinutes ?? feedIntervals.default, unit: "minute" } : null };
+    return commit.run({ feed: true, history: false, updateModified: false }, () => {
         let id: string;
         if (existing) {
-            source(existing.id);
-            updateSource(existing.id, name, { ...values, feed_url: address, ...(revived ? { feed_status: "enabled" } : {}) });
+            updateSource(existing.id, name, { ...values, ...(input.id ? {} : { feed_status: "enabled" }) });
             id = existing.id;
         }
-        else id = edits.createPage("feed", name, { ...values, feed_url: address }).id;
-        store(source(id), result);
+        else id = edits.createPage("feed", name, values).id;
+        if (feed) store(source(id), feed);
         return id;
-    }); return id;
+    });
 }
 
 export function setSourceStatus(id: string, action: FeedSourceAction): void {
     workspace.requireWorkspace();
-    return commit.run({ sourceTab: "", feed: true, history: false, updateModified: false }, () => {
+    return commit.run({ feed: true, history: false, updateModified: false }, () => {
         const localSource = source(id);
         if (!["pause", "cancel", "resume"].includes(action)) throw new LabloomError({ kind: "feed-invalid-action" });
         const status = action === "pause" ? "paused" : action === "cancel" ? "cancelled" : "enabled";
@@ -181,7 +201,7 @@ export async function refresh(sourceId?: string): Promise<void> {
 
 export function setRead(id: string, isRead: boolean): void {
     workspace.requireWorkspace();
-    return commit.run({ sourceTab: "", feed: true, history: false, updateModified: false }, () => {
+    return commit.run({ feed: true, history: false, updateModified: false }, () => {
         if (typeof id !== "string" || typeof isRead !== "boolean") throw new LabloomError({ kind: "feed-invalid-read-state" });
         if (!workspace.database().update(feedItems).set({ isRead }).where(eq(feedItems.id, id)).run().changes) {
             throw new LabloomError({ kind: "feed-item-missing" });
@@ -192,7 +212,7 @@ export function setRead(id: string, isRead: boolean): void {
 
 export function markAllRead(sourceId?: string): number {
     workspace.requireWorkspace();
-    return commit.run({ sourceTab: "", feed: true, history: false, updateModified: false }, () => {
+    return commit.run({ feed: true, history: false, updateModified: false }, () => {
         if (sourceId !== undefined) source(sourceId);
         const scope = sourceId !== undefined ? eq(feedItems.sourceId, sourceId)
             : sql`${feedItems.sourceId} IN (SELECT p.id FROM pages p JOIN page_attrs s ON s.page_id=p.id AND s.attr_id='feed_status' JOIN page_attrs d ON d.page_id=p.id AND d.attr_id='deleted' WHERE p.kind='feed' AND s.value IS NOT 'cancelled' AND d.value=0)`;
@@ -204,7 +224,7 @@ export function markAllRead(sourceId?: string): number {
 
 export function setPosition(id: string, progress: number): void {
     workspace.requireWorkspace();
-    return commit.run({ sourceTab: "", feed: true, history: false, updateModified: false }, () => {
+    return commit.run({ feed: true, history: false, updateModified: false }, () => {
         if (typeof id !== "string" || typeof progress !== "number" || !(progress >= 0 && progress <= 1)) throw new LabloomError({ kind: "feed-invalid-position" });
         workspace.database().update(feedItems).set({ readingPosition: { progress } }).where(eq(feedItems.id, id)).run();
 
@@ -215,15 +235,15 @@ export function setKeywords(keywords: string[]): string[] {
     return workspaceSettings.update({ feedKeywords: keywords }).feedKeywords;
 }
 
-export function importItem(id: string, replace = false): string {
+export function importItem(id: string, replace = false): FeedImport {
     workspace.requireWorkspace();
     const localItem = item(id);
     const state = paperState(localItem.paperId);
-    if (state === "saved") return localItem.paperId!;
+    if (state === "saved") return { pageId: localItem.paperId!, downloadPDF: false };
     // A recycled or missing page is never replaced by guessing; the reader confirms first.
     if (state !== "none" && !replace) throw new LabloomError({ kind: "feed-reimport-confirmation" });
     const localSource = source(localItem.sourceId);
-    const pageId = commit.run({ sourceTab: "", feed: true, history: false, updateModified: false }, () => {
+    const pageId = commit.run({ feed: true, history: false, updateModified: false }, () => {
         const page = papers.createReference({
             title: localItem.title,
             authors: localItem.authors,
@@ -243,8 +263,7 @@ export function importItem(id: string, replace = false): string {
         workspace.database().update(feedItems).set({ paperId: page }).where(eq(feedItems.id, localItem.id)).run();
         return page;
     });
-    if (localItem.pdfURL) void fetchPDF(id);
-    return pageId;
+    return { pageId, downloadPDF: !!localItem.pdfURL };
 }
 
 export function itemURL(id: string): string {
@@ -313,7 +332,7 @@ async function refreshSource(id: string, queuedURL: string, session: WorkspaceSt
     try {
         const result = await session.loadFeed({ url: requested.url, etag: requested.etag, lastModified: requested.lastModified, signal: session.controller.signal });
         if (!workspace.isCurrent(session)) return;
-        commit.run({ sourceTab: "", feed: true, history: false, updateModified: false }, () => {
+        commit.run({ feed: true, history: false, updateModified: false }, () => {
             const localSource = current();
             if (localSource) store(localSource, result);
         });
@@ -331,13 +350,15 @@ async function refreshSource(id: string, queuedURL: string, session: WorkspaceSt
         const now = workspace.clock();
         const failure = toFailureInfo(error);
         if (failure.diagnostic) console.error("Feed refresh failed", error);
-        edits.cacheAttributes(id, { feed_error: JSON.stringify(failure), feed_last_added: 0, feed_last_checked: Math.floor(now / 1000), feed_failures: failures });
-        next(localSource, Math.ceil((now + Math.max(wait, requestedWait)) / 1000));
+        commit.run({ feed: true, history: false, updateModified: false }, () => {
+            edits.cacheAttributes(id, { feed_error: JSON.stringify(failure), feed_last_added: 0, feed_last_checked: Math.floor(now / 1000), feed_failures: failures });
+            next(localSource, Math.ceil((now + Math.max(wait, requestedWait)) / 1000));
+        });
     }
 }
 
 function next(source: SourceRow, dueAt: number): void {
-    return commit.run({ sourceTab: "", feed: true, history: false, updateModified: false }, () => {
+    return commit.run({ feed: true, history: false, updateModified: false }, () => {
         if (!source.autoRefresh || source.status !== "enabled" || source.deleted) return;
         knowledge.statement(`INSERT INTO timers(page_id,attr_id,lead_seconds,due_at) VALUES (?,'feed_refresh',0,?)
         ON CONFLICT(page_id,attr_id,lead_seconds) DO UPDATE SET due_at=excluded.due_at,fired_at=NULL,seen=0`).run(source.id, dueAt);
@@ -346,7 +367,7 @@ function next(source: SourceRow, dueAt: number): void {
 }
 
 function store(source: SourceRow, result: FeedResult): void {
-    return commit.run({ sourceTab: "", feed: true, history: false, updateModified: false }, () => {
+    return commit.run({ feed: true, history: false, updateModified: false }, () => {
         const added = result.entries ? merge(source, result.entries) : 0;
         const now = Math.floor(workspace.clock() / 1000);
         edits.cacheAttributes(source.id, { feed_last_refreshed: now, feed_last_checked: now, feed_last_added: added, feed_error: "", feed_failures: 0, feed_etag: result.etag ?? "", feed_last_modified: result.lastModified ?? "" });
@@ -397,22 +418,25 @@ function merge(source: SourceRow, entries: FeedEntry[]): number {
     return added;
 }
 /** One download attempt per item in the current session. */
-export function fetchPDF(id: string): Promise<void> {
+export function fetchPDF(id: string): Promise<FeedDownload | null> {
     const session = workspace.requireWorkspace(), active = state;
     const pending = active.pdfDownloads.get(id);
     if (pending) return pending;
     const row = item(id);
     if (!row.paperId || paperState(row.paperId) !== "saved") throw new LabloomError({ kind: "feed-paper-required" });
     if (!row.pdfURL) throw new LabloomError({ kind: "feed-no-pdf" });
-    if (papers.hasPDF(row.paperId)) return Promise.resolve();
+    if (papers.hasPDF(row.paperId)) return Promise.resolve(null);
     const pageId = row.paperId, url = feedURL(row.pdfURL);
     active.pdfFailures.delete(id);
-    const attempt = Promise.resolve().then(async () => {
-        if (workspace.isCurrent(session)) await papers.importPDF(pageId, url);
+    const attempt = attachments.download(url, { expectedType: "application/pdf" }).then(fileId => {
+        if (!fileId || !workspace.isCurrent(session) || item(id).paperId !== pageId || paperState(pageId) !== "saved") return null;
+        return { pageId, fileId };
     }).catch(error => {
-        if (!workspace.isCurrent(session)) return;
-        console.error("Feed PDF import failed", error);
-        active.pdfFailures.set(id, toFailureInfo(error));
+        if (workspace.isCurrent(session)) {
+            console.error("Feed PDF import failed", error);
+            active.pdfFailures.set(id, toFailureInfo(error));
+        }
+        return null;
     }).finally(() => {
         active.pdfDownloads.delete(id);
         if (workspace.isCurrent(session)) events.feedChanged();

@@ -3,25 +3,30 @@ import { type LinkTarget } from "../types/content";
 import { validTimeSeconds } from "../content/time";
 import { attributeTypes, type AttributeDefinition, type AttributeMetadata, type AttributeType, type AttributeValue } from "../types/attributes";
 
-const optionMetadata = {
-    initial: { options: [] },
-    validate(value: Record<string, unknown>): boolean {
-        const options = value.options;
-        return Object.keys(value).length === 1 && Array.isArray(options)
-            && options.every(item => record(item) && Object.keys(item).length === 2 && typeof item.id === "string" && !!item.id
-                && typeof item.name === "string" && !!item.name.trim())
-            && new Set(options.map(item => item.id)).size === options.length
-            && new Set(options.map(item => item.name)).size === options.length;
-    }
-};
-type ValueRule = ({ empty: null | "" | readonly [] } | { default: AttributeValue }) & { metadata?: typeof optionMetadata; target?: "page" | "file" };
+type OptionMetadataRule = { initial: AttributeMetadata; validate(value: Record<string, unknown>): boolean };
+function optionMetadata(status = false): OptionMetadataRule {
+    return {
+        initial: { options: [] },
+        validate(value: Record<string, unknown>): boolean {
+            const options = value.options;
+            return Object.keys(value).length === 1 && Array.isArray(options)
+                && options.every(item => record(item) && Object.keys(item).length === (status ? 3 : 2)
+                    && (!status || item.group === "incomplete" || item.group === "complete") && typeof item.id === "string" && !!item.id
+                    && typeof item.name === "string" && !!item.name.trim())
+                && new Set(options.map(item => item.id)).size === options.length
+                && new Set(options.map(item => item.name)).size === options.length;
+        }
+    };
+}
+type ValueRule = ({ empty: null | "" | readonly [] } | { default: AttributeValue }) & { metadata?: OptionMetadataRule; target?: "page" | "file" };
 const valueRules = {
     boolean: { default: false },
     string: { empty: "" }, url: { empty: "" },
     number: { empty: null }, minute: { empty: null }, hour: { empty: null },
     day: { empty: null }, month: { empty: null }, year: { empty: null }, recurrence: { empty: null },
-    select: { empty: null, metadata: optionMetadata }, "page-link": { empty: null, target: "page" }, file: { empty: null, target: "file" }, json: { empty: null },
-    multiselect: { empty: [], metadata: optionMetadata }, "page-links": { empty: [], target: "page" }, files: { empty: [], target: "file" }
+    status: { empty: null, metadata: optionMetadata(true) },
+    select: { empty: null, metadata: optionMetadata() }, "page-link": { empty: null, target: "page" }, file: { empty: null, target: "file" }, json: { empty: null },
+    multiselect: { empty: [], metadata: optionMetadata() }, "page-links": { empty: [], target: "page" }, files: { empty: [], target: "file" }
 } as const satisfies Record<AttributeType, ValueRule>;
 
 export function attributeTargetKind(type: AttributeType): "page" | "file" | undefined {
@@ -49,8 +54,11 @@ export function validateMetadata(type: AttributeType, value: unknown): asserts v
 }
 
 export function convertMetadata(from: AttributeType, to: AttributeType, value: AttributeMetadata): AttributeMetadata {
-    return from === to || (["select", "multiselect"].includes(from) && ["select", "multiselect"].includes(to))
-        ? structuredClone(value) : defaultMetadata(to);
+    if (from === to) return structuredClone(value);
+    if (value.options && "metadata" in valueRules[to]) {
+        return { options: value.options.map(({ id, name }) => to === "status" ? { id, name, group: "incomplete" } : { id, name }) };
+    }
+    return defaultMetadata(to);
 }
 
 export function nullable(type: AttributeType): boolean {
@@ -116,7 +124,7 @@ export function validateValue(definition: AttributeDefinition, value: unknown): 
             break;
         case "minute": case "hour": case "day": case "month": case "year": valid = validTimeSeconds(definition.type, value);
             break;
-        case "select": valid = typeof value === "string" && options.some(option => option.id === value);
+        case "status": case "select": valid = typeof value === "string" && options.some(option => option.id === value);
             break;
         case "multiselect": valid = Array.isArray(value) && new Set(value).size === value.length && value.every(id => options.some(option => option.id === id));
             break;

@@ -74,7 +74,7 @@ async function run(large: boolean): Promise<boolean> {
         for (let i = 1; i < 10000; i++) f.makePage(10, "Research notes");
         return first;
     })();
-    const id = randomUUID(), tabs = Array.from({ length: 20 }, () => ({ id: randomUUID(), type: "page", pageId: page.id, title: "Tab benchmark" }));
+    const id = randomUUID(), tabs = Array.from({ length: 20 }, () => ({ id: randomUUID(), view: { type: "page", params: { page: { kind: "page", id: page.id } } } }));
     f.sql.prepare("UPDATE workspace_meta SET settings=?").run(JSON.stringify({ tabs: { groups: [{ id, tabs, activeTabId: tabs[0].id }], focusedGroupId: id, layout: { type: "group", groupId: id } } }));
     const path = dirname(f.sql.name);
     session.close();

@@ -3,7 +3,8 @@ import { Fragment, Slice, type Node as DocNode } from "@tiptap/pm/model";
 import { NodeSelection, Plugin, TextSelection, type Command, type EditorState, type Transaction } from "@tiptap/pm/state";
 import { blankBlock, canNest, indexDoc, isBlock, kindOf, type Location } from "./document";
 
-export const remoteEdit = "workspace.reread", syncInsert = "workspace.sync", splitBlock = "workspace.split";
+export const remoteEdit = "workspace.reread", syncInsert = "workspace.sync";
+const splitBlock = "workspace.split";
 export function located(state: Pick<EditorState, "doc" | "selection">, pos = state.selection.from): Location | null {
     const resolved = state.doc.resolve(pos);
     for (let d = resolved.depth; d > 0; d--) if (isBlock(resolved.node(d))) return { node: resolved.node(d), pos: resolved.before(d) };

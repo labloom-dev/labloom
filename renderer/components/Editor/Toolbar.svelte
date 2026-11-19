@@ -47,29 +47,17 @@
                             {@html undoIcon}
                         </span>
                     </Toolbar.Button>
-                    <Toolbar.Button class="tool-button" aria-label="重做" disabled={!toolbarState.ready || !session.state.history.redo.length} onclick={() => editor?.chain().focus().redo().run()}>
+                    <Toolbar.Button class="tool-button" aria-label="重做" disabled={!toolbarState.ready || !session.state.history.canRedo || session.state.dirty} onclick={() => editor?.chain().focus().redo().run()}>
                         <span class="icon">
                             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
                             {@html redoIcon}
                         </span>
                     </Toolbar.Button>
-                    {#if session.state.history.redo.length > 1}<button class="branch-button" aria-label="选择重做分支" onclick={() => {
-                        if (!branches || !element) return;
-                        branches.showPopover();
-                        const rect = element.getBoundingClientRect(); branches.style.left = rect.left + "px"; branches.style.top = rect.bottom + "px";
-                    }}>▾</button>{/if}
                 </div>
             </div>
         </div>
     {/snippet}
 </Toolbar.Root>
-<div class="compact-menu" popover="auto" bind:this={branches} style="position:fixed;inset:auto;margin:0" onmousedown={keepSelection}>
-    {#each session.state.history.redo as branch (branch.id)}<button class="compact-item" onclick={() => {
-        branches?.hidePopover(); void session.undo("redo", branch.id);
-    }}>{displayMilliseconds(branch.time)}</button>{/each}
-</div>
-
-
 
 <style>
     .toolbar {
@@ -153,10 +141,8 @@
     import undoIcon from "../../assets/carbon--undo.svg?raw";
     import redoIcon from "../../assets/carbon--redo.svg?raw";
 
-    import type { PageSession } from "../Knowledge/state.svelte";
-    import { displayMilliseconds } from "../layout/preferences.svelte";
+    import { type PageSession } from "../Knowledge/page-session.svelte";
     let { editor, session }: { editor: Editor; session: PageSession } = $props();
-    let branches = $state<HTMLDivElement>();
     let element = $state<HTMLDivElement>();
     let colorElement = $state<HTMLDivElement | null>(null);
     let colorOpen = $state(false);

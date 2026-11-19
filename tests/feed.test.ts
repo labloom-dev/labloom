@@ -11,10 +11,13 @@ import Database from "better-sqlite3";
 import { type FeedResult } from "../main/feed/parser";
 import { createWorkspaceDatabase } from "../main/storage/database";
 import { initializeBuiltinAttrs } from "../main/storage/builtin-attrs";
-import { createWorkspaceSchema } from "../main/storage/schema";
 import { payload } from "../shared/content/blocks";
-import { createWorkspace } from "./support/session";
-import { importFeedPDF } from "../main/feed/pdf";
+import { createWorkspace, openTest } from "./support/session";
+import * as feed from "../main/feed/service";
+import { downloadAttachment, saveSubscription } from "../renderer/components/Feed/operations";
+import { PageWrites } from "../renderer/components/Knowledge/page-writes";
+import { pendingWrites, trackWrite } from "../renderer/components/Knowledge/write-tracker";
+import { TabVisits } from "../renderer/components/Tab/visits";
 import { knownCoordinatePdf } from "./fixtures/pdf-text";
 import { type FeedEntry } from "../shared/types/feed";
 
@@ -51,8 +54,8 @@ test("feed pages own settings and timers while refresh preserves item state and 
     assert.equal(knowledge.get(source.id).attributes.modified_at, modified);
     assert.equal(knowledge.list({ kind: "feed" }).total, 2);
     assert.equal(knowledge.list({ keyword: "Saved feed" }).total, 1);
-    assert.throws(() => knowledge.commitEdit({ pageId: source.id, tabId: "feed", batch: 0, blocks: [], attributes: { feed_refresh: { every: 5, unit: "minute" } } }, pageHistory(source.id)), hasFailure("feed-invalid-interval"));
-    assert.throws(() => knowledge.commitEdit({ pageId: source.id, tabId: "feed", batch: 0, blocks: [], pageChildren: [source.titleBlockId] }, pageHistory(source.id)), hasFailure("feed-body-forbidden"));
+    assert.throws(() => knowledge.commitEdit({ pageId: source.id, batch: 0, blocks: [], attributes: { feed_refresh: { every: 5, unit: "minute" } } }, pageHistory(source.id)), hasFailure("feed-invalid-interval"));
+    assert.throws(() => knowledge.commitEdit({ pageId: source.id, batch: 0, blocks: [], pageChildren: [source.titleBlockId] }, pageHistory(source.id)), hasFailure("feed-body-forbidden"));
     assert.deepEqual(database.pragma("foreign_key_check"), []);
 });
 
@@ -95,8 +98,8 @@ test("a subscription item becomes a paper page in the library and stays linked t
     assert.deepEqual([second.title, second.attributes.paper_url, second.attributes.paper_year, second.attributes.paper_authors], ["No link or date", "", "", ""]);
 
     // A paper in the recycle bin is reported, and only replaced when the reader asks.
-    const removal = knowledge.trash([pageId], "feed-test", workspaceHistory);
-    if (removal.status === "confirmation") knowledge.trash([pageId], "feed-test", workspaceHistory, removal.preview.token);
+    const removal = knowledge.trash([pageId], workspaceHistory);
+    if (removal.status === "confirmation") knowledge.trash([pageId], workspaceHistory, removal.preview.token);
     assert.equal(service.getItem(item.id).paperState, "recycled");
     assert.throws(() => service.importItem(item.id), hasFailure("feed-reimport-confirmation"));
     const replacement = service.importItem(item.id, true);
@@ -142,8 +145,13 @@ test("a downloaded PDF attaches to its committed paper as independent bytes, and
     assert.equal(workspace.database.inTransaction, false);
     assert.equal(knowledge.get(pageId).title, "Subscribed paper");
     assert.equal(papers.hasPDF(pageId), false);
+    assert.equal(service.getItem(item.id).pdfStatus, "idle");
+    const pending = service.fetchPDF(item.id);
     assert.equal(service.getItem(item.id).pdfStatus, "downloading");
-    await service.fetchPDF(item.id);
+    const file = await pending;
+    assert.ok(file);
+    assert.equal(papers.hasPDF(pageId), false);
+    papers.attachFile(file.pageId, "paper_files", file.fileId, workspaceHistory);
     assert.equal(service.getItem(item.id).pdfStatus, "saved");
     const originalFiles = (await papers.resources(existingPage)).files;
     const downloadedFiles = (await papers.resources(pageId)).files;
@@ -156,10 +164,12 @@ test("a downloaded PDF attaches to its committed paper as independent bytes, and
     await service.fetchPDF(item.id);
     assert.equal(requests, 1);
     assert.deepEqual(knowledge.get(pageId).attributes.paper_files, [downloadedFiles[0].id]);
-    assert.equal(knowledge.commitEdit({ pageId, tabId: "remove-feed-pdf", batch: 0, blocks: [], attributes: { paper_files: [] } }, pageHistory(pageId)).status, "saved");
+    assert.equal(knowledge.commitEdit({ pageId, batch: 0, blocks: [], attributes: { paper_files: [] } }, pageHistory(pageId)).status, "saved");
     assert.equal(papers.hasPDF(pageId), false);
     assert.notEqual(service.getItem(item.id).pdfStatus, "saved");
-    await service.fetchPDF(item.id);
+    const second = await service.fetchPDF(item.id);
+    assert.ok(second);
+    papers.attachFile(second.pageId, "paper_files", second.fileId, workspaceHistory);
     assert.equal(requests, 2);
     assert.equal(service.getItem(item.id).pdfStatus, "saved");
     const replacement = (await papers.resources(pageId)).files[0];
@@ -177,18 +187,18 @@ test("feed settings, recycling and restoration maintain a single timer and enfor
     assert.equal(knowledge.header(id).kind, "feed"); assert.deepEqual(knowledge.get(id).children, []); assert.equal(count(), 1);
     feed.setSourceStatus(id, "pause"); assert.equal(count(), 0);
     feed.setSourceStatus(id, "resume"); assert.equal(count(), 1);
-    assert.equal(knowledge.commitEdit({ pageId: id, tabId: "settings", batch: 0, blocks: [], attributes: { feed_refresh: null } }, pageHistory(id)).status, "saved"); assert.equal(count(), 0);
+    assert.equal(knowledge.commitEdit({ pageId: id, batch: 0, blocks: [], attributes: { feed_refresh: null } }, pageHistory(id)).status, "saved"); assert.equal(count(), 0);
     assert.equal(history.apply(pageHistory(id), "undo").status, "saved"); assert.equal(count(), 1);
     const page = knowledge.get(id), child = { id: randomUUID(), type: "paragraph" as const, payload: payload("paragraph", "Forbidden"), children: [] };
-    assert.throws(() => knowledge.commitEdit({ pageId: id, tabId: "settings", batch: 0, blocks: [child], pageChildren: [child.id] }, pageHistory(id)), hasFailure("feed-body-forbidden"));
-    assert.throws(() => knowledge.commitEdit({ pageId: id, tabId: "settings", batch: 0, blocks: [{ ...page.blocks[page.titleBlockId], children: [child.id] }] }, pageHistory(id)), hasFailure("feed-body-forbidden"));
-    assert.throws(() => knowledge.place({ position: { pageId: id, containerId: id, index: 0, blockId: page.titleBlockId }, action: "insert", tabId: "settings" }, pageHistory(id)), hasFailure("feed-body-forbidden"));
-    const preview = knowledge.trash([id], "trash", workspaceHistory); if (preview.status === "confirmation") knowledge.trash([id], "trash", workspaceHistory, preview.preview.token);
+    assert.throws(() => knowledge.commitEdit({ pageId: id, batch: 0, blocks: [child], pageChildren: [child.id] }, pageHistory(id)), hasFailure("feed-body-forbidden"));
+    assert.throws(() => knowledge.commitEdit({ pageId: id, batch: 0, blocks: [{ ...page.blocks[page.titleBlockId], children: [child.id] }] }, pageHistory(id)), hasFailure("feed-body-forbidden"));
+    assert.throws(() => knowledge.place({ position: { pageId: id, containerId: id, index: 0, blockId: page.titleBlockId }, action: "insert" }, pageHistory(id)), hasFailure("feed-body-forbidden"));
+    const preview = knowledge.trash([id], workspaceHistory); if (preview.status === "confirmation") knowledge.trash([id], workspaceHistory, preview.preview.token);
     assert.equal(count(), 0); assert.equal(feed.getState({}).sources.length, 0);
     await assert.rejects(feed.saveSource({ name: "B", url: "https://example.org/feed" }), hasFailure("feed-duplicate"));
-    knowledge.restore([id], "restore", workspaceHistory); assert.equal(count(), 1);
+    knowledge.restore([id], workspaceHistory); assert.equal(count(), 1);
     const title = knowledge.get(id).blocks[page.titleBlockId];
-    knowledge.commitEdit({ pageId: id, tabId: "rename", batch: 0, blocks: [{ ...title, payload: payload("title", "B") }] }, pageHistory(id));
+    knowledge.commitEdit({ pageId: id, batch: 0, blocks: [{ ...title, payload: payload("title", "B") }] }, pageHistory(id));
     assert.equal(feed.getState({}).sources[0].name, "B");
     assert.ok(knowledge.list({ keyword: "B", kind: "feed" }).items.some(page => page.id === id));
 });
@@ -198,10 +208,10 @@ test("permanently deleting a source cascades its entries without deleting import
     const knowledge = knowledgeServices(), history = historyServices(), papers = paperServices();
     const feed = feedServices();
     const source = await feed.saveSource({ name: "A", url: "https://example.org/feed" }), paper = feed.importItem(feed.getState({}).items[0].id);
-    const removal = knowledge.trash([source], "trash", workspaceHistory); if (removal.status === "confirmation") knowledge.trash([source], "trash", workspaceHistory, removal.preview.token);
-    const purge = purgeServices(), preview = purge.purge([source], "purge");
+    const removal = knowledge.trash([source], workspaceHistory); if (removal.status === "confirmation") knowledge.trash([source], workspaceHistory, removal.preview.token);
+    const purge = purgeServices(), preview = purge.purge([source]);
     if (preview.status !== "confirmation") throw new Error("Expected confirmation");
-    assert.equal(purge.purge([source], "purge", preview.token).status, "deleted");
+    assert.equal(purge.purge([source], preview.token).status, "deleted");
     assert.equal(ws.database.prepare("SELECT count(*) FROM feed_items").pluck().get(), 0);
     assert.equal(knowledge.get(paper).kind, "paper"); assert.equal(papers.state(paper), "saved");
     assert.deepEqual(ws.database.pragma("foreign_key_check"), []);
@@ -219,4 +229,97 @@ test("manual and scheduled refreshes in one session share an in-flight source re
     assert.equal(calls, 2); release(); await Promise.all([a, b]);
     assert.equal(calls, 2); assert.equal(second.getState({}).sources[0].refreshing, false);
     assert.equal(ws.database.prepare("SELECT due_at FROM timers WHERE page_id=?").pluck().get(id), Math.floor(clock.now / 1000) + 3600);
+});
+
+test("a slow PDF leaves other writes free and appends only after the page buffer is saved", async t => {
+    const started = Promise.withResolvers<void>(), resume = Promise.withResolvers<void>();
+    const workspace = openTest(t, {
+        loadFeed: async ({ url }) => ({ title: "Feed", url, entries: [entry({ externalId: "pdf", pdfURL: "https://example.org/article.pdf" })], etag: null, lastModified: null }),
+        fetchAttachment: async () => {
+            started.resolve();
+            await resume.promise;
+            return new Response(Buffer.from(knownCoordinatePdf()));
+        }
+    });
+    const service = feedServices(), knowledge = knowledgeServices(), papers = paperServices(), history = historyServices();
+    await service.saveSource({ name: "Source", url: "https://example.org/feed" });
+    const itemId = service.getState({}).items[0].id;
+    const { pageId, downloadPDF } = feed.importItem(itemId);
+    assert.equal(downloadPDF, true);
+    assert.equal(feed.importItem(itemId).downloadPDF, false);
+    const notes = join(workspace.info.path, "notes.txt");
+    writeFileSync(notes, "notes");
+    const [original] = papers.attachFiles([notes], pageId, "paper_files", pageHistory(pageId));
+    const sending = Promise.withResolvers<void>(), applyRemoval = Promise.withResolvers<void>();
+    const buffer = new PageWrites(pageId, async input => {
+        sending.resolve();
+        await applyRemoval.promise;
+        assert.equal(knowledge.commitEdit(input, pageHistory(pageId)).status, "saved");
+    });
+    const ids = (): unknown => knowledge.get(pageId).attributes.paper_files;
+    let requests = 0;
+    const request = (): Promise<void> => downloadAttachment({ fetchPDF: id => {
+        requests++;
+        return feed.fetchPDF(id);
+    } }, itemId, async (page, file) => {
+        assert.deepEqual(ids(), []);
+        papers.attachFile(page, "paper_files", file, workspaceHistory);
+    }, action => trackWrite(buffer.flush().then(action)));
+    const downloading = request();
+    await started.promise;
+    assert.deepEqual(pendingWrites(), []);
+    const visits = new TabVisits(() => {}, problem => {
+        throw problem;
+    });
+    const unregister = visits.register("paper", { changed: () => [], read: async () => {} });
+    visits.focus("paper");
+    assert.equal(await visits.settled("paper"), true);
+    unregister();
+    await trackWrite(Promise.resolve().then(() => service.setKeywords(["edited during download"])));
+    buffer.stage({ blocks: [], attributes: { paper_files: [] } });
+    assert.deepEqual(ids(), [original.id]);
+    resume.resolve();
+    await sending.promise;
+    const fromAnotherView = request();
+    assert.equal(requests, 1);
+    applyRemoval.resolve();
+    await Promise.all([downloading, fromAnotherView]);
+    const files = (await papers.resources(pageId)).files;
+    assert.deepEqual(files.map(file => file.originalName), ["article.pdf"]);
+    for (const source of [pageHistory(pageId), workspaceHistory]) {
+        assert.equal(history.apply(source, "undo").status, "saved");
+        assert.deepEqual(ids(), []);
+        assert.equal(history.apply(source, "redo").status, "saved");
+        assert.deepEqual(ids(), [files[0].id]);
+    }
+});
+
+test("saving a resolved source applies its interval after intervening page edits", async t => {
+    const started = Promise.withResolvers<void>(), resume = Promise.withResolvers<void>();
+    openTest(t, { loadFeed: async ({ url }) => {
+        if (url.endsWith("/new")) {
+            started.resolve();
+            await resume.promise;
+        }
+        return { title: "", url, entries: [], etag: null, lastModified: null };
+    } });
+    const knowledge = knowledgeServices();
+    const id = await feedServices().saveSource({ name: "Source", url: "https://example.org/old", intervalMinutes: 60 });
+    const buffer = new PageWrites(id, async input => {
+        assert.equal(knowledge.commitEdit(input, pageHistory(id)).status, "saved");
+    });
+    const interval = (every: number): { every: number; unit: "minute" } => ({ every, unit: "minute" });
+    const saving = saveSubscription({
+        resolveSource: feed.resolveSource, saveSource: async key => {
+            assert.deepEqual(knowledge.get(id).attributes.feed_refresh, interval(120));
+            return feed.saveSource(key);
+        }, discardSource: async key => feed.discardSource(key)
+    }, { id, name: "Source", url: "https://example.org/new", intervalMinutes: 90 }, action => trackWrite(buffer.flush().then(action)));
+    await started.promise;
+    assert.deepEqual(pendingWrites(), []);
+    buffer.stage({ blocks: [], attributes: { feed_refresh: interval(120) } });
+    resume.resolve();
+    assert.equal(await saving, id);
+    assert.deepEqual(knowledge.get(id).attributes.feed_refresh, interval(90));
+    assert.equal(knowledge.get(id).attributes.feed_url, "https://example.org/new");
 });

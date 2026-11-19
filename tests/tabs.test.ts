@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { validate, version } from "uuid";
 import { getGroupID, getTabID } from "../renderer/components/Tab/ids";
+import { restoreTabState } from "../renderer/components/Tab/restore";
 import { TabVisits, type TabView } from "../renderer/components/Tab/visits";
 
 function latch(): { wait: Promise<void>; release: () => void } {
@@ -20,11 +21,11 @@ function harness(): { visits: TabVisits; locks: Set<string>; errors: unknown[]; 
     async function page(id: string, visible: string[], options: Partial<TabView> = {}): Promise<string[][]> {
         const reads: string[][] = [];
         visits.register(id, {
-            intersection: change => [...change.pages, ...change.blocks].filter(object => visible.includes(object)),
+            changed: change => [...change.pages, ...change.blocks].filter(object => visible.includes(object)),
             read: async (ids, initial) => {
  if (!initial) reads.push(ids);
 },
-            pending: () => undefined, flush: async () => true, ...options
+            pending: () => false, flush: async () => true, ...options
         });
         assert.equal(await visits.settled(id), true);
         return reads;
@@ -39,8 +40,8 @@ test("new tab and group IDs are distinct bare UUIDs, and legacy identities stay 
     const { visits, page } = harness();
     const legacy = "tab-" + getTabID(), reads = await page(legacy, ["A"]);
     visits.focus(legacy);
-    visits.changed({ sourceTab: legacy, pages: ["A"], blocks: [] });
-    visits.changed({ sourceTab: ids[0], pages: ["A"], blocks: ["other"] });
+    visits.changed({ pages: ["A"], blocks: [] });
+    visits.changed({ pages: ["A"], blocks: ["other"] });
     await visits.settled(legacy);
     assert.deepEqual(reads, [["A"]]);
 });
@@ -48,7 +49,7 @@ test("new tab and group IDs are distinct bare UUIDs, and legacy identities stay 
 test("leaving flushes immediately; an entering pane waits for the acknowledgement and reads only its intersection", async () => {
     const { visits, locks, page } = harness(), ack = latch(), reading = latch(), started = latch();
     let saves = 0;
-    await page("left", ["A", "X"], { pending: () => ({ pages: ["A"], blocks: ["X"] }),
+    await page("left", ["A", "X"], { pending: () => true,
         flush: async () => {
  saves++; await ack.wait; return true;
 } });
@@ -63,33 +64,34 @@ test("leaving flushes immediately; an entering pane waits for the acknowledgemen
     visits.focus("right");
     assert.equal(saves, 1);
     assert.ok(locks.has("right"));
-    visits.changed({ sourceTab: "left", pages: ["A"], blocks: ["X", "other"] });
+    visits.changed({ pages: ["A"], blocks: ["X", "other"] });
     await Promise.resolve();
     assert.deepEqual(reads, []);
     ack.release();
     await started.wait;
-    visits.changed({ sourceTab: "elsewhere", pages: ["B"], blocks: ["X", "other"] });
+    visits.changed({ pages: ["B"], blocks: ["X", "other"] });
     reading.release();
     assert.ok(await visits.settled("right"));
     assert.deepEqual(reads, [["X"], ["B", "X"]]);
     assert.ok(!locks.has("right"));
 });
 
-test("clean and unrelated switches take no read lock; blur flushes and return coalesces intervening broadcasts", async () => {
+test("an unrelated destination waits for a pending departure and coalesces later broadcasts", async () => {
     const { visits, locks, page } = harness(), done = latch();
     let saves = 0;
-    const reads = await page("one", ["A"], { pending: () => ({ pages: ["A"], blocks: [] }), flush: async () => {
+    const reads = await page("one", ["A"], { pending: () => true, flush: async () => {
         saves++; await done.wait; return true;
     } });
     await page("two", ["B"]);
     visits.focus("one");
     visits.focus("two");
     assert.equal(saves, 1);
-    assert.equal(locks.size, 0);
+    assert.ok(locks.has("two"));
     done.release();
+    await visits.settled("two");
     visits.focus(null);
-    visits.changed({ sourceTab: "two", pages: ["A"], blocks: [] });
-    visits.changed({ sourceTab: "two", pages: ["A"], blocks: [] });
+    visits.changed({ pages: ["A"], blocks: [] });
+    visits.changed({ pages: ["A"], blocks: [] });
     assert.deepEqual(reads, []);
     visits.focus("one");
     await visits.settled("one");
@@ -100,14 +102,14 @@ test("clean and unrelated switches take no read lock; blur flushes and return co
 
 test("rapid visits commit the middle tab's buffered input before the next tab reads", async () => {
     const { visits, page } = harness(), wait = latch(), order: string[] = [];
-    await page("a", ["X"], { pending: () => "unknown", flush: async () => {
+    await page("a", ["X"], { pending: () => true, flush: async () => {
         await wait.wait;
-        visits.changed({ sourceTab: "a", pages: [], blocks: ["X"] });
+        visits.changed({ pages: [], blocks: ["X"] });
         return true;
     } });
-    await page("b", ["X"], { pending: () => "unknown", ready: () => order.push("apply keys"), flush: async () => {
+    await page("b", ["X"], { pending: () => true, ready: () => order.push("apply keys"), flush: async () => {
         order.push("save b");
-        visits.changed({ sourceTab: "b", pages: [], blocks: ["X"] });
+        visits.changed({ pages: [], blocks: ["X"] });
         return true;
     } });
     await page("c", ["X"], { read: async (_ids, initial) => {
@@ -129,7 +131,7 @@ test("failed reads retain the exact invalidations and stay read-only until a suc
         if (fail) throw new Error("read failed");
     } });
     visits.focus("a");
-    visits.changed({ sourceTab: "b", pages: [], blocks: ["X"] });
+    visits.changed({ pages: [], blocks: ["X"] });
     assert.equal(await visits.settled("a"), false);
     assert.ok(locks.has("a"));
     assert.equal(errors.length, 1);
@@ -143,7 +145,7 @@ test("failed reads retain the exact invalidations and stay read-only until a suc
 test("a failed departure protects the destination while the author can return and correct the unsaved change", async () => {
     const { visits, locks, page } = harness();
     let valid = false;
-    await page("a", ["X"], { pending: () => ({ pages: [], blocks: ["X"] }), flush: async () => valid });
+    await page("a", ["X"], { pending: () => true, flush: async () => valid });
     await page("b", ["X"]);
     visits.focus("a"); visits.focus("b");
     assert.equal(await visits.settled("b"), false);
@@ -155,4 +157,46 @@ test("a failed departure protects the destination while the author can return an
     visits.focus("b");
     assert.ok(await visits.settled("b"));
     assert.ok(!locks.has("b"));
+});
+
+const date = { kind: "attribute", type: "day", id: "removed-date" };
+const status = { kind: "attribute", type: "status", id: "removed-status" };
+const savedViews = [
+    { type: "page", params: { page: { kind: "page", id: "11111111-1111-4111-8111-111111111111" } } },
+    { type: "calendar", params: { date, start: { kind: "attribute", type: "minute", id: "start" }, status } },
+    { type: "library", params: { scope: "trash", pageType: { kind: "page-type", type: "paper" }, sort: "title", tags: ["A"], filters: [{ attribute: { kind: "attribute", id: "missing" }, value: { list: [false, null] } }] } },
+    { type: "overview", params: { status } },
+    ...["feed", "attributes", "settings", "about"].map(type => ({ type, params: {} }))
+];
+function layout(views: unknown[]): { groups: { id: string; tabs: { id: string; view: unknown }[]; activeTabId: string | null }[]; focusedGroupId: string; layout: { type: "group"; groupId: string } } {
+    const tabs = views.map((view, i) => ({ id: String(i), view }));
+    return { groups: [{ id: "A", tabs, activeTabId: tabs[0]?.id ?? null }], focusedGroupId: "A", layout: { type: "group", groupId: "A" } };
+}
+test("all view parameters round-trip independently of whether referenced objects exist", () => {
+    const saved = layout(savedViews);
+    assert.deepEqual(restoreTabState(saved), saved);
+    assert.deepEqual(restoreTabState(layout([])), layout([]));
+});
+test("unknown views and invalid parameters discard only their tab and repair the active selection", () => {
+    for (const bad of [
+        { type: "future", params: {} }, { type: "calendar", params: { date: status } },
+        { type: "page", params: { page: { kind: "page", id: "invalid" } } },
+        { type: "overview", params: { status: date } }, { type: "about", params: { keyword: "A" } },
+        { type: "library", params: { scope: "papers" } }
+    ]) {
+        const saved = layout([bad, ...savedViews]);
+        const restored = restoreTabState(saved);
+        assert.deepEqual(restored?.groups[0].tabs, saved.groups[0].tabs.slice(1));
+        assert.equal(restored?.groups[0].activeTabId, "1");
+    }
+});
+test("broken layout relationships and the previous tab format use the default layout", () => {
+    const saved = layout(savedViews);
+    const leaf = saved.layout;
+    for (const broken of [
+        { ...saved, focusedGroupId: "B" }, { ...saved, groups: [...saved.groups, ...saved.groups] },
+        { ...saved, layout: { type: "split", direction: "vertical", ratio: 0.5, children: [leaf, leaf] } },
+        { ...saved, groups: [{ ...saved.groups[0], activeTabId: "absent" }] },
+        { ...saved, groups: [{ ...saved.groups[0], tabs: [{ id: "0", type: "overview", title: "A" }] }] }
+    ]) assert.equal(restoreTabState(broken), undefined);
 });

@@ -23,19 +23,19 @@ function confirm(action: (token?: string) => CommitResult): void {
     const result = action();
     assert.equal(result.status === "saved" ? result.status : action(result.preview.token).status, "saved");
 }
-function erase(purge: Purge, ids: string[] | null, tab = "purger"): string[] {
-    const result = purge.purge(ids, tab);
+function erase(purge: Purge, ids: string[] | null): string[] {
+    const result = purge.purge(ids);
     if (result.status === "deleted") return result.pages;
-    const done = purge.purge(ids, tab, result.token);
+    const done = purge.purge(ids, result.token);
     assert.equal(done.status, "deleted");
     if (done.status !== "deleted") throw new Error("Expected deletion");
     return done.pages;
 }
 test("permanent deletion requires recycle membership, previews without writes, and empties a single-page recycle bin", t => {
     const { service, history, purge } = fixture(t), page = service.create("editable", "A");
-    assert.throws(() => purge.purge([page.id], "a"), hasFailure("purge-recycled-only"));
-    confirm(token => service.trash([page.id], "a", workspaceHistory, token));
-    const before = history.state(pageHistory(page.id)), preview = purge.purge(null, "a");
+    assert.throws(() => purge.purge([page.id]), hasFailure("purge-recycled-only"));
+    confirm(token => service.trash([page.id], workspaceHistory, token));
+    const before = history.state(pageHistory(page.id)), preview = purge.purge(null);
     assert.equal(preview.status, "confirmation");
     assert.equal(service.get(page.id).title, "A");
     assert.deepEqual(history.state(pageHistory(page.id)), before);
@@ -47,18 +47,18 @@ test("permanent deletion requires recycle membership, previews without writes, a
 test("live synchronized blocks survive while history depending on collected blocks is discarded", t => {
     const { service, history, purge } = fixture(t), a = service.create("editable", "A"), b = service.create("editable", "B"), c = service.create("editable", "C");
     const shared = a.children[0], own = { id: randomUUID(), type: "paragraph" as const, payload: payload("paragraph", "Only A"), children: [] };
-    service.commitEdit({ pageId: a.id, tabId: "a", batch: 1, blocks: [own], pageChildren: [shared, own.id] }, pageHistory(a.id));
-    service.commitEdit({ pageId: a.id, tabId: "other", batch: 1, blocks: [{ ...own, payload: payload("paragraph", "Other tab edit") }] }, pageHistory(a.id));
-    service.commitEdit({ pageId: b.id, tabId: "b", batch: 1, blocks: [], pageChildren: [shared] }, pageHistory(b.id));
+    service.commitEdit({ pageId: a.id, batch: 1, blocks: [own], pageChildren: [shared, own.id] }, pageHistory(a.id));
+    service.commitEdit({ pageId: a.id, batch: 1, blocks: [{ ...own, payload: payload("paragraph", "Other tab edit") }] }, pageHistory(a.id));
+    service.commitEdit({ pageId: b.id, batch: 1, blocks: [], pageChildren: [shared] }, pageHistory(b.id));
     const ref = { id: randomUUID(), type: "blocked_reference" as const, payload: { ...payload("blocked_reference"), target: { kind: "page" as const, id: a.id } }, children: [] };
     const refBlock = { ...ref, id: randomUUID(), payload: { ...payload("blocked_reference"), target: { kind: "block" as const, id: own.id } } };
-    service.commitEdit({ pageId: c.id, tabId: "c", batch: 1, blocks: [ref, refBlock], pageChildren: [ref.id, refBlock.id] }, pageHistory(c.id));
-    confirm(token => service.trash([a.id], "a", workspaceHistory, token));
-    const preview = purge.purge([a.id], "a");
+    service.commitEdit({ pageId: c.id, batch: 1, blocks: [ref, refBlock], pageChildren: [ref.id, refBlock.id] }, pageHistory(c.id));
+    confirm(token => service.trash([a.id], workspaceHistory, token));
+    const preview = purge.purge([a.id]);
     assert.equal(preview.status, "confirmation");
     if (preview.status === "confirmation") assert.equal(preview.links, 2);
     assert.equal(history.state(pageHistory(a.id)).canUndo, true);
-    erase(purge, [a.id], "a");
+    erase(purge, [a.id]);
     assert.equal(history.state(pageHistory(a.id)).canUndo, false);
     assert.ok(service.get(b.id).blocks[shared]);
     assert.equal(service.resolve({ kind: "page", id: a.id }), null);
@@ -74,13 +74,13 @@ test("live synchronized blocks survive while history depending on collected bloc
 test("purging collects rootless containers together with deleted children and preserves recycled trees", t => {
     const { service, history, purge } = fixture(t), a = service.create("editable", "A"), d = service.create("editable", "D"), recycled = service.create("editable", "Recycled");
     const parent = a.blocks[a.children[0]], child = { id: randomUUID(), type: "paragraph" as const, payload: payload("paragraph", "C"), children: [] };
-    service.commitEdit({ pageId: a.id, tabId: "a", batch: 0, blocks: [{ ...parent, children: [child.id] }, child] }, pageHistory(a.id));
-    service.commitEdit({ pageId: d.id, tabId: "d", batch: 0, blocks: [], pageChildren: [child.id] }, pageHistory(d.id));
+    service.commitEdit({ pageId: a.id, batch: 0, blocks: [{ ...parent, children: [child.id] }, child] }, pageHistory(a.id));
+    service.commitEdit({ pageId: d.id, batch: 0, blocks: [], pageChildren: [child.id] }, pageHistory(d.id));
     // A soft link does not retain the rootless parent, but must survive target deletion.
-    service.commitEdit({ pageId: a.id, tabId: "a", batch: 1, blocks: [{ ...a.blocks[a.titleBlockId], payload: { ...payload("title"), inline: [{ type: "inlineReference", attrs: { target: { kind: "block", id: parent.id }, label: "B" } }] } }] }, pageHistory(a.id));
-    confirm(token => service.deleteBlock({ pageId: a.id, blockId: parent.id, tabId: "a" }, pageHistory(a.id), token));
-    confirm(token => service.trash([d.id, recycled.id], "trash", workspaceHistory, token));
-    const preview = purge.purge([d.id], "purge");
+    service.commitEdit({ pageId: a.id, batch: 1, blocks: [{ ...a.blocks[a.titleBlockId], payload: { ...payload("title"), inline: [{ type: "inlineReference", attrs: { target: { kind: "block", id: parent.id }, label: "B" } }] } }] }, pageHistory(a.id));
+    confirm(token => service.deleteBlock({ pageId: a.id, blockId: parent.id }, pageHistory(a.id), token));
+    confirm(token => service.trash([d.id, recycled.id], workspaceHistory, token));
+    const preview = purge.purge([d.id]);
     assert.equal(preview.status, "confirmation");
     if (preview.status === "confirmation") assert.deepEqual(preview.pages.map(page => page.id), [d.id]);
     erase(purge, [d.id]);
@@ -96,8 +96,8 @@ test("purging collects rootless containers together with deleted children and pr
 test("reopening collects removed blocks and rootless cycles while keeping live and recycled trees", t => {
     const { service, database, info } = fixture(t), a = service.create("editable", "A"), recycled = service.create("editable", "Recycled");
     const removed = a.children[0], left = randomUUID(), right = randomUUID();
-    confirm(token => service.deleteBlock({ pageId: a.id, blockId: removed, tabId: "a" }, pageHistory(a.id), token));
-    confirm(token => service.trash([recycled.id], "trash", workspaceHistory, token));
+    confirm(token => service.deleteBlock({ pageId: a.id, blockId: removed }, pageHistory(a.id), token));
+    confirm(token => service.trash([recycled.id], workspaceHistory, token));
     database.transaction(() => {
         const insert = database.prepare("INSERT INTO blocks(id,type,children) VALUES (?,'paragraph',?)");
         insert.run(left, JSON.stringify([right])); insert.run(right, JSON.stringify([left]));
@@ -114,11 +114,11 @@ test("reopening collects removed blocks and rootless cycles while keeping live a
 
 test("collecting orphan blocks discards dependent history and preserves unrelated page edits", t => {
     const { service, history, purge } = fixture(t), a = service.create("editable", "A"), b = service.create("editable", "B");
-    service.commitEdit({ pageId: b.id, tabId: "b", batch: 0, blocks: [], attributes: { pinned: true } }, pageHistory(b.id));
-    confirm(token => service.deleteBlock({ pageId: a.id, blockId: a.children[0], tabId: "a" }, pageHistory(a.id), token));
+    service.commitEdit({ pageId: b.id, batch: 0, blocks: [], attributes: { pinned: true } }, pageHistory(b.id));
+    confirm(token => service.deleteBlock({ pageId: a.id, blockId: a.children[0] }, pageHistory(a.id), token));
     assert.equal(history.state(pageHistory(a.id)).canUndo, true);
     assert.equal(history.state(pageHistory(b.id)).canUndo, true);
-    const result = purge.purge(null, "purge");
+    const result = purge.purge(null);
     assert.equal(result.status, "deleted");
     if (result.status === "deleted") {
         assert.deepEqual(result.pages, []);
@@ -131,12 +131,12 @@ test("collecting orphan blocks discards dependent history and preserves unrelate
 
 test("a changed recycle set invalidates a previously confirmed empty-trash scope", t => {
     const { service, purge } = fixture(t), a = service.create("editable", "A"), b = service.create("editable", "B");
-    confirm(token => service.trash([a.id], "a", workspaceHistory, token));
-    const first = purge.purge(null, "a");
+    confirm(token => service.trash([a.id], workspaceHistory, token));
+    const first = purge.purge(null);
     assert.equal(first.status, "confirmation");
     if (first.status !== "confirmation") return;
-    confirm(token => service.trash([b.id], "b", workspaceHistory, token));
-    const next = purge.purge(null, "a", first.token);
+    confirm(token => service.trash([b.id], workspaceHistory, token));
+    const next = purge.purge(null, first.token);
     assert.equal(next.status, "confirmation");
     assert.equal(service.list({ deleted: true }).total, 2);
 });
@@ -144,14 +144,14 @@ async function annotated(t: TestContext): Promise<ReturnType<typeof fixture> & {
     const f = fixture(t), path = join(f.info.path, "paper.pdf");
     writeFileSync(path, knownCoordinatePdf());
     const id = f.papers.importFile(path).pageId, file = (await f.papers.resources(id)).files[0];
-    const annotation = await f.papers.annotate(id, { fileId: file.id, pageNumber: 1, rectangles: [{ x: 50, y: 690, width: 70, height: 30 }], quote: "", context: "", extractorVersion: PDF_EXTRACTOR_VERSION }, "annotations", pageHistory(id));
+    const annotation = await f.papers.annotate(id, { fileId: file.id, pageNumber: 1, rectangles: [{ x: 50, y: 690, width: 70, height: 30 }], quote: "", context: "", extractorVersion: PDF_EXTRACTOR_VERSION }, pageHistory(id));
     const stored = f.database.prepare("SELECT stored_name FROM attachments WHERE id=?").pluck().get(file.id) as string;
     return { ...f, id, annotation, file: join(f.info.path, "attachments", stored), path };
 }
 test("purging a paper removes its solely retained annotation pages, PDF bytes and timers", async t => {
     const { service, purge, id, annotation, file } = await annotated(t);
     service.timers.set(id, "created_at", 0, true);
-    confirm(token => service.trash([id], "paper", workspaceHistory, token));
+    confirm(token => service.trash([id], workspaceHistory, token));
     assert.equal(service.flags(annotation).deleted, true);
     const preview = purge.purge([id], "paper");
     assert.equal(preview.status, "confirmation");
@@ -164,8 +164,8 @@ test("another live or recycled paper retains an annotation and the immutable att
     const { service, purge, id, annotation, file } = await annotated(t);
     const other = service.create("paper", "B");
     const ref = { id: randomUUID(), type: "blocked_reference" as const, payload: { ...payload("blocked_reference"), target: { kind: "page" as const, id: annotation } }, children: [] };
-    service.commitEdit({ pageId: other.id, tabId: "other", batch: 1, blocks: [ref], pageChildren: [ref.id] }, pageHistory(other.id));
-    confirm(token => service.trash([id, other.id], "both", workspaceHistory, token));
+    service.commitEdit({ pageId: other.id, batch: 1, blocks: [ref], pageChildren: [ref.id] }, pageHistory(other.id));
+    confirm(token => service.trash([id, other.id], workspaceHistory, token));
     assert.equal(service.flags(annotation).deleted, true);
     assert.deepEqual(erase(purge, [id]), [id]);
     assert.equal(service.get(annotation).kind, "annotation");
@@ -178,7 +178,7 @@ test("purging one paper deletes only its independent copy of an identically impo
     writeFileSync(path, knownCoordinatePdf());
     const a = papers.importFile(path).pageId, b = papers.importFile(path).pageId;
     const first = papers.externalPath((await papers.resources(a)).files[0].id), second = papers.externalPath((await papers.resources(b)).files[0].id);
-    confirm(token => service.trash([a, b], "trash", workspaceHistory, token));
+    confirm(token => service.trash([a, b], workspaceHistory, token));
     erase(purge, [a]); assert.equal(existsSync(first), false); assert.equal(existsSync(second), true);
     erase(purge, [b]); assert.equal(existsSync(second), false);
 });
@@ -186,11 +186,11 @@ test("purging an annotation's paper removes its PDF and removes the highlight hi
     const { service, history, purge, papers, info } = fixture(t), path = join(info.path, "plain.pdf");
     writeFileSync(path, knownCoordinatePdf());
     const page = papers.importFile(path).pageId, fileId = (await papers.resources(page)).files[0].id;
-    await papers.annotate(page, { fileId, pageNumber: 1, rectangles: [{ x: 50, y: 690, width: 70, height: 30 }], quote: "", context: "", extractorVersion: PDF_EXTRACTOR_VERSION }, "annotations", pageHistory(page), "yellow");
+    await papers.annotate(page, { fileId, pageNumber: 1, rectangles: [{ x: 50, y: 690, width: 70, height: 30 }], quote: "", context: "", extractorVersion: PDF_EXTRACTOR_VERSION }, pageHistory(page), "yellow");
     const mark = (await papers.resources(page)).annotations[0];
-    confirm(token => papers.deleteAnnotation(mark.id, "highlight-tab", pageHistory(mark.id), token));
+    confirm(token => papers.deleteAnnotation(mark.id, pageHistory(mark.id), token));
     assert.equal(history.state(pageHistory(page)).canUndo, true);
-    confirm(token => service.trash([page], "trash", workspaceHistory, token));
+    confirm(token => service.trash([page], workspaceHistory, token));
     erase(purge, [page]);
     assert.equal(history.state(pageHistory(page)).canUndo, false);
     assert.equal(service.sql.prepare("SELECT count(*) FROM attachments").pluck().get(), 0);
@@ -199,14 +199,14 @@ test("purging an annotation's paper removes its PDF and removes the highlight hi
 test("a failed permanent deletion rolls back rows and keeps every page's history", async t => {
     const { service, history, purge, id, file } = await annotated(t);
     const other = service.create("editable", "B");
-    service.commitEdit({ pageId: other.id, tabId: "other", batch: 1, blocks: [], attributes: { pinned: true } }, pageHistory(other.id));
-    confirm(token => service.trash([id], "trash", workspaceHistory, token));
+    service.commitEdit({ pageId: other.id, batch: 1, blocks: [], attributes: { pinned: true } }, pageHistory(other.id));
+    confirm(token => service.trash([id], workspaceHistory, token));
     service.sql.prepare("UPDATE attachments SET stored_name='../invalid.pdf'").run();
     const before = history.state(pageHistory(other.id)), trash = history.state(workspaceHistory);
-    const preview = purge.purge([id], "purge");
+    const preview = purge.purge([id]);
     assert.equal(preview.status, "confirmation");
     if (preview.status !== "confirmation") throw new Error("Expected confirmation");
-    assert.throws(() => purge.purge([id], "purge", preview.token), hasFailure("attachment-invalid-name"));
+    assert.throws(() => purge.purge([id], preview.token), hasFailure("attachment-invalid-name"));
     assert.equal(service.get(id).attributes.deleted, true);
     assert.equal(existsSync(file), true);
     assert.deepEqual(history.state(pageHistory(other.id)), before);

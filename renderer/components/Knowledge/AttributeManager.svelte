@@ -15,11 +15,13 @@
                 const type = event.currentTarget.value as AttributeType;
                 draft = { ...draft!, type, metadata: convertMetadata(draft!.type, type, draft!.metadata) };
             }} disabled={isBuiltin(draft.id)}>{#each attributeTypes.filter(type => type !== "recurrence" || draft?.type === "recurrence") as type (type)}<option value={type}>{labels[type]}</option>{/each}</select></label>
-            {#if draft.type === "select" || draft.type === "multiselect"}
+            {#if draft.type === "status" || draft.type === "select" || draft.type === "multiselect"}
                 <p class="muted">选项改名会保留原有选择；移除选项前会预览影响。</p>
                 <div bind:this={optionsRoot}>
                     {#each draft.metadata.options ?? [] as option (option.id)}
-                        <div class="option"><input bind:value={option.name} aria-label="选项名称" disabled={isBuiltin(draft.id) && !editableBuiltinMetadata(draft.id)} /><button class="text-button" disabled={isBuiltin(draft.id) && !editableBuiltinMetadata(draft.id)} onclick={() => draft!.metadata.options = draft!.metadata.options!.filter(item => item.id !== option.id)}>移除</button></div>
+                        <div class="option"><input bind:value={option.name} aria-label="选项名称" disabled={isBuiltin(draft.id) && !editableBuiltinMetadata(draft.id)} />
+                            {#if draft.type === "status"}<label><input type="checkbox" checked={option.group === "complete"} onchange={event => option.group = event.currentTarget.checked ? "complete" : "incomplete"} />已完成</label>{/if}
+                            <button class="text-button" disabled={isBuiltin(draft.id) && !editableBuiltinMetadata(draft.id)} onclick={() => draft!.metadata.options = draft!.metadata.options!.filter(item => item.id !== option.id)}>移除</button></div>
                     {/each}
                 </div>
                 <button class="text-button" disabled={isBuiltin(draft.id) && !editableBuiltinMetadata(draft.id)} onclick={addOption}>＋ 添加选项</button>
@@ -51,13 +53,14 @@
     import { editableBuiltinMetadata, isBuiltin } from "../../../shared/attrs/builtins";
     import { attributeLabels as labels } from "./attribute-labels";
     import { convertMetadata } from "../../../shared/attrs/values";
-    import { define, writeFromTab } from "./state.svelte";
-    let { definitions, tabId }: { definitions: AttributeDefinition[]; tabId: string } = $props();
+    import { define } from "./confirmation.svelte";
+    import { write } from "./page-sessions";
+    let { definitions }: { definitions: AttributeDefinition[] } = $props();
     let draft = $state<AttributeDefinition | null>(null), busy = $state(false), error = $state<ErrorValue>("");
     let optionsRoot = $state<HTMLDivElement>();
     async function addOption(): Promise<void> {
         if (!draft) return;
-        draft.metadata.options = [...(draft.metadata.options ?? []), { id: crypto.randomUUID(), name: "" }];
+        draft.metadata.options = [...(draft.metadata.options ?? []), { id: crypto.randomUUID(), name: "", ...(draft.type === "status" ? { group: "incomplete" as const } : {}) }];
         await tick();
         optionsRoot?.querySelector<HTMLInputElement>(".option:last-of-type input")?.focus();
     }
@@ -73,7 +76,7 @@
     async function apply(value: AttributeDefinition | null): Promise<void> {
         busy = true;
         try {
-            if (await writeFromTab(tabId, () => define(draft!.id, value ? JSON.parse(JSON.stringify(value)) : null, tabId))) {
+            if (await write(() => define(draft!.id, value ? JSON.parse(JSON.stringify(value)) : null))) {
                 draft = null;
                 error = "";
             }

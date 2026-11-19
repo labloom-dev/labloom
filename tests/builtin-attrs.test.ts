@@ -26,7 +26,7 @@ function definition(type: AttributeType = "string"): AttributeDefinition {
 
 test("builtin rows keep only editable metadata while complete definitions come from code", t => {
     const { database, service } = fixture(t);
-    const rows = database.prepare("SELECT id,type,name,metadata FROM attrs_meta ORDER BY id").all();
+    const rows = database.prepare("SELECT id,type,name,metadata FROM attrs_meta WHERE name IS NULL ORDER BY id").all();
     assert.deepEqual(rows, Object.entries(builtinAttrs).sort(([a], [b]) => a.localeCompare(b)).map(([id, value]) => ({
         id, type: value.type, name: null, metadata: JSON.stringify(editableBuiltinMetadata(id as BuiltinAttrId) ? value.metadata : {})
     })));
@@ -51,41 +51,38 @@ test("creating every page kind fills all its builtin attributes through the serv
                 assert.ok(Number.isSafeInteger(page.attributes[id]));
                 continue;
             }
-            const expected = id === "independent" ? kind !== "annotation" : id === "task_status" ? "todo" : id === "priority" ? "normal" : id === "feed_status" ? "enabled" : id === "feed_refresh" ? { every: 60, unit: "minute" } : defaultValue(builtinAttrs[id].type);
+            const expected = id === "independent" ? kind !== "annotation" : id === "feed_status" ? "enabled" : id === "feed_refresh" ? { every: 60, unit: "minute" } : defaultValue(builtinAttrs[id].type);
             assert.deepEqual(page.attributes[id], expected);
             const stored = database.prepare("SELECT value FROM page_attrs WHERE page_id=? AND attr_id=?").pluck().get(page.id, id);
             assert.deepEqual(stored, encodeValue(service.attributes.definition(id), expected));
         }
     }
-    const page = service.create();
-    service.attributes.changePageKind(page.id, "task");
-    assert.ok(builtinAttrsByPageKind.task.every(id => Object.hasOwn(service.get(page.id).attributes, id)));
     assert.deepEqual(database.pragma("foreign_key_check"), []);
 });
 
 test("direct writes, edits and creation share builtin permissions and canonical value validation", t => {
     const { service } = fixture(t), page = service.create();
     const custom = definition();
-    service.setDefinition(custom.id, custom, "manager");
+    service.setDefinition(custom.id, custom);
     const boolean = definition("boolean");
-    service.setDefinition(boolean.id, boolean, "manager");
+    service.setDefinition(boolean.id, boolean);
     for (const values of [{ pinned: 2 }, { [boolean.id]: 2 }, { [custom.id]: null }]) {
         assert.throws(() => service.attributes.write(page.id, values));
-        assert.throws(() => service.commitEdit({ pageId: page.id, tabId: "edit", batch: 1, blocks: [], attributes: values }, pageHistory(page.id)));
+        assert.throws(() => service.commitEdit({ pageId: page.id, batch: 1, blocks: [], attributes: values }, pageHistory(page.id)));
         assert.throws(() => service.create("editable", "B", values));
     }
     assert.equal(service.get(page.id).attributes.pinned, false);
     assert.throws(() => service.attributes.detach(page.id, ["tags"]), hasFailure("attribute-invalid-detach"));
-    assert.throws(() => service.commitEdit({ pageId: page.id, tabId: "edit", batch: 1, blocks: [], detach: ["tags"] }, pageHistory(page.id)), hasFailure("attribute-invalid-detach"));
+    assert.throws(() => service.commitEdit({ pageId: page.id, batch: 1, blocks: [], detach: ["tags"] }, pageHistory(page.id)), hasFailure("attribute-invalid-detach"));
     assert.throws(() => service.attributes.write(page.id, { created_at: 0 }), hasFailure("attribute-readonly"));
-    assert.throws(() => service.attributes.write(page.id, { task_status: "todo" }), hasFailure("attribute-unsupported-builtin"));
+    assert.throws(() => service.attributes.write(page.id, { feed_status: "enabled" }), hasFailure("attribute-unsupported-builtin"));
 });
 
 test("builtin identity, names, permissions and fixed metadata cannot be edited", t => {
-    const { service } = fixture(t), base = service.attributes.definition("task_status");
+    const { service } = fixture(t), base = service.attributes.definition("feed_status");
     for (const value of [null, { ...base, type: "string" as const }, { ...base, id: "other" }, { ...base, name: "Changed" }, { ...base, hidden: true },
         { ...base, metadata: { options: [{ id: "x", name: "X" }] } }]) {
-        assert.throws(() => service.setDefinition(base.id, value, "manager"));
+        assert.throws(() => service.setDefinition(base.id, value));
     }
     assert.deepEqual(service.attributes.definition(base.id), base);
 });
@@ -97,12 +94,12 @@ test("metadata has a type-specific shape and retyping normalizes metadata before
         { ...definition(), metadata: { options: [] } },
         { ...select, metadata: { options: [], name: "Wrong location" } },
         { ...select, metadata: { options: [{ id: "a", name: "A", extra: 1 }] } }
-    ]) assert.throws(() => service.setDefinition(value.id, value, "manager"), hasFailure("attribute-invalid-metadata"));
+    ]) assert.throws(() => service.setDefinition(value.id, value), hasFailure("attribute-invalid-metadata"));
     select.metadata.options = [{ id: "a", name: "A" }, { id: "b", name: "B" }];
-    service.setDefinition(select.id, select, "manager");
-    service.setDefinition(select.id, { ...select, type: "multiselect", metadata: {} }, "manager");
+    service.setDefinition(select.id, select);
+    service.setDefinition(select.id, { ...select, type: "multiselect", metadata: {} });
     assert.deepEqual(service.attributes.definition(select.id).metadata, select.metadata);
-    service.setDefinition(select.id, { ...select, type: "string" }, "manager");
+    service.setDefinition(select.id, { ...select, type: "string" });
     assert.deepEqual(service.attributes.definition(select.id).metadata, {});
     assert.deepEqual(database.prepare("SELECT name,metadata FROM attrs_meta WHERE id=?").get(select.id), { name: "A", metadata: "{}" });
 });
@@ -110,11 +107,11 @@ test("metadata has a type-specific shape and retyping normalizes metadata before
 test("editable tag options persist, rename searchable values and never store the builtin name", t => {
     const { service, database, info } = fixture(t), page = service.create("editable", "A"), tags = service.attributes.definition("tags");
     tags.metadata.options = [{ id: "paper", name: "论文" }];
-    service.setDefinition("tags", tags, "manager");
-    service.commitEdit({ pageId: page.id, tabId: "edit", batch: 1, blocks: [], attributes: { tags: ["paper"] } }, pageHistory(page.id));
+    service.setDefinition("tags", tags);
+    service.commitEdit({ pageId: page.id, batch: 1, blocks: [], attributes: { tags: ["paper"] } }, pageHistory(page.id));
     assert.equal(service.list({ keyword: "论文" }).total, 1);
     tags.metadata.options[0].name = "研究";
-    service.setDefinition("tags", tags, "manager");
+    service.setDefinition("tags", tags);
     assert.equal(service.list({ keyword: "论文" }).total, 0);
     assert.equal(service.list({ keyword: "研究" }).total, 1);
     session.close();
@@ -131,7 +128,7 @@ test("opening validates builtin names, types, fixed metadata and editable metada
         "DELETE FROM attrs_meta WHERE id='deleted'",
         "UPDATE attrs_meta SET type='string' WHERE id='deleted'",
         "UPDATE attrs_meta SET name='Changed' WHERE id='tags'",
-        "UPDATE attrs_meta SET metadata='{\"options\":[]}' WHERE id='task_status'",
+        "UPDATE attrs_meta SET metadata='{\"options\":[]}' WHERE id='feed_status'",
         "UPDATE attrs_meta SET metadata='{}' WHERE id='tags'"
     ]) {
         const { database, info } = fixture(t);

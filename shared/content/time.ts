@@ -1,5 +1,5 @@
 import { LabloomError } from "../failure";
-import { type AttributeType, type AttributeValue } from "../types/attributes";
+import { type AttributeType } from "../types/attributes";
 
 export const nowSeconds = (): number => Math.floor(Date.now() / 1000);
 
@@ -28,11 +28,6 @@ export function secondsToWall(seconds: number, zone?: string): string {
         formatters.set(zone, formatter);
     }
     return formatter.format(seconds * 1000).replace(" ", "T");
-}
-
-export function scheduleDay(attributes: Record<string, AttributeValue>, zone: string): string {
-    if (typeof attributes.schedule_start === "number") return secondsToWall(attributes.schedule_start, zone).slice(0, 10);
-    return typeof attributes.schedule_date === "number" ? secondsToDay(attributes.schedule_date) : "";
 }
 
 export function wallToSeconds(wall: string, zone: string): number {

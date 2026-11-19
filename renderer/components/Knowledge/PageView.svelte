@@ -5,7 +5,12 @@
         <div class="spacer"></div><button class:active={showProperties} onclick={() => showProperties = !showProperties}>属性</button>
         {#if page && !gone}<button disabled={syncing} onclick={trash}>{page.attributes.deleted ? "恢复页面" : "移入回收站"}</button>{/if}
     </header>
-    {#if gone}<p class="recycled">页面已永久删除。</p>
+    {#if gone || current.state.error && current.state.error.kind === "page-unavailable"}
+        <p class="recycled">找不到此页面。<button class="text-button" onclick={() => picking = true}>选择页面</button></p>
+        {#if picking}<TargetPicker mode="page" onclose={() => picking = false} onselect={target => {
+            current.release();
+            onparams({ page: { kind: "page", id: target.id } });
+        }} />{/if}
     {:else if page}
         {#if page.attributes.deleted}
             <div class="recycled">此页面已在回收站中，恢复后可继续编辑。</div>
@@ -13,9 +18,9 @@
         <div class="page-body">
             <div class="main-content">
                 {#if page.kind === "paper"}
-                    <div inert={syncing}><PaperPanel {page} session={current} tabId={tab.id} /></div>
+                    <div inert={syncing}><PaperPanel {page} session={current} {tabId} /></div>
                 {/if}
-                {#if page.kind === "feed"}<FeedView sourcePageId={page.id} />{:else}<Editor session={current} tabId={tab.id} anchorId={tab.anchorId} />{/if}
+                {#if page.kind === "feed"}<FeedView sourcePageId={page.id} />{:else}<Editor session={current} {tabId} pageAnchor />{/if}
 
             </div>
             {#if showProperties}
@@ -46,36 +51,30 @@
     import { Popover } from "bits-ui";
     import { dirtyPages } from "../Tab/dirty.svelte";
     import { untrack } from "svelte";
-    import { type Tab } from "../Tab/defs";
-    import { blockText } from "../../../shared/content/blocks";
-    import { session, perform, knowledgeState } from "./state.svelte";
+    import type { ViewProps } from "../Tab/views";
+    import TargetPicker from "./TargetPicker.svelte";
+    import { session } from "./page-sessions";
+    import { perform, knowledgeState } from "./feedback.svelte";
     import { readingTabs } from "../Tab/activity.svelte";
     import FeedView from "../Feed/FeedView.svelte";
     import { openPage } from "../layout/navigation";
-    import { updateTab } from "../Tab/api";
     import Editor from "../Editor/Editor.svelte";
     import Properties from "./Properties.svelte";
     import PaperPanel from "./PaperPanel.svelte";
-    let { tab }: { tab: Extract<Tab, { type: "page" }> } = $props();
+    let { tabId, params, source, onparams }: ViewProps<"page"> = $props();
+    let picking = $state(false);
+    const pageId = $derived(params.page.id);
     $effect(() => {
         const dirty = current.state.dirty || current.state.saving;
-        if (dirty) dirtyPages.set(tab.id + ":" + tab.pageId, tab.id); else dirtyPages.delete(tab.id + ":" + tab.pageId);
-        return () => { dirtyPages.delete(tab.id + ":" + tab.pageId); };
+        if (dirty) dirtyPages.set(tabId + ":" + pageId, tabId); else dirtyPages.delete(tabId + ":" + pageId);
+        return () => { dirtyPages.delete(tabId + ":" + pageId); };
     });
-    const current = untrack(() => session(tab.id, tab.pageId));
+    const current = untrack(() => session(tabId, pageId, source));
     const page = $derived(current.state.page);
-    const syncing = $derived(readingTabs.has(tab.id));
+    const syncing = $derived(readingTabs.has(tabId));
     let showProperties = $state(false), gone = $state(false);
-    $effect(() => { if (knowledgeState.change.purged?.includes(tab.pageId)) { gone = true; current.release(); } });
-    $effect(() => {
-        if (page) {
-            const title = blockText(page.blocks[page.titleBlockId]) || "未命名";
-            untrack(() => {
-                if (tab.title !== title) updateTab({ ...tab, title });
-            });
-        }
-    });
+    $effect(() => { if (knowledgeState.change.purged?.includes(pageId)) { gone = true; current.release(); } });
     function trash(): void {
-        void perform(() => current.action(token => page!.attributes.deleted ? window.api.pages.restore([tab.pageId], tab.id, current.source) : window.api.pages.trash([tab.pageId], tab.id, current.source, token)));
+        void perform(() => current.action((token, writeId) => page!.attributes.deleted ? window.api.pages.restore([pageId], current.source, writeId) : window.api.pages.trash([pageId], current.source, token, writeId)));
     }
 </script>

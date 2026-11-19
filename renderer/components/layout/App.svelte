@@ -36,7 +36,8 @@
     import Onboarding from "../startup/Onboarding.svelte";
     import { initializeAppearance } from "./preferences.svelte";
     import Dialogs from "../Knowledge/Dialogs.svelte";
-    import { closeSession, knowledgeState, receiveChange, saveAll } from "../Knowledge/state.svelte";
+    import { closeSession, saveAll } from "../Knowledge/page-sessions";
+    import { knowledgeState } from "../Knowledge/feedback.svelte";
     import { tabState } from "../Tab/state.svelte";
     import { tabLifecycle } from "../Tab/lifecycle";
     import { persistTabs, restoreTabs } from "../Tab/persistence.svelte";
@@ -104,7 +105,10 @@
                 knowledgeState.error = failure(error); return false;
             }
         };
-        const stopChanges = window.api.pages.onChanged(receiveChange);
+        const stopChanges = window.api.pages.onChanged(change => {
+            visits.changed(change);
+            knowledgeState.change = { ...change, seq: knowledgeState.change.seq + 1 };
+        });
         function blur(): void {
             if (document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement) document.activeElement.blur();
             window.dispatchEvent(new Event("workspace-flush"));

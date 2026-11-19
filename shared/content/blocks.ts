@@ -6,7 +6,7 @@ export function validTarget(value: unknown): value is Target {
     return record(value) && (value.kind === "page" || value.kind === "block") && validUUID(value.id);
 }
 
-export function textInline(text: string): InlineNode[] {
+function textInline(text: string): InlineNode[] {
     return text ? [{ type: "text", text }] : [];
 }
 
@@ -73,18 +73,4 @@ export function changedUses(before: string[], after: string[]): Map<string, numb
     for (const id of after) delta.set(id, (delta.get(id) ?? 0) + 1);
     for (const [id, count] of delta) if (!count) delta.delete(id);
     return delta;
-}
-
-export function assertAcyclic(blocks: Map<string, ContentBlock>): void {
-    const done = new Set<string>();
-    const visiting = new Set<string>();
-    function visit(id: string): void {
-        if (visiting.has(id)) throw new LabloomError({ kind: "block-cycle" });
-        if (done.has(id)) return;
-        visiting.add(id);
-        for (const child of blocks.get(id)?.children ?? []) visit(child);
-        visiting.delete(id);
-        done.add(id);
-    }
-    for (const id of blocks.keys()) visit(id);
 }

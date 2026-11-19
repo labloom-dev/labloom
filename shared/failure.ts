@@ -15,7 +15,8 @@ type Details = {
     "feed-address-missing": { status: number };
     "feed-unavailable": { status: number };
     "feed-http": { status: number };
-    "pdf-download-http": { status: number };
+    "download-http": { status: number };
+    "download-type-mismatch": { expected: string; actual: string };
     "block-missing": { blockId: string };
 };
 export type FailureInfo = { [K in FailureKind]: { kind: K; diagnostic?: string } & (K extends keyof Details ? Details[K] : object) }[FailureKind];
@@ -31,7 +32,7 @@ export function diagnostic(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
-export function isFailureInfo(value: unknown): value is FailureInfo {
+function isFailureInfo(value: unknown): value is FailureInfo {
     return !!value && typeof value === "object" && "kind" in value && typeof value.kind === "string" && Object.hasOwn(zhCN.failure, value.kind);
 }
 

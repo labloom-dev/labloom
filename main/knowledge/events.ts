@@ -33,7 +33,12 @@ export function expand(input: KnowledgeChange): KnowledgeChange {
     }
     const pages = change.summaryPages ?? change.pages;
     if (pages.length) {
-        const rows = data.statement("SELECT id,kind FROM pages WHERE id IN (SELECT value FROM json_each(?))").all(JSON.stringify(pages)) as { id: string; kind: PageKind }[];
+        const rows = data.statement("SELECT id,kind,title_block_id AS titleId FROM pages WHERE id IN (SELECT value FROM json_each(?))").all(JSON.stringify(pages)) as { id: string; kind: PageKind; titleId: string }[];
+        if (change.blocks.length) {
+            const blocks = new Set(change.blocks);
+            const titles = rows.filter(row => blocks.has(row.titleId)).map(row => row.id);
+            if (titles.length) change.titlePages = titles;
+        }
         change.kinds = Object.fromEntries(rows.map(row => [row.id, row.kind]));
     }
     return change;

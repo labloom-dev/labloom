@@ -9,20 +9,20 @@ import * as data from "./records";
 import * as core from "./timer-state";
 
 export { notices, settings } from "./timer-state";
-export function set(pageId: string, attrId: string, leadSeconds: number, enabled: boolean, sourceTab = ""): void {
-    commit.run({ sourceTab, history: false, updateModified: false }, context => {
+export function set(pageId: string, attrId: string, leadSeconds: number, enabled: boolean): void {
+    commit.run({ history: false, updateModified: false }, context => {
         core.set(pageId, attrId, leadSeconds, enabled);
         context.change({ pages: [pageId], notices: true });
     });
 }
-export function read(pageId: string, attrId: string, leadSeconds: number, sourceTab = ""): void {
-    commit.run({ sourceTab, history: false, updateModified: false }, context => {
+export function read(pageId: string, attrId: string, leadSeconds: number): void {
+    commit.run({ history: false, updateModified: false }, context => {
         core.read(pageId, attrId, leadSeconds);
         context.change({ pages: [pageId], notices: true });
     });
 }
 export function recalculateAll(): void {
-    commit.run({ sourceTab: "", history: false, updateModified: false }, context => {
+    commit.run({ history: false, updateModified: false }, context => {
         core.recalculateAll();
         context.change({ notices: true });
     });
@@ -49,9 +49,9 @@ export function check(): Promise<string[]> {
                 feeds.push(row.pageId);
                 continue;
             }
-            commit.run({ sourceTab: "", history: false, updateModified: false }, context => {
+            commit.run({ history: false, updateModified: false }, context => {
                 const expected = isTimeType(definition.type) ? reminderDue(definition.type, page.attributes[row.attrId] as number | null, row.leadSeconds, resolveTimeZone(workspace.timeZone())) : null;
-                const allowed = isTimeType(definition.type) && !page.attributes.deleted && !(page.kind === "task" && page.attributes.task_status === "done") && expected === row.dueAt;
+                const allowed = isTimeType(definition.type) && !page.attributes.deleted && !core.completed(row.pageId) && expected === row.dueAt;
                 const changed = data.statement("UPDATE timers SET due_at=NULL,fired_at=CASE WHEN ? THEN ? ELSE fired_at END,seen=CASE WHEN ? THEN 0 ELSE seen END WHERE page_id=? AND attr_id=? AND lead_seconds=? AND due_at=?")
                     .run(Number(allowed), now, Number(allowed), row.pageId, row.attrId, row.leadSeconds, row.dueAt).changes;
                 context.change({ pages: [row.pageId], notices: true });

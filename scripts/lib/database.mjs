@@ -6,11 +6,11 @@ import { generateSQLiteDrizzleJson, generateSQLiteMigration } from "drizzle-kit/
 
 const separator = "\n--> statement-breakpoint\n";
 
-export function baselineDirectory(root) {
+function baselineDirectory(root) {
     return join(root, "main/storage/migrations/generated");
 }
 
-export function splitSql(sql) {
+function splitSql(sql) {
     return sql.trim().split(/^--> statement-breakpoint\s*$/m).map(part => part.trim()).filter(Boolean);
 }
 

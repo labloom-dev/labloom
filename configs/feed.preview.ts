@@ -3,11 +3,12 @@ import { existsSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig } from "vite";
 import * as feed from "../main/feed/service";
+import * as papers from "../main/knowledge/papers";
+import { workspaceHistory } from "../shared/history/ipc";
 import * as events from "../main/knowledge/events";
 import * as session from "../main/session";
 import { LabloomError, toFailureInfo } from "../shared/failure";
 import type { FeedQuery, FeedSourceAction, FeedSourceInput } from "../shared/types/feed";
-import { arxivURL } from "../shared/utils/feed";
 
 const root = resolve(import.meta.dirname, "..");
 
@@ -32,18 +33,6 @@ export default defineConfig({
                 server.httpServer?.once("close", () => {
                     unsubscribe(); session.close();
                 });
-
-                if (!feed.getState({}).sources.length) {
-                    try {
-                        await feed.saveSource({
-                            name: "示例：AI / 机器学习（large language model）",
-                            url: arxivURL("cs.AI, cs.LG", "large language model")
-                        });
-                    }
-                    catch (error) {
-                        server.config.logger.warn(`示例订阅加载失败，可在页面中手动添加：${error instanceof Error ? error.message : error}`);
-                    }
-                }
 
                 server.middlewares.use(async (req, res, next) => {
                     if (req.url === "/") {
@@ -71,7 +60,10 @@ export default defineConfig({
                             case "version": result = version; break;
                             case "getState": result = feed.getState(args[0] as FeedQuery); break;
                             case "getItem": result = feed.getItem(args[0] as string); break;
-                            case "saveSource": result = await feed.saveSource(args[0] as FeedSourceInput); break;
+                            case "resolveSource": result = await feed.resolveSource(args[0] as FeedSourceInput); break;
+                            case "discardSource": result = feed.discardSource(args[0] as string); break;
+                            case "saveSource": result = feed.saveSource(args[0] as string); break;
+                            case "attachPDF": result = papers.attachFile(args[0] as string, "paper_files", args[1] as string, workspaceHistory); break;
                             case "setSourceStatus": result = feed.setSourceStatus(args[0] as string, args[1] as FeedSourceAction); break;
                             case "refresh": result = await feed.refresh((args[0] ?? undefined) as string | undefined); break;
                             case "setRead": result = feed.setRead(args[0] as string, args[1] as boolean); break;

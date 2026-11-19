@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { buildTestMain } from "../run-workspace.mjs";
 import { build } from "esbuild";
+import typia from "@typia/unplugin/vite";
 import { createServer } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 
@@ -14,7 +15,7 @@ const local = join(root, ".local");
 mkdirSync(local, { recursive: true });
 const dir = mkdtempSync(join(local, "compact-benchmark-"));
 const server = await createServer({ root: join(root, "renderer"), configFile: false, cacheDir: join(dir, "vite"),
-    plugins: [svelte({ configFile: join(root, "configs/svelte.config.js") })],
+    plugins: [typia({ include: [/[/\\]Tab[/\\]restore\.ts$/], tsconfig: join(root, "configs/tsconfig.web.json") }), svelte({ configFile: join(root, "configs/svelte.config.js") })],
     server: { host: "localhost", port: 0, hmr: false, watch: null, fs: { allow: [root] } } });
 try {
     const options = { absWorkingDir: root, bundle: true, platform: "node", format: "cjs", packages: "external", outdir: dir, outExtension: { ".js": ".cjs" } };

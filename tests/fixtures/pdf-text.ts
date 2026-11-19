@@ -30,26 +30,3 @@ export function knownCoordinatePdf(embedded = true, stream = [
     text += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${start}\n%%EOF\n`;
     return Uint8Array.from(text, letter => letter.charCodeAt(0));
 }
-/** Fifty lines × sixty printable characters, for genuine pointer/paint feedback tests. */
-export function performancePdf(): Uint8Array {
-    const line = "Labloom pointer selection feedback test: words across a line. ";
-    const text = line.repeat(2).slice(0, 60);
-    const stream = Array.from({ length: 50 }, (_, index) => `BT /F1 8 Tf 1 0 0 1 40 ${800 - index * 14} Tm (${text}) Tj ET`).join("\n");
-    const objects = [
-        "<< /Type /Catalog /Pages 2 0 R >>",
-        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 600 840] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
-        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-        `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`
-    ];
-    let pdf = "%PDF-1.7\n";
-    const offsets = [0];
-    objects.forEach((object, index) => {
-        offsets.push(pdf.length); pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
-    });
-    const start = pdf.length;
-    pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-    for (const offset of offsets.slice(1)) pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
-    pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${start}\n%%EOF\n`;
-    return new TextEncoder().encode(pdf);
-}

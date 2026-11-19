@@ -1,7 +1,7 @@
-export const attributeTypes = ["string", "number", "boolean", "minute", "hour", "day", "month", "year", "select", "multiselect", "url", "page-link", "page-links", "file", "files", "recurrence", "json"] as const;
+export const attributeTypes = ["string", "number", "boolean", "minute", "hour", "day", "month", "year", "select", "status", "multiselect", "url", "page-link", "page-links", "file", "files", "recurrence", "json"] as const;
 export type AttributeType = typeof attributeTypes[number];
 export type AttributeValue = string | number | boolean | null | AttributeValue[] | { [key: string]: AttributeValue };
-export type AttributeOption = { id: string; name: string };
+type AttributeOption = { id: string; name: string; group?: "incomplete" | "complete" };
 export type AttributeMetadata = {
     options?: AttributeOption[];
 };

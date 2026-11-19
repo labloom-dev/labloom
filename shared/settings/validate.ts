@@ -9,19 +9,19 @@ function record(value: unknown): value is Record<string, unknown> {
 function keys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
     return Object.keys(value).every(key => allowed.includes(key) && value[key] !== undefined);
 }
-export function validWorkspace(value: unknown): value is Workspace | null {
+function validWorkspace(value: unknown): value is Workspace | null {
     return value === null || record(value) && keys(value, ["id", "name", "path"])
         && typeof value.id === "string" && value.id.length > 0
         && typeof value.name === "string" && value.name.length > 0
         && typeof value.path === "string" && /^(?:[a-z]:[\\/]|[\\/])/i.test(value.path);
 }
-export function validWindowSettings(value: unknown): value is Settings["window"] {
+function validWindowSettings(value: unknown): value is Settings["window"] {
     return record(value) && keys(value, ["width", "height", "maximized"])
         && Number.isSafeInteger(value.width) && Number(value.width) >= minWindowWidth && Number(value.width) <= maxWindowDimension
         && Number.isSafeInteger(value.height) && Number(value.height) >= minWindowHeight && Number(value.height) <= maxWindowDimension
         && typeof value.maximized === "boolean";
 }
-export function validLayout(value: unknown): value is Settings["layout"] {
+function validLayout(value: unknown): value is Settings["layout"] {
     return record(value) && keys(value, ["width", "collapsed"])
         && typeof value.width === "number" && Number.isFinite(value.width) && value.width >= minPanelWidth && value.width <= maxPanelWidth
         && typeof value.collapsed === "boolean";

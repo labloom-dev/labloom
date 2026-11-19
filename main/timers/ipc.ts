@@ -6,7 +6,7 @@ import * as timers from "../knowledge/timers";
 
 type Args<Key extends keyof typeof timersChannels> = Parameters<TimersAPI[Key]>;
 
-export const routes = {
+const routes = {
     settings: route(typia.createAssert<Args<"settings">>(invalid), timers.settings),
     set: route(typia.createAssert<Args<"set">>(invalid), timers.set),
     notices: route(typia.createAssert<Args<"notices">>(invalid), timers.notices),

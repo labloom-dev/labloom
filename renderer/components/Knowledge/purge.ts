@@ -1,9 +1,9 @@
 import type { PurgeResult } from "../../../shared/types/knowledge";
-import { ask } from "./state.svelte";
+import { ask } from "./confirmation.svelte";
 import { t } from "../../i18n.svelte";
 
-export async function purgePages(ids: string[] | null, tabId: string): Promise<boolean> {
-    const submit = (token?: string): Promise<PurgeResult> => ids === null ? window.api.pages.emptyTrash(tabId, token) : window.api.pages.purge(ids, tabId, token);
+export async function purgePages(ids: string[] | null): Promise<boolean> {
+    const submit = (token?: string): Promise<PurgeResult> => ids === null ? window.api.pages.emptyTrash(token) : window.api.pages.purge(ids, token);
     let result = await submit();
     while (result.status === "confirmation") {
         const preview = result;

@@ -1,8 +1,8 @@
 <nav class="activity" aria-label="主导航">
     {#each destinations.filter(item => ["overview", "feed", "library", "papers", "calendar"].includes(item.type)) as item (item.type)}
-        <button class:active={activeType === item.type} aria-label={item.title} title={tooltip(item.type)} onclick={() => openDestination(item.type)}><Icon name={item.icon} size={20} /></button>
+        <button class:active={sameView(activeView, destinationViews[item.type])} aria-label={title(item.type)} title={tooltip(item.type)} onclick={() => openView(destinationViews[item.type])}><Icon name={item.icon} size={20} /></button>
     {/each}
-    <button class="settings" class:active={activeType === "settings"} aria-label="偏好设置" title={tooltip("settings")} onclick={() => openDestination("settings")}><Icon name="settings" /></button>
+    <button class="settings" class:active={sameView(activeView, destinationViews.settings)} aria-label={title("settings")} title={tooltip("settings")} onclick={() => openDestination("settings")}><Icon name="settings" /></button>
 </nav>
 {#if !shell.collapsed}
     <aside class="left-panel" style:width={shell.width + "px"}>
@@ -30,17 +30,24 @@
     .groups { overflow: auto; flex: 1; min-height: 0; }
 </style>
 <script lang="ts">
+    import { get } from "svelte/store";
+    import { definitionFor } from "../Tab/views";
     import { onMount } from "svelte";
     import { tabState } from "../Tab/state.svelte";
     import Icon from "../utils/Icon.svelte";
     import Resizer from "../utils/Resizer.svelte";
     import SidebarGroup from "./SidebarGroup.svelte";
-    import { destinations, openDestination } from "./navigation";
+    import { destinations, destinationViews, sameView, openView, openDestination } from "./navigation";
     import { commands, type Command } from "../../../shared/content/commands";
     import { minPanelWidth, maxPanelWidth } from "../../../shared/settings/defaults";
     import { shell, persistPanel } from "./shell.svelte";
     let tags = $state<{ id: string; name: string }[]>([]), filter = $state(""), applied = $state("");
-    const activeType = $derived(tabState.groups.find(group => group.id === tabState.focusedGroupId)?.tabs.find(tab => tab.id === tabState.groups.find(group => group.id === tabState.focusedGroupId)?.activeTabId)?.type);
+    const group = $derived(tabState.groups.find(group => group.id === tabState.focusedGroupId));
+    const activeView = $derived(group?.tabs.find(tab => tab.id === group.activeTabId)?.view);
+    const title = (type: keyof typeof destinationViews): string => {
+        const view = destinationViews[type];
+        return get(definitionFor(view.type).title(view.params));
+    };
     const tooltip = (type: string): string => {
         const item = commands[type as Command]; return item ? item.label + (item.shortcut ? ` (${item.shortcut})` : "") : type;
     };

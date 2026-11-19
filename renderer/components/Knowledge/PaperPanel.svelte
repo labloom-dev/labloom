@@ -33,7 +33,7 @@
         {/if}
         {#if annotationId}
             {#key annotationId}
-                <AnnotationPopover pageId={annotationId} {tabId} position={menuPosition} onclose={() => annotationId = null} />
+                <AnnotationPopover source={session.source} pageId={annotationId} {tabId} position={menuPosition} onclose={() => annotationId = null} />
             {/key}
         {/if}
     {/if}
@@ -60,7 +60,10 @@
     import { type ReaderSource, type ReaderViewState } from "../Reader/defs";
     import Reader from "../Reader/Reader.svelte";
     import AnnotationPopover from "./AnnotationPopover.svelte";
-    import { knowledgeState, perform, trackWrite, writeFromTab, confirmed, session as pageSession, type PageSession } from "./state.svelte";
+    import { knowledgeState, perform } from "./feedback.svelte";
+    import { write, session as pageSession } from "./page-sessions";
+    import { confirmed } from "./confirmation.svelte";
+    import { type PageSession } from "./page-session.svelte";
     let { page, session, tabId }: { page: PageRecord; session: PageSession; tabId: string } = $props();
     let resources = $state<PaperResources>({ files: [], annotations: [] }), fileId = $state(""), source = $state.raw<ReaderSource | null>(null), viewState = $state<ReaderViewState | undefined>(undefined);
     let reader = $state<Reader | null>(null), selection = $state<AnnotationInput | null>(null), expanded = $state(true), busy = $state(false), error = $state<ErrorValue>("");
@@ -80,7 +83,7 @@
         if (at) menuPosition = at;
         if (value) {
             activeHighlight = null;
-            if (annotationId && await pageSession(tabId, annotationId).flush()) annotationId = null;
+            if (annotationId && await pageSession(tabId, annotationId, session.source).flush()) annotationId = null;
         }
     }
     const sourceFiles = new WeakMap<ReaderSource, string>();
@@ -96,7 +99,7 @@
                 request++;
                 source = null; fileId = "";
                 dismiss();
-                if (annotationId && await pageSession(tabId, annotationId).flush()) annotationId = null;
+                if (annotationId && await pageSession(tabId, annotationId, session.source).flush()) annotationId = null;
                 if (available[0]) await openFile(available[0].id);
                 else error = "";
             }
@@ -113,14 +116,14 @@
         };
     });
     async function toggleExpanded(): Promise<void> {
-        if (annotationId && !await pageSession(tabId, annotationId).flush()) return;
+        if (annotationId && !await pageSession(tabId, annotationId, session.source).flush()) return;
         annotationId = null;
         dismiss();
         expanded = !expanded;
     }
     async function openFile(id: string): Promise<void> {
         if (!pdfs.some(file => file.id === id)) return;
-        if (annotationId && !await pageSession(tabId, annotationId).flush()) return;
+        if (annotationId && !await pageSession(tabId, annotationId, session.source).flush()) return;
         annotationId = null;
         const sequence = ++request;
         try {
@@ -147,8 +150,7 @@
     function savePosition(state: ReaderViewState, current: ReaderSource): void {
         const id = sourceFiles.get(current);
         if (page.attributes.deleted || !id || !Array.isArray(page.attributes.paper_files) || !page.attributes.paper_files.includes(id)) return;
-        const request = window.api.papers.position(page.id, id, { page: state.pageNumber, scale: state.scale, rotation: state.rotation, left: state.left, top: state.top }, tabId);
-        trackWrite(tabId, request);
+        const request = write(() => window.api.papers.position(page.id, id, { page: state.pageNumber, scale: state.scale, rotation: state.rotation, left: state.left, top: state.top }));
         void request.catch(problem => {
             error = failure(problem);
             knowledgeState.error = error;
@@ -157,7 +159,7 @@
     async function attach(): Promise<void> {
         busy = true;
         try {
-            if (await writeFromTab(tabId, () => window.api.papers.importFiles(page.id, "paper_files", tabId, { kind: "page", id: page.id }))) await load();
+            if (await write(() => window.api.papers.importFiles(page.id, "paper_files", session.source))) await load();
         }
         catch (problem) {
             error = failure(problem);
@@ -172,7 +174,7 @@
         reader?.clearSelection();
     }
     async function selectHighlight(id: string, at: { x: number; y: number }, annotation = false): Promise<void> {
-        if (annotationId && !await pageSession(tabId, annotationId).flush()) return;
+        if (annotationId && !await pageSession(tabId, annotationId, session.source).flush()) return;
         dismiss();
         menuPosition = at;
         const highlight = resources.annotations.find(item => item.id === id);
@@ -181,17 +183,21 @@
             annotationId = null; activeHighlight = id;
         }
     }
+    async function annotation(anchor: AnnotationInput | string, color?: string): Promise<string | null> {
+        const pageId = page.id;
+        if (!await window.api.papers.prepareAnnotation(pageId, anchor)) return null;
+        if (typeof anchor === "string") return anchor;
+        return write(() => window.api.papers.annotate(pageId, anchor, session.source, color));
+    }
     async function markColor(color: string): Promise<void> {
         if (!selection && !activeHighlight) return;
         busy = true;
         try {
             const anchor = selection ? $state.snapshot(selection) : null, id = activeHighlight;
-            await writeFromTab(tabId, async () => {
-                if (id) await window.api.papers.changeAnnotation(id, color, tabId, { kind: "page", id: page.id });
-                else if (anchor) await window.api.papers.annotate(page.id, anchor, tabId, { kind: "page", id: page.id }, color);
-                dismiss();
-                await load();
-            });
+            if (id) await write(() => window.api.papers.changeAnnotation(id, color, session.source));
+            else if (anchor && !await annotation(anchor, color)) return;
+            dismiss();
+            await load();
         }
         catch (problem) {
             error = failure(problem);
@@ -206,13 +212,12 @@
         if (!anchor) return;
         busy = true;
         try {
-            await writeFromTab(tabId, async () => {
-                const id = await window.api.papers.annotate(page.id, anchor, tabId, { kind: "page", id: page.id }, existing?.color);
-                await session.reread([page.id]);
-                dismiss();
-                await load();
-                annotationId = id;
-            });
+            const id = await annotation(anchor, existing?.color);
+            if (!id) return;
+            await session.reread([page.id]);
+            dismiss();
+            await load();
+            annotationId = id;
         }
         catch (problem) {
             error = failure(problem);
@@ -223,8 +228,8 @@
     }
     function remove(id: string): void {
         void perform(async () => {
-            await writeFromTab(tabId, async () => {
-                if (await confirmed(token => window.api.papers.deleteAnnotation(id, tabId, { kind: "page", id: page.id }, token))) {
+            await write(async () => {
+                if (await confirmed(token => window.api.papers.deleteAnnotation(id, session.source, token))) {
                     dismiss();
                     await session.reread([page.id]);
                 }

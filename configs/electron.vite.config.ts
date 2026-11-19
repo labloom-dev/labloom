@@ -43,6 +43,7 @@ export default defineConfig({
             }
         },
         plugins: [
+            typia({ include: [/[/\\]Tab[/\\]restore\.ts$/], tsconfig: resolve("configs/tsconfig.web.json") }),
             svelte({ configFile: resolve("configs/svelte.config.js") }),
             // pdf.js fetches these at runtime, see renderer/components/Reader/pdfjs.ts.
             viteStaticCopy({

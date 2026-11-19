@@ -10,7 +10,8 @@ import { builtinAttrs } from "../shared/attrs/builtins";
 import { convertValue } from "../shared/attrs/convert";
 import { display, search } from "../shared/attrs/format";
 import { defaultValue, encodeValue, validateDefinition, validateValue } from "../shared/attrs/values";
-import { dayToSeconds, monthToSeconds, scheduleDay, secondsToDay, secondsToMonth, secondsToWall, secondsToYear, timeToSeconds, timeTypes, wallToSeconds, yearToSeconds } from "../shared/content/time";
+import { scheduleDay } from "../renderer/components/Knowledge/calendar-day";
+import { dayToSeconds, monthToSeconds, secondsToDay, secondsToMonth, secondsToWall, secondsToYear, timeToSeconds, timeTypes, wallToSeconds, yearToSeconds } from "../shared/content/time";
 import { type AttributeDefinition, type AttributeType, type AttributeValue } from "../shared/types/attributes";
 
 const definition = (type: AttributeType, id = "custom:" + randomUUID()): AttributeDefinition => ({ name: "属性", id, type, metadata: {} });
@@ -107,11 +108,11 @@ test("retyping truncates or expands calendar precision and preserves seconds bet
 
 test("all precisions persist as SQLite integers and rejected writes roll back atomically", t => {
     const { service, database } = fixture(t);
-    const page = service.create("event", "A", { schedule_date: dayToSeconds("2026-11-11") });
+    const page = service.create("editable", "A", { schedule_date: dayToSeconds("2026-11-11") });
     const values = [instant, instant, dayToSeconds("2026-11-11"), monthToSeconds("2026-11"), yearToSeconds("2026")];
     for (const [index, type] of timeTypes.entries()) {
         const def = definition(type);
-        assert.equal(service.setDefinition(def.id, def, "test"), null);
+        assert.equal(service.setDefinition(def.id, def), null);
         service.attributes.write(page.id, { [def.id]: values[index] });
         assert.deepEqual(database.prepare("SELECT value,typeof(value) AS type FROM page_attrs WHERE page_id=? AND attr_id=?").get(page.id, def.id), { value: values[index], type: "integer" });
         assert.throws(() => service.attributes.write(page.id, { pinned: true, [def.id]: type === "minute" || type === "hour" ? 1.5 : values[index] + 1 }));
@@ -119,7 +120,7 @@ test("all precisions persist as SQLite integers and rejected writes roll back at
         service.attributes.write(page.id, { [def.id]: null });
         assert.equal(service.get(page.id).attributes[def.id], null);
     }
-    for (const type of ["date", "datetime"]) assert.throws(() => service.setDefinition("custom:" + randomUUID(), { ...definition("day"), type } as AttributeDefinition, "test"));
+    for (const type of ["date", "datetime"]) assert.throws(() => service.setDefinition("custom:" + randomUUID(), { ...definition("day"), type } as AttributeDefinition));
     for (const id of ["created_at", "modified_at", "recycled_at", "schedule_start", "schedule_end", "feed_last_checked"] as const) assert.equal(service.attributes.definition(id).type, "minute");
     assert.equal(service.attributes.definition("schedule_date").type, "day");
     assert.equal(service.attributes.definition("paper_year").type, "string");
@@ -130,31 +131,31 @@ test("definition preview and commit share conversion, invalidate undo, and refre
     const { service, setZone } = fixture(t);
     const history = historyServices();
     const page = service.create("editable", "A"), def = definition("minute");
-    service.setDefinition(def.id, def, "manager");
-    assert.equal(service.commitEdit({ pageId: page.id, tabId: "editor", batch: 1, blocks: [], attributes: { [def.id]: instant } }, pageHistory(page.id)).status, "saved");
+    service.setDefinition(def.id, def);
+    assert.equal(service.commitEdit({ pageId: page.id, batch: 1, blocks: [], attributes: { [def.id]: instant } }, pageHistory(page.id)).status, "saved");
     assert.equal(history.state(pageHistory(page.id)).canUndo, true);
     const target = { ...def, type: "day" as const };
-    const preview = service.setDefinition(def.id, target, "manager")!;
+    const preview = service.setDefinition(def.id, target)!;
     assert.deepEqual(preview.pages.map(p => p.id), [page.id]);
     assert.equal(service.get(page.id).attributes[def.id], instant);
     setZone("UTC");
-    const updated = service.setDefinition(def.id, target, "manager", preview.token)!;
+    const updated = service.setDefinition(def.id, target, preview.token)!;
     assert.notEqual(updated.token, preview.token);
     assert.equal(service.get(page.id).attributes[def.id], instant);
-    assert.equal(service.setDefinition(def.id, target, "manager", updated.token), null);
+    assert.equal(service.setDefinition(def.id, target, updated.token), null);
     assert.equal(service.get(page.id).attributes[def.id], convertValue(def, target, instant, "UTC"));
     assert.equal(history.state(pageHistory(page.id)).canUndo, false);
     const text = { ...target, type: "string" as const };
-    const back = service.setDefinition(def.id, text, "manager")!;
-    service.setDefinition(def.id, text, "manager", back.token);
+    const back = service.setDefinition(def.id, text)!;
+    service.setDefinition(def.id, text, back.token);
     assert.equal(service.get(page.id).attributes[def.id], "2026-11-07");
 });
 
 test("calendar search and grouping stay on the same day after changing zones and reopening", t => {
     const { service, database, info, setZone } = fixture(t);
     const day = dayToSeconds("2026-11-11");
-    const event = service.create("event", "A", { schedule_date: day });
-    const task = service.create("task", "B", { schedule_date: day, schedule_start: instant });
+    const event = service.create("editable", "A", { schedule_date: day });
+    const task = service.create("editable", "B", { schedule_date: day, schedule_start: instant });
     // Keep system timestamps from also matching the date keyword under test.
     database.prepare("UPDATE page_attrs SET value=? WHERE attr_id IN ('created_at','modified_at')").run(yearToSeconds("2000"));
     for (const timeZone of [zone, "UTC", "America/New_York"]) {
@@ -162,8 +163,8 @@ test("calendar search and grouping stay on the same day after changing zones and
         assert.deepEqual(new Set(service.list({ keyword: "2026-11" }).items.map(p => p.id)), new Set([event.id, task.id]));
         assert.equal(service.list({ keyword: "2026-11-11" }).total, 2);
         assert.equal(service.list({ keyword: String(day) }).total, 0);
-        assert.equal(scheduleDay(service.get(event.id).attributes, timeZone), "2026-11-11");
-        assert.equal(scheduleDay(service.get(task.id).attributes, timeZone), secondsToWall(instant, timeZone).slice(0, 10));
+        assert.equal(scheduleDay(service.get(event.id).attributes, "schedule_date"), "2026-11-11");
+        assert.equal(scheduleDay(service.get(task.id).attributes, "schedule_date"), "2026-11-11");
     }
     session.close();
     const reopened = openWorkspace(info.path, undefined, { timeZone: () => "America/New_York" });
@@ -171,5 +172,5 @@ test("calendar search and grouping stay on the same day after changing zones and
     const next = knowledgeServices();
     assert.equal(next.get(event.id).attributes.schedule_date, day);
     assert.equal(next.list({ keyword: "2026-11-11" }).total, 2);
-    assert.equal(scheduleDay(next.get(event.id).attributes, "America/New_York"), "2026-11-11");
+    assert.equal(scheduleDay(next.get(event.id).attributes, "schedule_date"), "2026-11-11");
 });

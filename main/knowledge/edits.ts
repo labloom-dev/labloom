@@ -1,11 +1,11 @@
-import type { HistoryOrigin, HistorySource } from "../../shared/history/ipc";
+import { type HistorySource } from "../../shared/history/ipc";
 import { randomUUID } from "node:crypto";
 import { attributeTargets, decodeValue, record, validUUID } from "../../shared/attrs/values";
-import { blockText, payload, references, validateBlock } from "../../shared/content/blocks";
+import { blockText, payload, validateBlock } from "../../shared/content/blocks";
 import { nowSeconds } from "../../shared/content/time";
 import { LabloomError } from "../../shared/failure";
 import { type AttributeDefinition, type AttributeImpact, type AttributeValue } from "../../shared/types/attributes";
-import { pageKinds, type BlockDeletion, type ChangePreview, type CommitResult, type ContentBlock, type EditCommit, type KnowledgeChange, type PageKind, type PageRecord, type Placement, type Target } from "../../shared/types/content";
+import { pageKinds, type BlockDeletion, type ChangePreview, type CommitResult, type ContentBlock, type EditCommit, type PageKind, type PageRecord, type Placement, type Target } from "../../shared/types/content";
 import * as workspace from "../workspace-state";
 import * as attributes from "./attributes";
 import { fingerprint } from "./attributes";
@@ -14,7 +14,6 @@ import * as commit from "./commit";
 import * as data from "./records";
 import * as retention from "./retention";
 import * as timerState from "./timer-state";
-import { checkTab } from "./validation";
 
 
 class DefinitionRollback extends Error {
@@ -22,22 +21,16 @@ class DefinitionRollback extends Error {
         super("definition preview");
     }
 }
-function transact(tabId: string, source: HistorySource | false, action: () => CommitResult, confirmation?: string): CommitResult {
-    workspace.requireWorkspace();
-    checkTab(tabId);
-    return commit.run({ sourceTab: tabId, history: source, confirmation }, action);
-}
 function putBlock(block: ContentBlock): void {
     const plan = new EditChanges();
     plan.putBlock(block);
     plan.persist();
 }
-export function create(kind: PageKind = "editable", title = "", initial: Record<string, AttributeValue> = {}, parentId?: string, tabId = ""): PageRecord {
+export function create(source: HistorySource, title = "", initial: Record<string, AttributeValue> = {}, parentId?: string): PageRecord {
     workspace.requireWorkspace();
     if (!record(initial)) throw new LabloomError({ kind: "page-invalid-attributes" });
     for (const id of Object.keys(initial)) if (attributes.definition(id).readonly || id === "deleted") throw new LabloomError({ kind: "page-create-readonly" });
-    if (kind === "annotation") throw new LabloomError({ kind: "annotation-selection-required" });
-    return insertPage(kind, title, initial, parentId, tabId, false);
+    return createPage("editable", title, initial, parentId, source);
 }
 function writable(id: string): ReturnType<typeof data["header"]> {
     const page = data.header(id);
@@ -48,7 +41,6 @@ function writable(id: string): ReturnType<typeof data["header"]> {
 function planEdit(input: EditCommit): EditChanges {
     if (!record(input) || !Number.isSafeInteger(input.batch) || input.batch < 0 || !Array.isArray(input.blocks) || !record(input.attributes ?? {}) ||
         !Array.isArray(input.detach ?? []) || input.detach?.some(id => typeof id !== "string")) throw new LabloomError({ kind: "edit-invalid-input" });
-    checkTab(input.tabId);
     if (input.sync !== undefined && (!Array.isArray(input.sync) || input.sync.some(id => !validUUID(id) || !syncBlock(id)))) throw new LabloomError({ kind: "block-sync-unavailable" });
     const page = writable(input.pageId), plan = new EditChanges(), submitted = new Set<string>();
     if (page.kind === "feed" && (input.pageChildren?.length || input.blocks.some(block => block.id !== page.titleBlockId || block.children.length))) throw new LabloomError({ kind: "feed-body-forbidden" });
@@ -66,17 +58,9 @@ function planEdit(input: EditCommit): EditChanges {
     }
     plan.verifyContainment();
     plan.attributes(page.id, input.attributes ?? {}, input.detach);
-    validateSchedule(plan, page.id, input.attributes ?? {});
     plan.pages.add(page.id);
     plan.touches.add(page.id);
     return plan;
-}
-
-function validateSchedule(plan: EditChanges, id: string, attrs: Record<string, AttributeValue>): void {
-    if ("schedule_start" in attrs || "schedule_end" in attrs) {
-        const start = plan.readValue(id, "schedule_start")?.value, end = plan.readValue(id, "schedule_end")?.value;
-        if (typeof start === "number" && typeof end === "number" && end < start) throw new LabloomError({ kind: "schedule-reversed" });
-    }
 }
 
 export function previewEdit(input: EditCommit): ChangePreview | null {
@@ -84,12 +68,12 @@ export function previewEdit(input: EditCommit): ChangePreview | null {
     return workspace.native().transaction(() => commit.preview(planEdit(input), input))();
 }
 
-export function commitEdit(input: EditCommit, source: HistorySource | false, confirmation?: string): CommitResult {
+export function commitEdit(input: EditCommit, source: HistorySource | false, confirmation?: string, writeId?: string): CommitResult {
     workspace.requireWorkspace();
-    return transact(input?.tabId, source, () => {
+    return commit.run({ history: source, confirmation, writeId }, () => {
         const plan = planEdit(input);
         return commit.finish(plan, input.pageId, input.batch, commit.preview(plan, input));
-    }, confirmation);
+    });
 }
 
 function writeChildren(plan: EditChanges, source: Target, children: string[]): void {
@@ -101,7 +85,7 @@ function writeChildren(plan: EditChanges, source: Target, children: string[]): v
     }
 }
 
-export function removeEverywhere(plan: EditChanges, id: string): ReturnType<typeof data["uses"]> {
+function removeEverywhere(plan: EditChanges, id: string): ReturnType<typeof data["uses"]> {
     workspace.requireWorkspace();
     const uses = data.uses(id);
     if (uses.some(u => u.slot === "title")) throw new LabloomError({ kind: "block-title-delete" });
@@ -130,9 +114,9 @@ function deletionSubject(block: ContentBlock): string {
     return excerpt ? `“${excerpt}”` : names[block.type];
 }
 
-export function deleteBlock(input: BlockDeletion, source: HistorySource, confirmation?: string): CommitResult {
+export function deleteBlock(input: BlockDeletion, source: HistorySource, confirmation?: string, writeId?: string): CommitResult {
     workspace.requireWorkspace();
-    return transact(input?.tabId, source, () => {
+    return commit.run({ history: source, confirmation, writeId }, () => {
         const { pageId, blockId } = input;
         writable(pageId);
         const plan = new EditChanges(), block = plan.block(blockId), pages = data.owners(blockId);
@@ -145,12 +129,12 @@ export function deleteBlock(input: BlockDeletion, source: HistorySource, confirm
         const deleted = [{ id: blockId, excerpt: deletionSubject(block), pages: pages.length, positions: uses.length, links: links.length }];
         const preview = commit.preview(plan, input, deleted, [], { uses, links, pages: pages.sort() });
         return commit.finish(plan, pageId, 0, preview);
-    }, confirmation);
+    });
 }
 
-export function place(input: Placement, source: HistorySource, confirmation?: string): CommitResult {
+export function place(input: Placement, source: HistorySource, confirmation?: string, writeId?: string): CommitResult {
     workspace.requireWorkspace();
-    return transact(input?.tabId, source, () => {
+    return commit.run({ history: source, confirmation, writeId }, () => {
         const { position, action } = input;
         if (!record(position) || !Number.isSafeInteger(position.index) || position.index < 0 || !validUUID(position.blockId)) throw new LabloomError({ kind: "block-invalid-position" });
         const { pageId, containerId, index } = position;
@@ -183,7 +167,7 @@ export function place(input: Placement, source: HistorySource, confirmation?: st
         plan.pages.add(pageId);
         plan.touches.add(pageId);
         return commit.finish(plan, pageId, 0, commit.preview(plan, input));
-    }, confirmation);
+    });
 }
 
 function syncBlock(id: string): ContentBlock | null {
@@ -214,21 +198,21 @@ function selectPages(ids: string[]): string[] {
     return [...new Set(ids)];
 }
 
-export function trash(ids: string[], tabId: string, source: HistorySource, confirmation?: string): CommitResult {
+export function trash(ids: string[], source: HistorySource, confirmation?: string, writeId?: string): CommitResult {
     workspace.requireWorkspace();
-    return transact(tabId, source, () => {
+    return commit.run({ history: source, confirmation, writeId }, () => {
         const selected = selectPages(ids), plan = new EditChanges();
         for (const id of selected) {
             plan.attributes(id, { deleted: true, recycle_reason: "manual_delete", recycled_at: nowSeconds() }, [], true);
             plan.touches.add(id);
         }
-        return commit.finish(plan, selected[0], 0, commit.preview(plan, { trash: selected, tabId }, [], selected));
-    }, confirmation);
+        return commit.finish(plan, selected[0], 0, commit.preview(plan, { trash: selected }, [], selected));
+    });
 }
 
-export function restore(ids: string[], tabId: string, source: HistorySource): CommitResult {
+export function restore(ids: string[], source: HistorySource, writeId?: string): CommitResult {
     workspace.requireWorkspace();
-    return transact(tabId, source, () => {
+    return commit.run({ history: source, writeId }, () => {
         const selected = selectPages(ids), plan = new EditChanges();
         for (const id of selected) {
             plan.attributes(id, { deleted: false, recycle_reason: null, recycled_at: null }, [], true);
@@ -239,14 +223,11 @@ export function restore(ids: string[], tabId: string, source: HistorySource): Co
     });
 }
 
-export function createPage(kind: PageKind = "editable", title = "", initial: Record<string, AttributeValue> = {}, parentId?: string, origin?: HistoryOrigin): PageRecord {
-    return insertPage(kind, title, initial, parentId, origin?.tabId ?? "", kind === "annotation" && parentId && origin ? origin.source : false);
-}
-function insertPage(kind: PageKind, title: string, initial: Record<string, AttributeValue>, parentId: string | undefined, tabId: string, history: HistorySource | false): PageRecord {
+export function createPage(kind: PageKind = "editable", title = "", initial: Record<string, AttributeValue> = {}, parentId?: string, history?: HistorySource): PageRecord {
     workspace.requireWorkspace();
     if (!pageKinds.includes(kind) || typeof title !== "string" || !record(initial)) throw new LabloomError({ kind: "page-invalid-create" });
     const changed = { pages: [] as string[], blocks: [] as string[] };
-    const page = commit.run({ sourceTab: tabId, history }, context => {
+    const page = commit.run({ history }, context => {
         if (parentId) writable(parentId);
         if (kind === "annotation" && initial.annotation_file != null) {
             if (!parentId || data.header(parentId).kind !== "paper") throw new LabloomError({ kind: "annotation-paper-required" });
@@ -259,22 +240,11 @@ function insertPage(kind: PageKind, title: string, initial: Record<string, Attri
         data.statement("INSERT INTO pages(id,kind,title_block_id,children) VALUES (?,?,?,?)").run(id, kind, titleId, JSON.stringify(kind === "feed" ? [] : [bodyId]));
         attributes.initializePage(id);
         const now = nowSeconds();
-        plan.attributes(id, { independent: kind !== "annotation", ...(kind === "task" ? { task_status: "todo", priority: "normal" } : {}), ...(kind === "feed" ? { feed_status: "enabled", feed_refresh: { every: 60, unit: "minute" } } : {}), ...initial, created_at: now, modified_at: now, deleted: false }, [], true);
-        validateSchedule(plan, id, initial);
+        plan.attributes(id, { independent: kind !== "annotation", ...(kind === "feed" ? { feed_status: "enabled", feed_refresh: { every: 60, unit: "minute" } } : {}), ...initial, created_at: now, modified_at: now, deleted: false }, [], true);
         if (parentId && kind === "annotation") {
             if (data.header(parentId).kind !== "paper") throw new LabloomError({ kind: "annotation-paper-required" });
             const current = data.get(parentId).attributes.paper_annotations as string[];
             plan.attributes(parentId, { paper_annotations: [...current, id] }, [], true);
-            const before = plan.rows.before["page:" + id] as import("./changes").PagePatch;
-            const after = plan.rows.after["page:" + id] as import("./changes").PagePatch;
-            after.values ??= {}; after.values.deleted = { value: 0 };
-            for (const blockId of [titleId, bodyId]) {
-                const row = data.blockRow(blockId)!;
-                plan.rows.before["block:" + blockId] = structuredClone(row);
-                plan.rows.after["block:" + blockId] = structuredClone(row);
-            }
-            before.creation = true;
-            before.values = { ...structuredClone(after.values), deleted: { value: 1 } };
             plan.touches.add(parentId);
         }
         else if (parentId) {
@@ -284,8 +254,21 @@ function insertPage(kind: PageKind, title: string, initial: Record<string, Attri
             plan.touches.add(parentId);
         }
         if (!retention.reachable(plan, { kind: "page", id }, new Set())) throw new LabloomError({ kind: "page-retaining-reference-required" });
-        context.persist(plan, parentId);
-        if (parentId && kind !== "annotation") context.invalidate(["page:" + parentId]);
+        if (history) {
+            const before = plan.rows.before["page:" + id] as import("./changes").PagePatch;
+            const after = plan.rows.after["page:" + id] as import("./changes").PagePatch;
+            after.values ??= {}; after.values.deleted = { value: 0 };
+            for (const blockId of kind === "feed" ? [titleId] : [titleId, bodyId]) {
+                const row = data.blockRow(blockId)!;
+                plan.rows.before["block:" + blockId] = structuredClone(row);
+                plan.rows.after["block:" + blockId] = structuredClone(row);
+            }
+            // Non-independent creations (annotations and child pages) can survive via another reference.
+            if (!plan.flags(id).independent) before.creation = true;
+            before.values = { ...structuredClone(after.values), deleted: { value: 1 } };
+        }
+        context.persist(plan, parentId ?? id);
+        if (!history && parentId && kind !== "annotation") context.invalidate(["page:" + parentId]);
         changed.pages = [...plan.pages];
         changed.blocks = [titleId, ...kind === "feed" ? [] : [bodyId], ...plan.blocks];
         context.change(changed);
@@ -294,27 +277,14 @@ function insertPage(kind: PageKind, title: string, initial: Record<string, Attri
     return page;
 }
 
-export function rebuildLinks(): void {
-    workspace.requireWorkspace();
-    commit.run({ sourceTab: "" }, () => {
-        data.statement("DELETE FROM link_refs").run();
-        const insert = data.statement("INSERT OR IGNORE INTO link_refs(source_kind,source_id,source_field,target_kind,target_id) VALUES (?,?,?,?,?)");
-        const ids = data.statement("SELECT id FROM blocks").pluck().all() as string[];
-        for (const block of data.readBatch(ids)) for (const t of references(block)) insert.run("block", block.id, "payload", t.kind, t.id);
-        const rows = data.statement("SELECT page_id AS pageId, attr_id AS field, value, type FROM page_attrs JOIN attrs_meta ON attrs_meta.id=attr_id WHERE type IN ('page-link','page-links','file','files') AND value IS NOT NULL").all() as { pageId: string; field: string; value: string; type: AttributeDefinition["type"] }[];
-        for (const row of rows) {
-            const definition = attributes.definition(row.field);
-            for (const target of attributeTargets(row.type, decodeValue(definition, row.value))) insert.run("page", row.pageId, row.field, target.kind, target.id);
-        }
-    });
+function completedOption(definition: AttributeDefinition | undefined, value: AttributeValue | undefined): boolean {
+    return definition?.type === "status" && !!definition.metadata.options?.some(option => option.id === value && option.group === "complete");
 }
 
-export function setDefinition(id: string, definition: AttributeDefinition | null, sourceTab: string, token?: string): AttributeImpact | null {
+export function setDefinition(id: string, definition: AttributeDefinition | null, token?: string): AttributeImpact | null {
     workspace.requireWorkspace();
-    checkTab(sourceTab);
-    let saved: KnowledgeChange | undefined;
     try {
-        commit.run({ sourceTab, history: false, confirmation: token }, context => {
+        commit.run({ history: false, confirmation: token }, context => {
             const impact = attributes.previewDefinition(id, definition);
             const owners = data.statement("SELECT page_id AS pageId FROM page_attrs WHERE attr_id=?").all(id) as { pageId: string }[];
             const plan = new EditChanges();
@@ -336,12 +306,15 @@ export function setDefinition(id: string, definition: AttributeDefinition | null
             if ((impact.pages.length || ids.length) && token !== combined.token) throw new DefinitionRollback(combined);
             commit.recycle(plan, ids);
             context.persist(plan);
-            for (const { pageId } of owners) if (previous?.type !== next?.type || JSON.stringify(previousValues.get(pageId)) !== JSON.stringify(data.valuesFor([pageId]).get(pageId)?.[id])) timerState.recalculate(pageId, [id, "modified_at"]);
+            for (const { pageId } of owners) {
+                const before = previousValues.get(pageId), after = data.valuesFor([pageId]).get(pageId)?.[id];
+                if (completedOption(previous, before) !== completedOption(next, after)) timerState.recalculate(pageId);
+                else if (previous?.type !== next?.type || JSON.stringify(before) !== JSON.stringify(after)) timerState.recalculate(pageId, [id, "modified_at"]);
+            }
             const removedOptions = previous?.metadata.options?.some(option => !next?.metadata.options?.some(value => value.id === option.id));
             commit.invalidate([...new Set([...impact.pages.map(p => p.id), ...ids])].map(id => "page:" + id)
                 .concat(!next || previous?.type !== next.type || removedOptions ? ["attribute:" + id] : []));
-            saved = { ...plan.changed(), sourceTab, definition: id, pages: [...new Set([...owners.map(p => p.pageId), ...ids])] };
-            context.change(saved);
+            context.change({ definition: id, pages: [...new Set([...owners.map(p => p.pageId), ...ids])] });
         });
     }
     catch (error) {
@@ -352,7 +325,7 @@ export function setDefinition(id: string, definition: AttributeDefinition | null
 }
 export function writeAttributes(pageId: string, values: Record<string, AttributeValue>, internal = false): void {
     workspace.requireWorkspace();
-    commit.run({ sourceTab: "", history: false, updateModified: false }, context => {
+    commit.run({ history: false, updateModified: false }, context => {
         const plan = new EditChanges();
         plan.attributes(pageId, values, [], internal);
         context.persist(plan);
@@ -360,26 +333,11 @@ export function writeAttributes(pageId: string, values: Record<string, Attribute
 }
 export function cacheAttributes(pageId: string, values: Record<string, AttributeValue>): void {
     workspace.requireWorkspace();
-    commit.run({ sourceTab: "", history: false, updateModified: false }, context => {
+    commit.run({ history: false, updateModified: false }, context => {
         const previous = data.statement("SELECT last_modified_at FROM workspace_meta").pluck().get();
         const plan = new EditChanges();
         plan.attributes(pageId, values, [], true);
         context.persist(plan);
         data.statement("UPDATE workspace_meta SET last_modified_at=?").run(previous);
-    });
-}
-export function detachAttributes(pageId: string, ids: string[]): void {
-    workspace.requireWorkspace();
-    commit.run({ sourceTab: "", history: false, updateModified: false }, context => {
-        const plan = new EditChanges();
-        plan.attributes(pageId, {}, ids);
-        context.persist(plan);
-    });
-}
-export function changePageKind(pageId: string, kind: PageKind): void {
-    workspace.requireWorkspace();
-    commit.run({ sourceTab: "", history: false, updateModified: false }, context => {
-        attributes.persistPageKind(pageId, kind);
-        context.change({ pages: [pageId] });
     });
 }

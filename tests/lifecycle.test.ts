@@ -8,6 +8,7 @@ import { type BrowserWindow } from "electron";
 import * as lifecycle from "../main/lifecycle";
 import * as settings from "../main/settings/store";
 import * as session from "../main/session";
+import { saveFeed } from "./support/session";
 import * as feed from "../main/feed/service";
 import * as records from "../main/knowledge/records";
 import { type FeedResult } from "../main/feed/parser";
@@ -224,7 +225,7 @@ test("accepted exit aborts in-flight feed refresh and a later reopen has intact 
             return slow ? new Promise(resolve => release = resolve) : Promise.resolve({ title: "A", url: request.url, entries: [], etag: null, lastModified: null });
         }
     });
-    const id = await feed.saveSource({ name: "A", url: "https://example.org/feed" });
+    const id = await saveFeed({ name: "A", url: "https://example.org/feed" });
     slow = true; const pending = feed.refresh(id);
     f.close(); f.reply(false); await until(() => f.state.quit === 1);
     assert.equal(signal?.aborted, true);

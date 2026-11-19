@@ -7,85 +7,81 @@ import * as workspace from "../workspace-state";
 import type { RowChanges, StoredState } from "./changes";
 import * as events from "./events";
 
-type Entry = RowChanges & { id: string; page: string; keys: string[]; dependencies: Set<string>; time: number; order: number; nodes: Map<Tree, Node> };
-type Node = { entry: Entry; parent: Node | null; children: Set<Node> };
-type Tree = { source: HistorySource; roots: Set<Node>; cursor: Node | null };
-export type Replay = { tree: Tree; node: Node; direction: "undo" | "redo" };
+type Entry = RowChanges & { id: string; page: string; keys: string[]; dependencies: Set<string>; nodes: Map<Timeline, Node> };
+type Node = { entry: Entry; previous: Node | null; next: Node | null };
+type Timeline = { source: HistorySource; first: Node | null; cursor: Node | null };
+export type Replay = { timeline: Timeline; node: Node; direction: "undo" | "redo" };
 export type Invalidation = { keys: string[]; permanent: boolean };
 export type Capture = { source: HistorySource; page: string; rows: RowChanges; replay?: Replay };
 
-const trees = new Map<string, Tree>();
+const timelines = new Map<string, Timeline>();
 // Map iteration follows insertion order, including after unrelated records are removed.
 const entries = new Map<string, Entry>();
-const objects = new Map<string, Map<Tree, Set<Node>>>();
+const objects = new Map<string, Map<Timeline, Set<Node>>>();
 // A replay also needs its context page and the blocks named by stored child lists
 // to exist. Editing their contents is safe, physically deleting them is not.
 const dependents = new Map<string, Set<Entry>>();
-let sequence = 0;
-const treeKey = (source: HistorySource): string => source.kind === "page" ? "page:" + source.id : "workspace";
+const sourceKey = (source: HistorySource): string => source.kind === "page" ? "page:" + source.id : "workspace";
 
 export function release(): void {
-    trees.clear();
+    timelines.clear();
     entries.clear();
     objects.clear();
     dependents.clear();
-    sequence = 0;
 }
-function treeFor(source: HistorySource): Tree {
-    const key = treeKey(source);
-    let tree = trees.get(key);
-    if (!tree) {
-        tree = { source, roots: new Set(), cursor: null };
-        trees.set(key, tree);
+function timelineFor(source: HistorySource): Timeline {
+    const key = sourceKey(source);
+    let timeline = timelines.get(key);
+    if (!timeline) {
+        timeline = { source, first: null, cursor: null };
+        timelines.set(key, timeline);
     }
-    return tree;
+    return timeline;
 }
-function children(tree: Tree, parent: Node | null): Set<Node> {
-    return parent?.children ?? tree.roots;
+function next(timeline: Timeline): Node | null {
+    return timeline.cursor ? timeline.cursor.next : timeline.first;
 }
 export function state(source: HistorySource): HistoryState {
     workspace.requireWorkspace();
-    const tree = trees.get(treeKey(source));
-    if (!tree) return { canUndo: false, redo: [] };
-    const redo = [...children(tree, tree.cursor)].map(node => node.entry).sort((a, b) => b.order - a.order);
-    return { canUndo: !!tree.cursor, redo: redo.map(({ id, time }) => ({ id, time })) };
+    const timeline = timelines.get(sourceKey(source));
+    return { canUndo: !!timeline?.cursor, canRedo: !!timeline && !!next(timeline) };
 }
-export function select(source: HistorySource, direction: Replay["direction"], branchId?: string): Replay {
+export function select(source: HistorySource, direction: Replay["direction"]): Replay {
     workspace.requireWorkspace();
-    const tree = trees.get(treeKey(source));
-    if (!tree) throw new LabloomError({ kind: "history-empty" });
-    let node = tree.cursor;
-    if (direction === "redo") {
-        const id = branchId ?? state(source).redo[0]?.id;
-        node = id ? entries.get(id)?.nodes.get(tree) ?? null : null;
-        if (node?.parent !== tree.cursor) node = null;
-    }
-    if (!node) throw new LabloomError({ kind: "history-branch-invalid" });
-    return { tree, node, direction };
+    const timeline = timelines.get(sourceKey(source));
+    const node = timeline && (direction === "undo" ? timeline.cursor : next(timeline));
+    if (!timeline || !node) throw new LabloomError({ kind: "history-empty" });
+    return { timeline, node, direction };
 }
-function attach(tree: Tree, entry: Entry): void {
-    const node: Node = { entry, parent: tree.cursor, children: new Set() };
-    children(tree, tree.cursor).add(node);
-    tree.cursor = node;
-    entry.nodes.set(tree, node);
+function attach(timeline: Timeline, entry: Entry): void {
+    // Only this timeline gives up its redo references. Other owners keep theirs.
+    let redo = next(timeline);
+    while (redo) {
+        const following = redo.next;
+        remove(timeline, redo);
+        redo = following;
+    }
+    const node: Node = { entry, previous: timeline.cursor, next: null };
+    if (timeline.cursor) timeline.cursor.next = node;
+    else timeline.first = node;
+    timeline.cursor = node;
+    timelines.set(sourceKey(timeline.source), timeline);
+    entry.nodes.set(timeline, node);
     for (const key of entry.keys) {
         let holders = objects.get(key);
         if (!holders) objects.set(key, holders = new Map());
-        let nodes = holders.get(tree);
-        if (!nodes) holders.set(tree, nodes = new Set());
+        let nodes = holders.get(timeline);
+        if (!nodes) holders.set(timeline, nodes = new Set());
         nodes.add(node);
     }
 }
-function remove(tree: Tree, node: Node): void {
-    const siblings = children(tree, node.parent);
-    siblings.delete(node);
-    for (const child of node.children) {
-        child.parent = node.parent;
-        siblings.add(child);
-    }
-    if (tree.cursor === node) tree.cursor = node.parent;
+function remove(timeline: Timeline, node: Node): void {
+    if (node.previous) node.previous.next = node.next;
+    else timeline.first = node.next;
+    if (node.next) node.next.previous = node.previous;
+    if (timeline.cursor === node) timeline.cursor = node.previous;
     const entry = node.entry;
-    entry.nodes.delete(tree);
+    entry.nodes.delete(timeline);
     if (!entry.nodes.size) {
         entries.delete(entry.id);
         for (const key of entry.dependencies) {
@@ -95,18 +91,18 @@ function remove(tree: Tree, node: Node): void {
         }
     }
     for (const key of entry.keys) {
-        const holders = objects.get(key)!, nodes = holders.get(tree)!;
+        const holders = objects.get(key)!, nodes = holders.get(timeline)!;
         nodes.delete(node);
-        if (!nodes.size) holders.delete(tree);
+        if (!nodes.size) holders.delete(timeline);
         if (!holders.size) objects.delete(key);
     }
-    if (!tree.roots.size) trees.delete(treeKey(tree.source));
+    if (!timeline.first) timelines.delete(sourceKey(timeline.source));
 }
-function invalidate(keys: Iterable<string>, changed: Set<Tree>, except?: Set<Tree>): void {
-    for (const key of keys) for (const [tree, nodes] of objects.get(key) ?? []) {
-        if (except?.has(tree)) continue;
-        changed.add(tree);
-        for (const node of nodes) remove(tree, node);
+function invalidate(keys: Iterable<string>, changed: Set<Timeline>, except?: Set<Timeline>): void {
+    for (const key of keys) for (const [timeline, nodes] of objects.get(key) ?? []) {
+        if (except?.has(timeline)) continue;
+        changed.add(timeline);
+        for (const node of nodes) remove(timeline, node);
     }
 }
 function mergeState(target: StoredState, state: StoredState): void {
@@ -118,7 +114,7 @@ function mergeState(target: StoredState, state: StoredState): void {
         else target[key] = value;
     }
 }
-function capture(inputs: Capture[], pages: string[], changed: Set<Tree>): void {
+function capture(inputs: Capture[], pages: string[], changed: Set<Timeline>): void {
     if (!inputs.length) return;
     let rows = inputs[0].rows;
     if (inputs.length > 1) {
@@ -128,16 +124,16 @@ function capture(inputs: Capture[], pages: string[], changed: Set<Tree>): void {
     }
     const keys = new Set([...Object.keys(rows.before), ...Object.keys(rows.after)]);
     if (!keys.size && !inputs.some(input => input.replay)) return;
-    const targets = new Set(pages.map(id => treeFor({ kind: "page", id })));
+    const targets = new Set(pages.map(id => timelineFor({ kind: "page", id })));
     for (const { source, replay } of inputs) {
-        targets.add(treeFor(source));
+        targets.add(timelineFor(source));
         if (!replay) continue;
-        for (const tree of replay.node.entry.nodes.keys()) targets.add(tree);
-        replay.tree.cursor = replay.direction === "undo" ? replay.node.parent : replay.node;
-        changed.add(replay.tree);
+        for (const timeline of replay.node.entry.nodes.keys()) targets.add(timeline);
+        replay.timeline.cursor = replay.direction === "undo" ? replay.node.previous : replay.node;
+        changed.add(replay.timeline);
     }
     invalidate(keys, changed, targets);
-    for (const { replay } of inputs) if (replay) targets.delete(replay.tree);
+    for (const { replay } of inputs) if (replay) targets.delete(replay.timeline);
     if (!targets.size) return;
     const dependencies = new Set(inputs.map(({ page }) => "page:" + page));
     // Attribute definitions are dependencies of saved page values. A definition change
@@ -147,45 +143,45 @@ function capture(inputs: Capture[], pages: string[], changed: Set<Tree>): void {
         if (value && "values" in value) for (const id of Object.keys(value.values ?? {})) keys.add("attribute:" + id);
     }
     const entry: Entry = { ...structuredClone(rows), id: randomUUID(), page: inputs[0].page, keys: [...keys], dependencies,
-        time: workspace.clock(), order: ++sequence, nodes: new Map() };
+        nodes: new Map() };
     entries.set(entry.id, entry);
     for (const key of dependencies) {
         let records = dependents.get(key);
         if (!records) dependents.set(key, records = new Set());
         records.add(entry);
     }
-    for (const tree of targets) {
-        attach(tree, entry);
-        changed.add(tree);
+    for (const timeline of targets) {
+        attach(timeline, entry);
+        changed.add(timeline);
     }
 }
-function trim(limit: number | null, changed: Set<Tree>): void {
+function trim(limit: number | null, changed: Set<Timeline>): void {
     if (limit === null || entries.size <= limit) return;
     for (const entry of entries.values()) {
-        for (const [tree, node] of entry.nodes) {
-            remove(tree, node);
-            changed.add(tree);
+        for (const [timeline, node] of entry.nodes) {
+            remove(timeline, node);
+            changed.add(timeline);
         }
         if (entries.size <= limit) break;
     }
 }
 export function finish(captures: Capture[], invalid: Invalidation[], pages: string[]): void {
-    const changed = new Set<Tree>();
+    const changed = new Set<Timeline>();
     capture(captures, pages, changed);
     for (const { keys, permanent } of invalid) {
         invalidate(keys, changed);
         if (permanent) for (const key of keys) for (const entry of dependents.get(key) ?? []) {
-            for (const [tree, node] of entry.nodes) {
-                remove(tree, node);
-                changed.add(tree);
+            for (const [timeline, node] of entry.nodes) {
+                remove(timeline, node);
+                changed.add(timeline);
             }
         }
     }
     trim(settings.get().settings.history.limit, changed);
-    events.historyChanged([...changed].map(tree => tree.source));
+    events.historyChanged([...changed].map(timeline => timeline.source));
 }
 settings.subscribe(snapshot => {
-    const changed = new Set<Tree>();
+    const changed = new Set<Timeline>();
     trim(snapshot.settings.history.limit, changed);
-    events.historyChanged([...changed].map(tree => tree.source));
+    events.historyChanged([...changed].map(timeline => timeline.source));
 });

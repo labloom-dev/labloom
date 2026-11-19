@@ -63,7 +63,7 @@ export function update(patch: WorkspaceSettingsPatch): WorkspaceSettings {
     if (!patch || typeof patch !== "object" || Array.isArray(patch) || Object.keys(patch).some(key => !["tabs", "feedKeywords"].includes(key))) throw new LabloomError({ kind: "invalid-argument" });
     if (Object.hasOwn(patch, "tabs") && patch.tabs !== null) checkStoredLayout(patch.tabs);
     const keywords = Object.hasOwn(patch, "feedKeywords") ? normalizeKeywords(patch.feedKeywords) : undefined;
-    return commit.run({ sourceTab: "", history: false, updateModified: false, feed: keywords !== undefined }, context => {
+    return commit.run({ history: false, updateModified: false, feed: keywords !== undefined }, context => {
         const next: WorkspaceSettings = { ...read(), ...structuredClone(patch), ...(keywords ? { feedKeywords: keywords } : {}) };
         data.statement("UPDATE workspace_meta SET settings=?").run(JSON.stringify(next));
         context.after(() => {

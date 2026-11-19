@@ -6,7 +6,8 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmdirSync, statSync
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import Database from "better-sqlite3";
-import { rebuildSyncRefs, workspaceFormatVersion } from "../main/storage/schema";
+import { rebuildSyncRefs } from "./support/sync-refs";
+import { baselineVersion } from "../main/storage/migrations/generated";
 import { createWorkspace, openWorkspace, type OpenWorkspace } from "./support/session";
 import { createWorkspaceDatabase } from "../main/storage/database";
 import { defaultSettings } from "../shared/settings/defaults";
@@ -68,7 +69,7 @@ test("new workspaces contain the core and feed tables and reopen without changin
     const workspace = fresh(t);
     const { database, info } = workspace;
     assert.equal(database.pragma("application_id", { simple: true }), applicationId);
-    assert.equal(database.pragma("user_version", { simple: true }), workspaceFormatVersion);
+    assert.equal(database.pragma("user_version", { simple: true }), baselineVersion);
     assert.equal(database.pragma("foreign_keys", { simple: true }), 1);
     assert.deepEqual(database.prepare("SELECT name, strict FROM pragma_table_list WHERE name NOT LIKE 'sqlite_%' ORDER BY name").all(), [
         { name: "attachments", strict: 0 },
@@ -128,7 +129,7 @@ test("identity, application, format, and attachments are validated without chang
     const mismatched = fresh(t);
     session.close();
     assert.throws(() => openWorkspace(mismatched.info.path, randomUUID()), hasFailure("workspace-changed"));
-    for (const version of [0, 17, workspaceFormatVersion + 1]) {
+    for (const version of [0, 17, baselineVersion + 1]) {
         const { database, info } = fresh(t);
         database.pragma(`user_version = ${version}`);
         session.close();
