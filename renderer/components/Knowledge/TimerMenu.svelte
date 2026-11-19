@@ -16,7 +16,9 @@
     import { failure, message, type ErrorValue } from "../../i18n.svelte";
     import { Popover } from "bits-ui";
     import { type AttributeDefinition } from "../../../shared/types/attributes";
-    import { type PageSession, knowledgeState, writeFromTab } from "./state.svelte";
+    import { type PageSession } from "./page-session.svelte";
+    import { knowledgeState } from "./feedback.svelte";
+    import { write } from "./page-sessions";
     let { session, definition, disabled = false }: { session: PageSession; definition: AttributeDefinition; disabled?: boolean } = $props();
     let selected = $state<number[]>([]), busy = $state(false), error = $state<ErrorValue>("");
     const options = $derived(definition.type === "minute" || definition.type === "hour"
@@ -40,9 +42,9 @@
         if (!session.state.page) return;
         busy = true;
         try {
-            await writeFromTab(session.tabId, async () => {
+            await write(async () => {
                 const pageId = session.state.page!.id;
-                await window.api.timers.set(pageId, definition.id, seconds, !selected.includes(seconds), session.tabId);
+                await window.api.timers.set(pageId, definition.id, seconds, !selected.includes(seconds));
                 selected = (await window.api.timers.settings(pageId))[definition.id] ?? [];
             });
             error = "";

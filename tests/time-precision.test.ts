@@ -112,7 +112,7 @@ test("all precisions persist as SQLite integers and rejected writes roll back at
     const values = [instant, instant, dayToSeconds("2026-11-11"), monthToSeconds("2026-11"), yearToSeconds("2026")];
     for (const [index, type] of timeTypes.entries()) {
         const def = definition(type);
-        assert.equal(service.setDefinition(def.id, def, "test"), null);
+        assert.equal(service.setDefinition(def.id, def), null);
         service.attributes.write(page.id, { [def.id]: values[index] });
         assert.deepEqual(database.prepare("SELECT value,typeof(value) AS type FROM page_attrs WHERE page_id=? AND attr_id=?").get(page.id, def.id), { value: values[index], type: "integer" });
         assert.throws(() => service.attributes.write(page.id, { pinned: true, [def.id]: type === "minute" || type === "hour" ? 1.5 : values[index] + 1 }));
@@ -120,7 +120,7 @@ test("all precisions persist as SQLite integers and rejected writes roll back at
         service.attributes.write(page.id, { [def.id]: null });
         assert.equal(service.get(page.id).attributes[def.id], null);
     }
-    for (const type of ["date", "datetime"]) assert.throws(() => service.setDefinition("custom:" + randomUUID(), { ...definition("day"), type } as AttributeDefinition, "test"));
+    for (const type of ["date", "datetime"]) assert.throws(() => service.setDefinition("custom:" + randomUUID(), { ...definition("day"), type } as AttributeDefinition));
     for (const id of ["created_at", "modified_at", "recycled_at", "schedule_start", "schedule_end", "feed_last_checked"] as const) assert.equal(service.attributes.definition(id).type, "minute");
     assert.equal(service.attributes.definition("schedule_date").type, "day");
     assert.equal(service.attributes.definition("paper_year").type, "string");
@@ -131,23 +131,23 @@ test("definition preview and commit share conversion, invalidate undo, and refre
     const { service, setZone } = fixture(t);
     const history = historyServices();
     const page = service.create("editable", "A"), def = definition("minute");
-    service.setDefinition(def.id, def, "manager");
-    assert.equal(service.commitEdit({ pageId: page.id, tabId: "editor", batch: 1, blocks: [], attributes: { [def.id]: instant } }, pageHistory(page.id)).status, "saved");
+    service.setDefinition(def.id, def);
+    assert.equal(service.commitEdit({ pageId: page.id, batch: 1, blocks: [], attributes: { [def.id]: instant } }, pageHistory(page.id)).status, "saved");
     assert.equal(history.state(pageHistory(page.id)).canUndo, true);
     const target = { ...def, type: "day" as const };
-    const preview = service.setDefinition(def.id, target, "manager")!;
+    const preview = service.setDefinition(def.id, target)!;
     assert.deepEqual(preview.pages.map(p => p.id), [page.id]);
     assert.equal(service.get(page.id).attributes[def.id], instant);
     setZone("UTC");
-    const updated = service.setDefinition(def.id, target, "manager", preview.token)!;
+    const updated = service.setDefinition(def.id, target, preview.token)!;
     assert.notEqual(updated.token, preview.token);
     assert.equal(service.get(page.id).attributes[def.id], instant);
-    assert.equal(service.setDefinition(def.id, target, "manager", updated.token), null);
+    assert.equal(service.setDefinition(def.id, target, updated.token), null);
     assert.equal(service.get(page.id).attributes[def.id], convertValue(def, target, instant, "UTC"));
     assert.equal(history.state(pageHistory(page.id)).canUndo, false);
     const text = { ...target, type: "string" as const };
-    const back = service.setDefinition(def.id, text, "manager")!;
-    service.setDefinition(def.id, text, "manager", back.token);
+    const back = service.setDefinition(def.id, text)!;
+    service.setDefinition(def.id, text, back.token);
     assert.equal(service.get(page.id).attributes[def.id], "2026-11-07");
 });
 

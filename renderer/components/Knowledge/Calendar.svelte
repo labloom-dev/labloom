@@ -12,7 +12,7 @@
                     {#each dates as date (date.id)}<option value={date.id}>{date.name || date.id}</option>{/each}
                 </select>
             </label>
-            <ListHistory {tabId} {source} />
+            <ListHistory {source} />
             <button class="button" disabled={!hasDate} onclick={() => createPage({ [params.date.id]: dayToSeconds(selected) })}>新建日程</button>
             <button class="button primary" disabled={!hasDate} onclick={createTask}>新建任务</button>
         </div>
@@ -130,7 +130,10 @@
     import type { AttributeDefinition, AttributeValue } from "../../../shared/types/attributes";
     import { createPage, openPage } from "../layout/navigation";
     import { currentTimeZone, displayMilliseconds } from "../layout/preferences.svelte";
-    import { confirmed, perform, registerList, writeFromTab } from "./state.svelte";
+    import { confirmed } from "./confirmation.svelte";
+    import { perform } from "./feedback.svelte";
+    import { registerList } from "./page-visits";
+    import { write } from "./page-sessions";
     import Icon from "../utils/Icon.svelte";
     let { tabId, params, onparams, source }: ViewProps<"calendar"> = $props();
     const zone = $derived(currentTimeZone());
@@ -164,10 +167,8 @@
     function statusValue(page: Pick<PageSummary, "attributes">): AttributeValue {
         return status ? page.attributes[status.id] : null;
     }
-    const openOption = $derived(status?.metadata.options?.find(o => o.id === "todo" && o.group === "incomplete")
-        ?? status?.metadata.options?.find(o => o.group === "incomplete"));
-    const doneOption = $derived(status?.metadata.options?.find(o => o.id === "done" && o.group === "complete")
-        ?? status?.metadata.options?.find(o => o.group === "complete"));
+    const openOption = $derived(status?.metadata.options?.find(o => o.group === "incomplete"));
+    const doneOption = $derived(status?.metadata.options?.find(o => o.group === "complete"));
     function isComplete(value: AttributeValue): boolean {
         return !!status?.metadata.options?.some(o => o.id === value && o.group === "complete");
     }
@@ -226,26 +227,26 @@
         }
     }
     function calendarMenu(page: PageSummary): { label: string; run: () => void }[] {
-        const items = pageMenu(page, { tabId, source }).filter(item => !["取消固定", "固定到侧栏"].includes(item.label)).map(item => ({ label: item.label, run: item.run }));
+        const items = pageMenu(page, source).filter(item => !["取消固定", "固定到侧栏"].includes(item.label)).map(item => ({ label: item.label, run: item.run }));
         if (canToggle(page)) items.push({ label: isComplete(statusValue(page)) ? "取消完成" : "完成任务", run: () => toggle(page.id) });
         return items;
     }
     function toggle(id: string): void {
         void perform(async () => {
-            await writeFromTab(tabId, async () => {
+            await write(async () => {
                 const { page } = await window.api.pages.readObjects(id, [id]);
                 if (!page) throw new LabloomError({ kind: "page-missing" });
                 const option = isComplete(statusValue(page)) ? openOption : doneOption;
                 if (!status || !hasStatus(page) || !option) return;
                 const statusId = status.id;
-                await confirmed(token => window.api.pages.commitEdit({ pageId: id, tabId, batch: 0, blocks: [], attributes: { [statusId]: option.id } }, source, token));
+                await confirmed(token => window.api.pages.commitEdit({ pageId: id, batch: 0, blocks: [], attributes: { [statusId]: option.id } }, source, token));
             });
         });
     }
     function read(notice: Notice): void {
         void perform(async () => {
-            await writeFromTab(tabId, async () => {
-                await window.api.timers.readNotice(notice.pageId, notice.attrId, notice.leadSeconds, tabId);
+            await write(async () => {
+                await window.api.timers.readNotice(notice.pageId, notice.attrId, notice.leadSeconds);
                 openPage(notice.pageId);
             });
         });

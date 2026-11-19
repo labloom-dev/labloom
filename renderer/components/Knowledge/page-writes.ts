@@ -25,15 +25,12 @@ export class PageWrites {
     private retry?: { input: EditCommit; rows: Map<string, Entry> };
     private pending?: Promise<void>;
     private batch = 0;
-    constructor(readonly tabId: string, readonly pageId: string, readonly send: (input: EditCommit) => Promise<void>) { }
+    constructor(readonly pageId: string, readonly send: (input: EditCommit) => Promise<void>) { }
     get unsaved(): boolean {
         return !!this.dirty.size || !!this.retry;
     }
-    changedBlocks(): string[] {
-        return [...this.dirty.values()].flatMap(row => row.kind === "block" ? [row.value.id] : []);
-    }
     input(edit: Fields): EditCommit {
-        return { tabId: this.tabId, pageId: this.pageId, batch: ++this.batch, ...edit };
+        return { pageId: this.pageId, batch: ++this.batch, ...edit };
     }
     stage(edit: Fields): void {
         for (const [key, item] of entries(edit)) this.dirty.set(key, item);

@@ -82,11 +82,12 @@ flowchart TD
 | [main/feed/schedule.ts](../main/feed/schedule.ts) | 按来源的状态和刷新间隔维护它在定时表里的那一行 |
 | [main/feed/parser.ts](../main/feed/parser.ts) | 网络请求、格式识别与解析、PDF 地址识别、错误分类及 arXiv 请求排队 |
 | [main/feed/anthropic.ts](../main/feed/anthropic.ts) | Anthropic News 和 Engineering 页面适配 |
-| [main/feed/pdf.ts](../main/feed/pdf.ts) | 下载并校验条目的 PDF |
+| [main/attachments/download.ts](../main/attachments/download.ts) | 流式下载附件，按调用者要求校验文件类型 |
+| [main/attachments/service.ts](../main/attachments/service.ts) | 保存工作区附件、保护等待挂上的文件并回收未引用的附件 |
 | [main/knowledge/scheduler.ts](../main/knowledge/scheduler.ts) | 每 15 秒检查一次定时表，由工作区会话启停 |
 | [main/knowledge/events.ts](../main/knowledge/events.ts) | 统一的改动通知，订阅相关的改动在这里发出 `feed:changed` |
 
-订阅服务是一个单例模块，属于当前打开的工作区会话（[main/session.ts](../main/session.ts)）。关闭工作区时，排队和进行中的抓取、PDF 下载都被中止，返回的结果不会写进库。所有写入都经过知识库的统一提交入口，订阅自己的写入不进撤销历史，也不改页面的修改时间。
+订阅服务是一个单例模块，属于当前打开的工作区会话（[main/session.ts](../main/session.ts)）。关闭工作区时，排队和进行中的抓取、PDF 下载都被中止，返回的结果不会写进库。订阅条目和刷新状态通过知识库的统一提交入口更新。下载模块保存附件后，由订阅视图将其挂到文献页，这次编辑同时进入工作区和文献页的撤销历史。
 
 `FeedView` 接受一个 `FeedAPI` 参数，桌面端默认使用 `window.api.feed`。`pnpm dev:feed` 启动的浏览器预览传入使用 HTTP 的实现，与桌面端复用同一套页面和服务逻辑。预览在 `.local/feed-preview/workspace` 打开一个完整的工作区，所以“加入文献库”和 PDF 下载也能用；页面靠轮询一个版本号代替桌面端的变化通知。
 
@@ -240,7 +241,7 @@ flowchart TD
 - arXiv 的摘要页地址（`/abs/<编号>`）换算成 `https://arxiv.org/pdf/<编号>`；
 - 其他来源取类型为 `application/pdf` 的第一个附件：RSS 的 `enclosure`、Atom 的 `link`、JSON Feed 的 `attachments`。
 
-条目有 PDF 地址时，入库后在后台下载，作为一个新的附件追加到文献的“附件”属性上。每次下载都是独立的新附件，不和已有文件比对。下载超时 30 秒，最大 50 MB，内容必须以 `%PDF` 开头。
+条目有 PDF 地址时，订阅视图在入库完成后发起下载。收到附件 ID 后，界面先保存页面编辑缓冲，再把附件追加到文献的“附件”属性上。每次下载都是独立的新附件，不和已有文件比对。下载时使用响应或地址提供的文件名。连续 30 秒收不到数据会超时，文件内容必须以 `%PDF-` 开头。
 
 阅读区显示下载状态：下载中、已保存、失败（附原因）。失败时可以“重新获取 PDF”；用户把 PDF 从文献的附件里移除后，同样可以重新获取。同一条目同时只有一个下载。
 
@@ -252,14 +253,16 @@ flowchart TD
 | --- | --- |
 | `getState(query)` | 返回来源列表、当前页条目、匹配总数、未读总数和关注关键词 |
 | `getItem(id)` | 返回单个条目的完整内容、阅读位置和文献状态 |
-| `saveSource(input)` | 添加或编辑来源，返回来源 ID |
+| `resolveSource(input)` | 解析订阅地址，返回本次会话的一次性凭据 |
+| `saveSource(resolution)` | 保存解析后的来源和刷新间隔，返回来源 ID |
+| `discardSource(resolution)` | 放弃未保存的解析结果 |
 | `setSourceStatus(id, action)` | 暂停、恢复或取消订阅 |
 | `refresh(sourceId?)` | 刷新单个来源，省略 ID 时刷新全部启用的来源；抓取失败记录在来源上 |
 | `setRead(id, isRead)`、`markAllRead(sourceId?)` | 保存已读或未读状态 |
 | `setPosition(id, progress)` | 保存条目的阅读位置 |
 | `setKeywords(keywords)` | 保存关注关键词 |
-| `importItem(id, replace?)` | 加入文献库，返回文献页 ID；条目有 PDF 地址时开始后台下载 |
-| `fetchPDF(id)` | 为已入库的条目下载或重新获取 PDF |
+| `importItem(id, replace?)` | 加入文献库，返回文献页 ID 和本次是否需要自动下载 PDF |
+| `fetchPDF(id)` | 为已入库的条目下载 PDF，成功时返回文献页 ID 和附件 ID，供界面挂上 |
 | `openItem(id)` | 从数据库读取原文地址，校验后调用系统浏览器 |
 | `onChanged(listener)` | 订阅 `feed:changed` 通知。后台刷新、PDF 下载和在别处对来源页面的修改通过它让页面重新读取 |
 

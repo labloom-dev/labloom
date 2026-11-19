@@ -477,7 +477,7 @@
     import { currentTimeZone } from "../layout/preferences.svelte";
     import { openFeedItem } from "../Feed/navigation.svelte";
     import { type PageSummary } from "../../../shared/types/content";
-    import { registerList } from "../Knowledge/state.svelte";
+    import { registerList } from "../Knowledge/page-visits";
     import { visits } from "../Tab/activity.svelte";
 
     import type { ViewProps } from "../Tab/views";

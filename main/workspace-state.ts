@@ -6,7 +6,7 @@ export type SessionOptions = {
     clock?: () => number;
     timeZone?: () => string;
     loadFeed?: (request: FeedRequest) => Promise<FeedResult>;
-    fetchPDF?: typeof fetch;
+    fetchAttachment?: typeof fetch;
 };
 export type WorkspaceState = OpenWorkspace & {
     generation: number;
@@ -14,7 +14,7 @@ export type WorkspaceState = OpenWorkspace & {
     clock: () => number;
     timeZone: () => string;
     loadFeed: (request: FeedRequest) => Promise<FeedResult>;
-    fetchPDF: typeof fetch;
+    fetchAttachment: typeof fetch;
 };
 let current: WorkspaceState | undefined;
 let generation = 0;
@@ -23,7 +23,7 @@ export function initialize(workspace: OpenWorkspace, options: SessionOptions): v
     current = {
         ...workspace, generation: ++generation, controller: new AbortController(),
         clock: options.clock ?? Date.now, timeZone: options.timeZone ?? (() => "system"),
-        loadFeed: options.loadFeed ?? fetchFeed, fetchPDF: options.fetchPDF ?? fetch
+        loadFeed: options.loadFeed ?? fetchFeed, fetchAttachment: options.fetchAttachment ?? fetch
     };
 }
 export function requireWorkspace(): WorkspaceState {

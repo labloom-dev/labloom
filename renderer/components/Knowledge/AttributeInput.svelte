@@ -110,7 +110,7 @@
     import { currentTimeZone } from "../layout/preferences.svelte";
     import { openPage } from "../layout/navigation";
     import FileInput from "./FileInput.svelte";
-    import { type PageSession } from "./state.svelte";
+    import { type PageSession } from "./page-session.svelte";
 
     import TargetPicker from "./TargetPicker.svelte";
     let { definition, value, disabled = false, session, onchange }: { definition: AttributeDefinition; value: AttributeValue; disabled?: boolean; session?: PageSession; onchange: (value: AttributeValue) => void } = $props();

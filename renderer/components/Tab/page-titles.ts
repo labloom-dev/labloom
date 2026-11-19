@@ -36,7 +36,7 @@ function observe(id: string): Readable<string> {
             revision++; set(title);
         } });
         const off = window.api.pages.onChanged(change => {
-            if ((change.summaryPages ?? change.pages).includes(id) || change.purged?.includes(id)) void refresh();
+            if (change.titlePages?.includes(id) || change.purged?.includes(id)) void refresh();
         });
         void refresh();
         return () => {

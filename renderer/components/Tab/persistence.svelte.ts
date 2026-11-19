@@ -1,4 +1,4 @@
-import { copyData } from "../Knowledge/state.svelte";
+import { copyData } from "../copy-data";
 import { destinationViews } from "../layout/navigation";
 import { getTabID, getGroupID } from "./ids";
 import { tabState } from "./state.svelte";

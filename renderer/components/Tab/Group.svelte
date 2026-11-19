@@ -2,6 +2,7 @@
     <section
         class="group"
         data-group-id={groupId}
+        tabindex="-1"
         aria-label="标签页分栏"
         ondragover={acceptTabDrop}
         ondrop={event => dropTab(event, groupId)}

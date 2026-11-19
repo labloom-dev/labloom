@@ -7,8 +7,9 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { test, type TestContext } from "node:test";
-import { createWorkspace, openWorkspace } from "./support/session";
-import { attachmentPath, unreferencedFiles } from "../main/storage/files";
+import { createWorkspace, openTest, openWorkspace } from "./support/session";
+import * as attachments from "../main/attachments/service";
+import { attachmentPath } from "../main/storage/files";
 import { defaultMetadata } from "../shared/attrs/values";
 import { display, search } from "../shared/attrs/format";
 import { PDF_EXTRACTOR_VERSION } from "../shared/content/pdf-text";
@@ -25,15 +26,15 @@ function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { service
 }
 function definition(service: Knowledge, type: AttributeType): AttributeDefinition {
     const item = { id: "custom:" + randomUUID(), name: "A", type, metadata: defaultMetadata(type) };
-    assert.equal(service.setDefinition(item.id, item, "definitions"), null);
+    assert.equal(service.setDefinition(item.id, item), null);
     return item;
 }
 function changeType(service: Knowledge, item: AttributeDefinition, type: AttributeType): void {
-    const next = { ...item, type }, preview = service.setDefinition(item.id, next, "definitions");
-    if (preview) assert.equal(service.setDefinition(item.id, next, "definitions", preview.token), null);
+    const next = { ...item, type }, preview = service.setDefinition(item.id, next);
+    if (preview) assert.equal(service.setDefinition(item.id, next, preview.token), null);
 }
-function edit(service: Knowledge, pageId: string, values: Record<string, AttributeValue>, tabId = "files"): void {
-    assert.equal(service.commitEdit({ pageId, tabId, batch: 0, blocks: [], attributes: values }, pageHistory(pageId)).status, "saved");
+function edit(service: Knowledge, pageId: string, values: Record<string, AttributeValue>): void {
+    assert.equal(service.commitEdit({ pageId, batch: 0, blocks: [], attributes: values }, pageHistory(pageId)).status, "saved");
 }
 function checkIndex(service: Knowledge): void {
     const query = "SELECT * FROM link_refs ORDER BY source_kind,source_id,source_field,target_kind,target_id";
@@ -42,20 +43,20 @@ function checkIndex(service: Knowledge): void {
     assert.deepEqual(service.statement(query).all(), before);
 }
 function trash(service: Knowledge, pageId: string): void {
-    const result = service.trash([pageId], "trash", workspaceHistory);
-    if (result.status === "confirmation") assert.equal(service.trash([pageId], "trash", workspaceHistory, result.preview.token).status, "saved");
+    const result = service.trash([pageId], workspaceHistory);
+    if (result.status === "confirmation") assert.equal(service.trash([pageId], workspaceHistory, result.preview.token).status, "saved");
 }
 function erase(purge: Purge, pageId: string): void {
-    const preview = purge.purge([pageId], "purge");
+    const preview = purge.purge([pageId]);
     assert.equal(preview.status, "confirmation");
-    if (preview.status === "confirmation") assert.equal(purge.purge([pageId], "purge", preview.token).status, "deleted");
+    if (preview.status === "confirmation") assert.equal(purge.purge([pageId], preview.token).status, "deleted");
 }
 
 test("file properties validate existing identities, ordered distinct lists and canonical empty storage", t => {
     const { service, papers, info } = fixture(t), page = service.create("paper", "A"), single = definition(service, "file"), many = definition(service, "files");
     const a = join(info.path, "A.txt"), b = join(info.path, "B.txt");
     writeFileSync(a, "A"); writeFileSync(b, "B");
-    const files = papers.attachFiles([a, b], page.id, "paper_files", { tabId: "files", source: pageHistory(page.id) }), [first, second] = files.map(file => file.id);
+    const files = papers.attachFiles([a, b], page.id, "paper_files", pageHistory(page.id)), [first, second] = files.map(file => file.id);
     assert.deepEqual(service.get(page.id).attributes.paper_files, [first, second]);
     edit(service, page.id, { paper_files: [], [single.id]: first, [many.id]: [second] });
     for (const values of [{ [single.id]: randomUUID() }, { [many.id]: [first, randomUUID()] }, { [many.id]: [first, first] }, { [single.id]: [] }, { [many.id]: null }, { [single.id]: "A.txt" }]) {
@@ -97,13 +98,13 @@ test("paper and custom file imports, removals, clears, undo and redo keep the re
     const { service, papers, history, info } = fixture(t), page = service.create("paper", "A"), item = definition(service, "files"), single = definition(service, "file");
     const a = join(info.path, "A.txt"), b = join(info.path, "B.txt");
     writeFileSync(a, "A"); writeFileSync(b, "B");
-    const files = papers.attachFiles([a, b], page.id, "paper_files", { tabId: "files", source: pageHistory(page.id) }), [first, second] = files.map(file => file.id);
+    const files = papers.attachFiles([a, b], page.id, "paper_files", pageHistory(page.id)), [first, second] = files.map(file => file.id);
     checkIndex(service);
     assert.equal(history.apply(pageHistory(page.id), "undo").status, "saved");
     assert.deepEqual(service.get(page.id).attributes.paper_files, []); checkIndex(service);
     assert.equal(papers.files().length, 2, "undoing import keeps immutable bytes available for redo");
     assert.equal(history.apply(pageHistory(page.id), "redo").status, "saved"); checkIndex(service);
-    const custom = papers.attachFiles([b, a, b], page.id, item.id, { tabId: "files", source: pageHistory(page.id) }).map(file => file.id);
+    const custom = papers.attachFiles([b, a, b], page.id, item.id, pageHistory(page.id)).map(file => file.id);
     assert.equal(new Set(custom).size, 3);
     assert.ok(custom.every(id => ![first, second].includes(id)));
     assert.deepEqual(service.get(page.id).attributes[item.id], custom); checkIndex(service);
@@ -111,16 +112,16 @@ test("paper and custom file imports, removals, clears, undo and redo keep the re
     assert.equal(history.apply(pageHistory(page.id), "undo").status, "saved"); checkIndex(service);
     assert.deepEqual(service.get(page.id).attributes[item.id], custom);
     assert.equal(history.apply(pageHistory(page.id), "redo").status, "saved"); checkIndex(service);
-    const [before] = papers.attachFiles([a], page.id, single.id, { tabId: "files", source: pageHistory(page.id) });
-    const [after] = papers.attachFiles([b], page.id, single.id, { tabId: "files", source: pageHistory(page.id) }); checkIndex(service);
+    const [before] = papers.attachFiles([a], page.id, single.id, pageHistory(page.id));
+    const [after] = papers.attachFiles([b], page.id, single.id, pageHistory(page.id)); checkIndex(service);
     assert.notEqual(before.id, after.id);
     assert.equal(service.get(page.id).attributes[single.id], after.id);
     assert.equal(history.apply(pageHistory(page.id), "undo").status, "saved");
     assert.equal(service.get(page.id).attributes[single.id], before.id); checkIndex(service);
-    assert.equal(service.commitEdit({ pageId: page.id, tabId: "files", batch: 0, blocks: [], detach: [single.id] }, pageHistory(page.id)).status, "saved"); checkIndex(service);
+    assert.equal(service.commitEdit({ pageId: page.id, batch: 0, blocks: [], detach: [single.id] }, pageHistory(page.id)).status, "saved"); checkIndex(service);
     assert.equal(history.apply(pageHistory(page.id), "undo").status, "saved"); checkIndex(service);
-    const preview = service.setDefinition(item.id, null, "definitions");
-    if (preview) assert.equal(service.setDefinition(item.id, null, "definitions", preview.token), null);
+    const preview = service.setDefinition(item.id, null);
+    if (preview) assert.equal(service.setDefinition(item.id, null, preview.token), null);
     checkIndex(service);
 });
 
@@ -128,7 +129,7 @@ test("arbitrary attachments retain their suffix and names while PDF operations r
     const { service, papers, info } = fixture(t), page = service.create("paper", "A"), item = definition(service, "file");
     const csv = join(info.path, "补充数据.CSV"), pdf = join(info.path, "正文.pdf");
     writeFileSync(csv, "a,b\n1,2"); writeFileSync(pdf, knownCoordinatePdf());
-    const [data, document] = papers.attachFiles([csv, pdf], page.id, "paper_files", { tabId: "files", source: pageHistory(page.id) });
+    const [data, document] = papers.attachFiles([csv, pdf], page.id, "paper_files", pageHistory(page.id));
     assert.equal(data.mediaType, "text/csv"); assert.equal(document.mediaType, "application/pdf");
     const stored = service.statement("SELECT stored_name FROM attachments WHERE id=?").pluck().get(data.id) as string;
     assert.equal(extname(stored), ".CSV");
@@ -138,7 +139,7 @@ test("arbitrary attachments retain their suffix and names while PDF operations r
     assert.equal(papers.hasPDF(page.id), true);
     assert.throws(() => papers.position(page.id, data.id, { page: 1, scale: "auto", rotation: 0, left: 0, top: 0 }), hasFailure("paper-invalid-position"));
     await assert.rejects(papers.unlockPDF(data.id, ""), hasFailure("attachment-pdf-required"));
-    await assert.rejects(papers.annotate(page.id, { fileId: data.id, pageNumber: 1, rectangles: [{ x: 1, y: 1, width: 1, height: 1 }], quote: "", context: "", extractorVersion: PDF_EXTRACTOR_VERSION }, "annotations", pageHistory(page.id), "yellow"), hasFailure("attachment-pdf-required"));
+    await assert.rejects(papers.annotate(page.id, { fileId: data.id, pageNumber: 1, rectangles: [{ x: 1, y: 1, width: 1, height: 1 }], quote: "", context: "", extractorVersion: PDF_EXTRACTOR_VERSION }, pageHistory(page.id), "yellow"), hasFailure("attachment-pdf-required"));
     edit(service, page.id, { [item.id]: data.id, paper_files: [] });
     assert.equal(papers.hasPDF(page.id), false);
     const context = { fileName: (id: string): string | undefined => papers.files([id])[0]?.originalName };
@@ -155,33 +156,33 @@ test("arbitrary attachments retain their suffix and names while PDF operations r
 test("clearing an attachment leaves bytes available for undo, but reopening removes unreferenced files", async t => {
     const { service, papers, history, info, database } = fixture(t), path = join(info.path, "A.pdf");
     writeFileSync(path, knownCoordinatePdf());
-    const pageId = papers.importFile(path, undefined, { tabId: "files", source: workspaceHistory }).pageId, file = papers.files()[0];
+    const pageId = papers.importFile(path, undefined, workspaceHistory).pageId, file = papers.files()[0];
     const stored = papers.externalPath(file.id);
     edit(service, pageId, { paper_files: [] });
     assert.equal(existsSync(stored), true);
-    assert.deepEqual(unreferencedFiles(service.db).map(row => row.id), [file.id]);
+    assert.deepEqual(attachments.unreferencedFiles(service.db).map(row => row.id), [file.id]);
     assert.equal(history.apply(pageHistory(pageId), "undo").status, "saved");
-    assert.deepEqual(unreferencedFiles(service.db), []);
+    assert.deepEqual(attachments.unreferencedFiles(service.db), []);
     edit(service, pageId, { paper_files: [] });
     session.close();
     const reopened = openWorkspace(info.path);
     t.after(() => session.close());
     assert.equal(existsSync(stored), false);
     for (const table of ["attachments"]) assert.equal(reopened.database.prepare("SELECT count(*) FROM " + table).pluck().get(), 0);
-    assert.deepEqual(historyServices().state(pageHistory(pageId)), { canUndo: false, redo: [] });
+    assert.deepEqual(historyServices().state(pageHistory(pageId)), { canUndo: false, canRedo: false });
 });
 
 test("a recycled page's custom property protects its independently imported file until the page is permanently deleted", async t => {
     const { service, papers, purge, info, database } = fixture(t), path = join(info.path, "A.pdf"), item = definition(service, "file");
     writeFileSync(path, knownCoordinatePdf());
     const paperId = papers.importFile(path).pageId, file = papers.files()[0], other = service.create("editable", "B");
-    const [owned] = papers.attachFiles([path], other.id, item.id, { tabId: "other", source: pageHistory(other.id) });
-    await papers.annotate(paperId, { fileId: file.id, pageNumber: 1, rectangles: [{ x: 50, y: 690, width: 70, height: 30 }], quote: "", context: "", extractorVersion: PDF_EXTRACTOR_VERSION }, "annotations", pageHistory(paperId), "yellow");
+    const [owned] = papers.attachFiles([path], other.id, item.id, pageHistory(other.id));
+    await papers.annotate(paperId, { fileId: file.id, pageNumber: 1, rectangles: [{ x: 50, y: 690, width: 70, height: 30 }], quote: "", context: "", extractorVersion: PDF_EXTRACTOR_VERSION }, pageHistory(paperId), "yellow");
     const stored = papers.externalPath(owned.id), original = papers.externalPath(file.id);
     trash(service, paperId); trash(service, other.id);
     erase(purge, paperId);
     assert.equal(existsSync(original), false);
-    assert.equal(existsSync(stored), true); assert.deepEqual(unreferencedFiles(service.db), []);
+    assert.equal(existsSync(stored), true); assert.deepEqual(attachments.unreferencedFiles(service.db), []);
     session.close();
     const reopened = openWorkspace(info.path);
     t.after(() => session.close());
@@ -196,15 +197,15 @@ test("a recycled page's custom property protects its independently imported file
 test("failed batch import and failed orphan cleanup restore rows, bytes and history", t => {
     const { service, papers, history, info } = fixture(t), page = service.create("paper", "A"), a = join(info.path, "A.txt"), b = join(info.path, "B.txt");
     writeFileSync(a, "A"); writeFileSync(b, "B");
-    assert.throws(() => papers.attachFiles([a, join(info.path, "missing.txt")], page.id, "paper_files", { tabId: "files", source: pageHistory(page.id) }));
+    assert.throws(() => papers.attachFiles([a, join(info.path, "missing.txt")], page.id, "paper_files", pageHistory(page.id)));
     assert.deepEqual(papers.files(), []); assert.deepEqual(service.get(page.id).attributes.paper_files, []);
     assert.equal(history.state(pageHistory(page.id)).canUndo, false);
-    const [first, second] = papers.attachFiles([a, b], page.id, "paper_files", { tabId: "files", source: pageHistory(page.id) });
+    const [first, second] = papers.attachFiles([a, b], page.id, "paper_files", pageHistory(page.id));
     const paths = papers.files().map(file => papers.externalPath(file.id));
     edit(service, page.id, { paper_files: [] });
     const before = history.state(pageHistory(page.id));
     service.statement("UPDATE attachments SET stored_name='../invalid.txt' WHERE id=?").run(second.id);
-    assert.throws(() => commit.run({ sourceTab: "cleanup", cleanup: true }, context => context.cleanup()), hasFailure("attachment-invalid-name"));
+    assert.throws(() => commit.run({ cleanup: true }, context => context.cleanup()), hasFailure("attachment-invalid-name"));
     assert.equal(papers.files().length, 2);
     for (const path of paths) assert.equal(existsSync(path), true);
     assert.deepEqual(Buffer.from(papers.read(first.id)), readFileSync(a));
@@ -214,7 +215,7 @@ test("failed batch import and failed orphan cleanup restore rows, bytes and hist
 test("file ownership rejects other pages, other attributes and recycled owners, while one atomic move remains reversible", t => {
     const { service, papers, history, info } = fixture(t), first = service.create("paper", "A"), second = service.create("paper", "B"), single = definition(service, "file"), many = definition(service, "files");
     const path = join(info.path, "A.txt"); writeFileSync(path, "A");
-    const [file] = papers.attachFiles([path], first.id, "paper_files", { tabId: "files", source: pageHistory(first.id) });
+    const [file] = papers.attachFiles([path], first.id, "paper_files", pageHistory(first.id));
     const duplicate = (): void => edit(service, second.id, { [single.id]: file.id });
     assert.throws(duplicate, /attachment-owned/);
     assert.throws(() => edit(service, first.id, { [single.id]: file.id }), /attachment-owned/);
@@ -230,4 +231,43 @@ test("file ownership rejects other pages, other attributes and recycled owners, 
     trash(service, first.id);
     assert.throws(duplicate, /attachment-owned/);
     checkIndex(service);
+});
+
+test("downloaded bytes survive in-session cleanup until attached and abandoned handoffs expire on reopen", async t => {
+    const ws = openTest(t, { fetchAttachment: async () => new Response(Buffer.from(knownCoordinatePdf())) });
+    const service = knowledgeServices(), papers = paperServices();
+    const custom = definition(service, "file");
+    const page = service.create("editable", "File handoff");
+    const kept = await attachments.download("https://example.org/kept.pdf", { expectedType: "application/pdf" }), abandoned = await attachments.download("https://example.org/abandoned.pdf", { expectedType: "application/pdf" });
+    assert.ok(kept && abandoned);
+    const path = (id: string): string => attachmentPath(ws.info.path, id + ".pdf");
+    const collected = (): void => {
+        assert.equal(purgeServices().purge(null).status, "deleted");
+    };
+    collected();
+    assert.deepEqual(papers.files([kept, abandoned]).map(file => file.id).sort(), [kept, abandoned].sort());
+    assert.ok(existsSync(path(kept)) && existsSync(path(abandoned)));
+    assert.throws(() => commit.run({ history: false }, () => {
+        edit(service, page.id, { [custom.id]: kept });
+        throw new Error("rollback reference");
+    }), /rollback reference/);
+    collected();
+    assert.ok(existsSync(path(kept)));
+    edit(service, page.id, { [custom.id]: kept });
+    collected();
+    assert.ok(existsSync(path(kept)));
+    edit(service, page.id, { [custom.id]: null });
+    collected();
+    assert.equal(existsSync(path(kept)), false);
+    assert.ok(existsSync(path(abandoned)));
+    const interrupted = join(ws.info.path, "attachments", ".download-" + randomUUID() + ".part");
+    const unrelated = join(ws.info.path, "attachments", "keep.part");
+    writeFileSync(interrupted, "incomplete");
+    writeFileSync(unrelated, "other file");
+    session.close();
+    openWorkspace(ws.info.path);
+    assert.equal(existsSync(interrupted), false);
+    assert.equal(existsSync(unrelated), true);
+    assert.deepEqual(paperServices().files([abandoned]), []);
+    assert.equal(existsSync(path(abandoned)), false);
 });

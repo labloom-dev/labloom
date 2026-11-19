@@ -54,7 +54,7 @@
     </div></div>
     <div class="page-list" role="grid" aria-label={params.scope === "trash" ? "回收站" : "页面列表"} aria-multiselectable="true" tabindex="0">
         {#each result.items as page (page.id)}
-            <ContextActions items={pageMenu(page, { tabId, source }, selected.includes(page.id) ? selected : [page.id])}>
+            <ContextActions items={pageMenu(page, source, selected.includes(page.id) ? selected : [page.id])}>
                 <div class="page-row" id={`library-${tabId}-${page.id}`} class:selected={selected.includes(page.id)} role="row" aria-selected={selected.includes(page.id)} tabindex="0" onclick={event => choose(page, event)} onkeydown={() => {}} ondblclick={event => openPage(page.id, { otherGroup: event.ctrlKey })} oncontextmenu={() => {
                     if (!selected.includes(page.id)) {
                         selected = [page.id]; anchor = page.id;
@@ -113,7 +113,10 @@
     import AttributeInput from "./AttributeInput.svelte";
     import { kindNames, kindIcons } from "./labels";
     import { createPage, openPage } from "../layout/navigation";
-    import { copyData, confirmed, registerList, writeFromTab } from "./state.svelte";
+    import { copyData } from "../copy-data";
+    import { confirmed } from "./confirmation.svelte";
+    import { registerList } from "./page-visits";
+    import { write } from "./page-sessions";
     import { visits } from "../Tab/activity.svelte";
     import type { ViewProps } from "../Tab/views";
     import type { ViewParams } from "../../../shared/workspace/views";
@@ -168,7 +171,7 @@
     async function permanent(all = false): Promise<void> {
         busy = true;
         try {
-            if (await writeFromTab(tabId, () => purgePages(all ? null : [...selected], tabId))) selected = [];
+            if (await write(() => purgePages(all ? null : [...selected]))) selected = [];
         }
         catch (problem) {
             error = failure(problem);
@@ -257,7 +260,7 @@
     async function importPDF(): Promise<void> {
         busy = true;
         try {
-            const result = await writeFromTab(tabId, () => window.api.papers.importPDF(undefined, { tabId, source }));
+            const result = await write(() => window.api.papers.importPDF(source));
             if (result) {
                 info = "PDF 已复制到工作区。";
                 openPage(result.pageId);
@@ -274,7 +277,7 @@
         busy = true;
         try {
             const ids = [...selected];
-            if (await writeFromTab(tabId, () => confirmed(token => params.scope === "trash" ? window.api.pages.restore(ids, tabId, source) : window.api.pages.trash(ids, tabId, source, token)))) selected = [];
+            if (await write(() => confirmed(token => params.scope === "trash" ? window.api.pages.restore(ids, source) : window.api.pages.trash(ids, source, token)))) selected = [];
         }
         catch (problem) {
             error = failure(problem);

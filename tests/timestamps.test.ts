@@ -19,7 +19,7 @@ test("attribute and timer timestamps use seconds while workspace and published i
     const first = Date.parse("2026-11-07T17:12:56.210Z"), later = Date.parse("2026-11-07T17:32:56.208Z"), seconds = Math.floor(first / 1000), due = Math.floor(later / 1000);
     let now = first;
     const service = knowledgeServices(), history = historyServices(), page = service.create("editable", "A");
-    service.commitEdit({ pageId: page.id, tabId: "time", batch: 0, blocks: [], attributes: { schedule_start: due } }, pageHistory(page.id));
+    service.commitEdit({ pageId: page.id, batch: 0, blocks: [], attributes: { schedule_start: due } }, pageHistory(page.id));
     service.timers.set(page.id, "schedule_start", 0, true);
     now = due * 1000 - 1; await service.timers.check(() => assert.fail("too early"));
     now = later; const notices: string[] = []; await service.timers.check(notice => notices.push(notice.pageId));

@@ -25,8 +25,10 @@
 <script lang="ts">
     import { failure, message, type ErrorValue } from "../../i18n.svelte";
     import type { AttributeDefinition, AttributeValue } from "../../../shared/types/attributes";
-    import { copyData, define, writeFromTab } from "./state.svelte";
-    let { definition, value, tabId, disabled = false, onchange }: { definition: AttributeDefinition; value: AttributeValue; tabId: string; disabled?: boolean; onchange: (value: AttributeValue) => void } = $props();
+    import { copyData } from "../copy-data";
+    import { define } from "./confirmation.svelte";
+    import { write } from "./page-sessions";
+    let { definition, value, disabled = false, onchange }: { definition: AttributeDefinition; value: AttributeValue; disabled?: boolean; onchange: (value: AttributeValue) => void } = $props();
     let root: HTMLDivElement;
     let query = $state(""), active = $state(0), open = $state(false), busy = $state(false), error = $state<ErrorValue>("");
     const options = $derived(definition.metadata.options ?? []), selected = $derived(Array.isArray(value) ? value : []);
@@ -46,7 +48,7 @@
                 busy = true;
                 try {
                     const fresh = { id: crypto.randomUUID(), name };
-                    if (await writeFromTab(tabId, () => define(definition.id, { ...copyData(definition), metadata: { ...copyData(definition.metadata), options: [...copyData(options), fresh] } }, tabId))) onchange([...selected, fresh.id]);
+                    if (await write(() => define(definition.id, { ...copyData(definition), metadata: { ...copyData(definition.metadata), options: [...copyData(options), fresh] } }))) onchange([...selected, fresh.id]);
                 }
                 catch (problem) {
                     error = failure(problem); return;

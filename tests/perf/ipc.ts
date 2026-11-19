@@ -17,7 +17,7 @@ const blocks = Array.from({ length: 1000 }, (_, index) => ({
         { type: "text", text: `Research note ${index}`, marks: [{ type: "link", attrs: { href: "https://example.org", metadata: { references: ["A", "B"] } } }] }
     ] }
 }));
-const commit = [{ pageId: "A", tabId: "B", batch: 1, blocks }, { kind: "page", id: "A" }];
+const commit = [{ pageId: "A", batch: 1, blocks }, { kind: "page", id: "A" }];
 const sync = ["A", Array.from({ length: 10000 }, (_, index) => `block-${index}`)];
 measure("IPC | commitEdit 1000 rich blocks", () => pages.commitEdit.check(commit));
 measure("IPC | syncBlocks 10000 ids", () => pages.syncBlocks.check(sync));

@@ -1,6 +1,6 @@
 import type { HistorySource } from "../../shared/history/ipc";
 import { type ChangePreview, type CommitResult, type KnowledgeChange } from "../../shared/types/content";
-import { withFileCleanup } from "../storage/files";
+import * as attachments from "../attachments/service";
 import * as workspace from "../workspace-state";
 import { fingerprint } from "./attributes";
 import { EditChanges } from "./changes";
@@ -11,7 +11,7 @@ import * as retention from "./retention";
 import * as timers from "./timer-state";
 
 export type Options = {
-    sourceTab: string;
+    writeId?: string;
     history?: HistorySource | false;
     replay?: history.Replay;
     updateModified?: boolean;
@@ -46,7 +46,7 @@ export function run<T>(options: Options, action: (context: Context) => T): T {
     const session = workspace.requireWorkspace(), start = effects.length;
     let cleanup: (() => string[]) | undefined;
     const write = (): T => session.database.transaction(() => {
-        const changed: KnowledgeChange = { sourceTab: options.sourceTab, pages: [], blocks: [] };
+        const changed: KnowledgeChange = { pages: [], blocks: [] };
         const captures: history.Capture[] = [], invalid: history.Invalidation[] = [];
         let publish = true;
         const context: Context = {
@@ -92,6 +92,7 @@ export function run<T>(options: Options, action: (context: Context) => T): T {
                     parent.feed ||= scope.feed;
                 }
                 else effects.push(() => {
+                    if (options.writeId !== undefined) changed.writeId = options.writeId;
                     const change = events.expand(changed);
                     history.finish(captures, invalid, change.summaryPages ?? change.pages);
                     events.publish(change, scope.feed);
@@ -105,7 +106,7 @@ export function run<T>(options: Options, action: (context: Context) => T): T {
     })();
     let result: T;
     try {
-        result = options.cleanup ? withFileCleanup(session.db, session.info.path, collect => {
+        result = options.cleanup ? attachments.withFileCleanup(session.db, session.info.path, collect => {
             cleanup = () => collect(retention.orphanBlocks()); return write();
         }) : write();
     }

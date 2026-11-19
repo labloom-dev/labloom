@@ -1,8 +1,11 @@
 import { tick } from "svelte";
+import { definitionFor } from "../Tab/views";
 import { visits } from "../Tab/activity.svelte";
 import { commands, shortcutCommand, type Command } from "../../../shared/content/commands";
-import { historySource } from "../Tab/views";
-import { confirmed, perform, saveAll, writeFromTab } from "../Knowledge/state.svelte";
+import { workspaceHistory } from "../../../shared/history/ipc";
+import { confirmed } from "../Knowledge/confirmation.svelte";
+import { perform } from "../Knowledge/feedback.svelte";
+import { write } from "../Knowledge/page-sessions";
 import { activateTab, focusGroup, removeTab } from "../Tab/api";
 import type { LayoutNode } from "../Tab/defs";
 import { tabState } from "../Tab/state.svelte";
@@ -21,10 +24,30 @@ export function registerEditing(element: HTMLElement, run: (command: EditingComm
 }
 function editCommand(command: EditingCommand): void {
     const group = document.querySelector(`[data-group-id="${CSS.escape(tabState.focusedGroupId)}"]`);
-    const active = lastFocus?.isConnected && group?.contains(lastFocus) ? lastFocus : null;
+    const active = lastFocus?.isConnected ? lastFocus : null;
     if (active?.matches("input,textarea")) {
         active.focus({ preventScroll: true });
         if (command !== "inlineReference") document.execCommand(command);
+        return;
+    }
+    if (command === "undo" || command === "redo") {
+        const editor = active?.closest<HTMLElement>(".tiptap");
+        const run = editor && editors.get(editor);
+        if (run) {
+            run(command); return;
+        }
+        const groupId = active?.closest<HTMLElement>("[data-group-id]")?.dataset.groupId;
+        const owner = tabState.groups.find(item => item.id === groupId);
+        const tab = owner?.tabs.find(item => item.id === owner.activeTabId);
+        const source = tab ? definitionFor(tab.view.type).history(tab.view.params) : workspaceHistory;
+        void perform(async () => {
+            await write(async () => {
+                const history = await window.api.history.state(source);
+                if (command === "undo" ? history.canUndo : history.canRedo) {
+                    await confirmed(token => window.api.history.apply(source, command, token));
+                }
+            });
+        });
         return;
     }
     const area = active?.closest<HTMLElement>(".tiptap,.library") ?? group?.querySelector<HTMLElement>("[data-tabs-content]:not([hidden]) .tiptap, [data-tabs-content]:not([hidden]) .library");
@@ -43,7 +66,6 @@ async function focusActive(id: string): Promise<void> {
 }
 export function runCommand(id: Command): void {
     const group = tabState.groups.find(g => g.id === tabState.focusedGroupId)!;
-    const tab = group.tabs.find(tab => tab.id === group.activeTabId);
     if (id === "newPage") createPage();
     else if (id === "closeTab") {
         if (group.activeTabId) removeTab(group.activeTabId);
@@ -67,23 +89,10 @@ export function runCommand(id: Command): void {
         }
     }
     else if (id === "importPDF") void perform(async () => {
-        const action = (): ReturnType<typeof window.api.papers.importPDF> => window.api.papers.importPDF(undefined, tab ? { tabId: tab.id, source: historySource(tab.view) } : undefined);
-        const result = group.activeTabId ? await writeFromTab(group.activeTabId, action) : await saveAll() && await action();
+        const result = await write(() => window.api.papers.importPDF(workspaceHistory));
         if (result) openPage(result.pageId);
     });
-    else if (["undo", "redo", "cut", "copy", "paste", "selectAll"].includes(id)) {
-        if ((id === "undo" || id === "redo") && !lastFocus?.matches("input,textarea") && !document.querySelector(`[data-group-id="${CSS.escape(group.id)}"] [data-tabs-content]:not([hidden]) .tiptap`) && tab) {
-            const tabId = tab.id;
-            void perform(async () => {
-                await writeFromTab(tabId, async () => {
-                    const source = historySource(tab.view), history = await window.api.history.state(source);
-                    if (id === "undo" ? !history.canUndo : !history.redo.length) return;
-                    await confirmed(token => window.api.history.apply(source, id as "undo" | "redo", undefined, token));
-                });
-            });
-        }
-        else editCommand(id as EditingCommand);
-    }
+    else if (["undo", "redo", "cut", "copy", "paste", "selectAll"].includes(id)) editCommand(id as EditingCommand);
     else openDestination(id as Parameters<typeof openDestination>[0]);
 }
 export function globalShortcut(event: KeyboardEvent): void {

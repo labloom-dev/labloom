@@ -33,7 +33,7 @@
     .toast { position: fixed; bottom: 18px; right: 18px; max-width: 600px; z-index: 850; display: flex; gap: 20px; box-shadow: 2px 3px 12px #0002; }
 </style>
 <script lang="ts">
-    import { answer, confirmation, knowledgeState } from "./state.svelte";
-    import { notify } from "./feedback.svelte";
+    import { answer, confirmation } from "./confirmation.svelte";
+    import { knowledgeState, notify } from "./feedback.svelte";
     import { message, t } from "../../i18n.svelte";
 </script>

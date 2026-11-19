@@ -6,9 +6,11 @@ import { activateTab, addTab, getTabID, splitGroup } from "../Tab/api";
 import { tabState } from "../Tab/state.svelte";
 import type { View, ViewParams } from "../../../shared/workspace/views";
 import { requestAnchor } from "../Tab/anchors";
-import { type PageRecord } from "../../../shared/types/content";
+import { workspaceHistory } from "../../../shared/history/ipc";
 import { type AttributeValue } from "../../../shared/types/attributes";
-import { copyData, perform, saveAll, writeFromTab } from "../Knowledge/state.svelte";
+import { copyData } from "../copy-data";
+import { perform } from "../Knowledge/feedback.svelte";
+import { write } from "../Knowledge/page-sessions";
 
 const status = { kind: "attribute", id: "task_status", type: "status" } as const;
 const library: ViewParams["library"] = { scope: "all", sort: "modified", tags: [], filters: [] };
@@ -25,15 +27,15 @@ export const destinationViews: Record<Destination, View> = {
 };
 
 export const destinations = [
-    { type: "overview", title: "我的花园", icon: "home" },
-    { type: "feed", title: "订阅动态", icon: "feed" },
-    { type: "library", title: "知识库", icon: "library" },
-    { type: "papers", title: "文献库", icon: "book" },
-    { type: "calendar", title: "研究日历", icon: "calendar" },
-    { type: "settings", title: "偏好设置", icon: "settings" },
-    { type: "attributes", title: "属性管理", icon: "settings" },
-    { type: "about", title: "关于知织", icon: "home" }
-] satisfies { type: Destination; title: string; icon: IconName }[];
+    { type: "overview", icon: "home" },
+    { type: "feed", icon: "feed" },
+    { type: "library", icon: "library" },
+    { type: "papers", icon: "book" },
+    { type: "calendar", icon: "calendar" },
+    { type: "settings", icon: "settings" },
+    { type: "attributes", icon: "settings" },
+    { type: "about", icon: "home" }
+] satisfies { type: Destination; icon: IconName }[];
 
 function canonical(_key: string, value: unknown): unknown {
     if (value && typeof value === "object" && !Array.isArray(value)) {
@@ -107,10 +109,8 @@ export async function openTarget(target: { kind: "page" | "block"; id: string },
 }
 
 export function createPage(initial: Record<string, AttributeValue> = {}): void {
-    const source = tabState.groups.find(group => group.id === tabState.focusedGroupId)?.activeTabId;
     void perform(async () => {
-        const create = (): Promise<PageRecord> => window.api.pages.create("", initial, undefined, source ?? undefined);
-        const page = source ? await writeFromTab(source, create) : await saveAll() && await create();
-        if (page) openPage(page.id);
+        const page = await write(() => window.api.pages.create(workspaceHistory, "", initial));
+        openPage(page.id);
     });
 }

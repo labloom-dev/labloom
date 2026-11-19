@@ -44,6 +44,9 @@ export type FeedEntry = {
     publishedAt: number | null;
 };
 
+export type FeedImport = { pageId: string; downloadPDF: boolean };
+export type FeedDownload = { pageId: string; fileId: string };
+
 export type FeedPosition = { progress: number };
 export type FeedPaperState = "none" | "saved" | "recycled" | "missing";
 

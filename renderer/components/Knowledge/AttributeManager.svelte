@@ -53,8 +53,9 @@
     import { editableBuiltinMetadata, isBuiltin } from "../../../shared/attrs/builtins";
     import { attributeLabels as labels } from "./attribute-labels";
     import { convertMetadata } from "../../../shared/attrs/values";
-    import { define, writeFromTab } from "./state.svelte";
-    let { definitions, tabId }: { definitions: AttributeDefinition[]; tabId: string } = $props();
+    import { define } from "./confirmation.svelte";
+    import { write } from "./page-sessions";
+    let { definitions }: { definitions: AttributeDefinition[] } = $props();
     let draft = $state<AttributeDefinition | null>(null), busy = $state(false), error = $state<ErrorValue>("");
     let optionsRoot = $state<HTMLDivElement>();
     async function addOption(): Promise<void> {
@@ -75,7 +76,7 @@
     async function apply(value: AttributeDefinition | null): Promise<void> {
         busy = true;
         try {
-            if (await writeFromTab(tabId, () => define(draft!.id, value ? JSON.parse(JSON.stringify(value)) : null, tabId))) {
+            if (await write(() => define(draft!.id, value ? JSON.parse(JSON.stringify(value)) : null))) {
                 draft = null;
                 error = "";
             }

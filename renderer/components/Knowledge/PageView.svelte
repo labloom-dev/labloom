@@ -53,7 +53,8 @@
     import { untrack } from "svelte";
     import type { ViewProps } from "../Tab/views";
     import TargetPicker from "./TargetPicker.svelte";
-    import { session, perform, knowledgeState } from "./state.svelte";
+    import { session } from "./page-sessions";
+    import { perform, knowledgeState } from "./feedback.svelte";
     import { readingTabs } from "../Tab/activity.svelte";
     import FeedView from "../Feed/FeedView.svelte";
     import { openPage } from "../layout/navigation";
@@ -74,6 +75,6 @@
     let showProperties = $state(false), gone = $state(false);
     $effect(() => { if (knowledgeState.change.purged?.includes(pageId)) { gone = true; current.release(); } });
     function trash(): void {
-        void perform(() => current.action(token => page!.attributes.deleted ? window.api.pages.restore([pageId], tabId, current.source) : window.api.pages.trash([pageId], tabId, current.source, token)));
+        void perform(() => current.action((token, writeId) => page!.attributes.deleted ? window.api.pages.restore([pageId], current.source, writeId) : window.api.pages.trash([pageId], current.source, token, writeId)));
     }
 </script>

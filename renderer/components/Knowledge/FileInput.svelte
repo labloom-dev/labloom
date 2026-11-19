@@ -48,7 +48,9 @@
     import { display } from "../../../shared/attrs/format";
     import { type AttributeDefinition, type AttributeValue } from "../../../shared/types/attributes";
     import { type Attachment } from "../../../shared/types/papers";
-    import { type PageSession, knowledgeState, writeFromTab } from "./state.svelte";
+    import { type PageSession } from "./page-session.svelte";
+    import { knowledgeState } from "./feedback.svelte";
+    import { write } from "./page-sessions";
     import AttachmentReader from "./AttachmentReader.svelte";
     let { definition, value, session, disabled = false, onchange }: { definition: AttributeDefinition; value: AttributeValue; session?: PageSession; disabled?: boolean; onchange: (value: AttributeValue) => void } = $props();
     const ids = $derived((Array.isArray(value) ? value : typeof value === "string" ? [value] : []) as string[]);
@@ -101,8 +103,8 @@
         busy = true;
         try {
             const current = session;
-            await writeFromTab(current.tabId, async () => {
-                if (await window.api.papers.importFiles(current.state.page!.id, definition.id, current.tabId, current.source)) await current.reread([current.state.page!.id]);
+            await write(async () => {
+                if (await window.api.papers.importFiles(current.state.page!.id, definition.id, current.source)) await current.reread([current.state.page!.id]);
             });
             error = "";
         }

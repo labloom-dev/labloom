@@ -3,10 +3,19 @@
         <!-- eslint-disable-next-line svelte/no-at-html-tags -->
         {@html search}
     </span>
-    <input placeholder="搜索页面标题、正文和属性…" autocomplete="off" spellcheck="false" bind:value={keyword} onkeydown={onkeydown} />
+    <input placeholder="搜索页面或命令…" autocomplete="off" spellcheck="false" bind:value={keyword} onkeydown={onkeydown} />
 </div>
 <div class="search-results">
-    {#if error}<p class="error">{message(error)}</p>{:else if pending}<p>正在搜索…</p>{:else}{#each pages as page, index (page.id)}<button class:active={index === selected} onclick={() => choose(page.id)}><strong>{page.title || "未命名"}</strong><span>{page.excerpt || "还没有正文"}</span></button>{:else}<p>{keyword.trim() ? "没有找到匹配的页面" : "输入关键词，搜索知识库"}</p>{/each}{/if}
+    {#if showImport}
+        <button class:active={selected === 0} onclick={importPDF}><strong>{commands.importPDF.label}</strong></button>
+    {/if}
+    {#if error}<p class="error">{message(error)}</p>{:else if pending}<p>正在搜索…</p>{:else}
+        {#each pages as page, index (page.id)}
+            <button class:active={index + Number(showImport) === selected} onclick={() => choose(page.id)}><strong>{page.title || "未命名"}</strong><span>{page.excerpt || "还没有正文"}</span></button>
+        {:else}
+            {#if !showImport}<p>没有找到匹配的页面或命令</p>{/if}
+        {/each}
+    {/if}
 </div>
 <footer>
     <span><kbd>Esc</kbd> 关闭</span>
@@ -68,11 +77,13 @@
     import { failure, message, type ErrorValue } from "../../i18n.svelte";
     import search from "../../assets/carbon--search.svg?raw";
     import { type PageSummary } from "../../../shared/types/content";
+    import { commands, runCommand } from "../layout/commands";
     import { openPage } from "../layout/navigation";
     import { currentTimeZone } from "../layout/preferences.svelte";
 
     let { onclose }: { onclose: () => void } = $props();
     let keyword = $state(""), pending = $state(false), error = $state<ErrorValue>(""), selected = $state(0), pages = $state<PageSummary[]>([]);
+    const showImport = $derived(commands.importPDF.label.toLowerCase().includes(keyword.trim().toLowerCase()));
     $effect(() => {
         currentTimeZone();
         const query = keyword.trim(); let active = true; selected = 0; pending = !!query; const timer = setTimeout(() => {
@@ -91,18 +102,26 @@
             active = false; clearTimeout(timer);
         };
     });
+    function importPDF(): void {
+        onclose(); runCommand("importPDF");
+    }
     function choose(id: string): void {
         openPage(id); onclose();
     }
     function onkeydown(event: KeyboardEvent): void {
         if (event.key === "ArrowDown") {
-            event.preventDefault(); selected = Math.min(selected + 1, pages.length - 1);
+            event.preventDefault(); selected = Math.min(selected + 1, Math.max(0, pages.length + Number(showImport) - 1));
         }
         else if (event.key === "ArrowUp") {
             event.preventDefault(); selected = Math.max(0, selected - 1);
         }
-        else if (event.key === "Enter" && pages[selected]) {
-            event.preventDefault(); choose(pages[selected].id);
+        else if (event.key === "Enter") {
+            event.preventDefault();
+            if (showImport && selected === 0) importPDF();
+            else {
+                const page = pages[selected - Number(showImport)];
+                if (!pending && page) choose(page.id);
+            }
         }
     }
 </script>

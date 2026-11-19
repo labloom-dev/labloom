@@ -24,7 +24,8 @@
     import { dirtyPages } from "../Tab/dirty.svelte";
     import { untrack } from "svelte";
     import Editor from "../Editor/Editor.svelte";
-    import { session, knowledgeState } from "./state.svelte";
+    import { session } from "./page-sessions";
+    import { knowledgeState } from "./feedback.svelte";
     import { openPage } from "../layout/navigation";
     import { message } from "../../i18n.svelte";
     import type { HistorySource } from "../../../shared/history/ipc";

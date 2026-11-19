@@ -34,7 +34,7 @@ function fixture(t: TestContext): ClipboardFixture {
     const a = service.create("editable", "A"), b = service.create("editable", "B");
     const parent = a.blocks[a.children[0]], child: ContentBlock = { id: randomUUID(), type: "unordered_list", payload: payload("unordered_list", "Copied child"), children: [] };
     const leaf: ContentBlock = { id: randomUUID(), type: "paragraph", payload: payload("paragraph", "Copied leaf"), children: [] };
-    service.commitEdit({ pageId: a.id, tabId: "setup", batch: 0, blocks: [{ ...parent, children: [child.id] }, { ...child, children: [leaf.id] }, leaf] }, pageHistory(a.id));
+    service.commitEdit({ pageId: a.id, batch: 0, blocks: [{ ...parent, children: [child.id] }, { ...child, children: [leaf.id] }, leaf] }, pageHistory(a.id));
     const source = schema.nodeFromJSON(pageDocument(service.get(a.id))), slice = new Slice(Fragment.from(source.lastChild!), 0, 0);
     const text = writeClipboard(workspace.info.id, slice)!;
     const clipboard = readClipboard(schema, text)!;
@@ -44,7 +44,7 @@ function fixture(t: TestContext): ClipboardFixture {
     };
     const paste = (current?: ContentBlock[]): PageRecord => {
         const planned = pasteBlocks(target(), clipboard, current);
-        assert.equal(service.commitEdit({ ...planned.edit, pageId: b.id, tabId: "paste", batch: 0, ...(current ? { sync: clipboard.ids } : {}) }, pageHistory(b.id)).status, "saved");
+        assert.equal(service.commitEdit({ ...planned.edit, pageId: b.id, batch: 0, ...(current ? { sync: clipboard.ids } : {}) }, pageHistory(b.id)).status, "saved");
         const sync = workspace.database.prepare("SELECT * FROM sync_refs ORDER BY container_kind,container_id,slot,position");
         const links = workspace.database.prepare("SELECT * FROM link_refs ORDER BY source_kind,source_id,source_field,target_kind,target_id");
         const expectedSync = sync.all(), expectedLinks = links.all();
@@ -68,23 +68,23 @@ test("only closed whole Labloom blocks carry the internal block clipboard format
 for (const origin of ["live", "recycled", "orphan", "purged", "other-workspace"] as const) {
     test("ordinary paste fully copies the snapshot with independent IDs: " + origin, t => {
         const f = fixture(t), { service, history, a, b, parent, child, leaf, clipboard, purge } = f;
-        if (origin === "recycled" || origin === "purged") confirm(token => service.trash([a.id], "trash", workspaceHistory, token));
+        if (origin === "recycled" || origin === "purged") confirm(token => service.trash([a.id], workspaceHistory, token));
         if (origin === "purged") {
-            const preview = purge.purge([a.id], "purge");
+            const preview = purge.purge([a.id]);
             assert.equal(preview.status, "confirmation");
-            if (preview.status === "confirmation") purge.purge([a.id], "purge", preview.token);
+            if (preview.status === "confirmation") purge.purge([a.id], preview.token);
         }
-        if (origin === "orphan") confirm(token => service.deleteBlock({ pageId: a.id, blockId: parent.id, tabId: "delete" }, pageHistory(a.id), token));
+        if (origin === "orphan") confirm(token => service.deleteBlock({ pageId: a.id, blockId: parent.id }, pageHistory(a.id), token));
         if (origin === "other-workspace") clipboard.workspaceId = randomUUID();
         const available = service.syncBlocks(clipboard.workspaceId, clipboard.ids);
         assert.equal(available !== null, origin === "live");
-        if (origin === "live") service.commitEdit({ pageId: a.id, tabId: "source", batch: 1, blocks: [{ ...leaf, payload: payload("paragraph", "Changed after copy") }] }, pageHistory(a.id));
+        if (origin === "live") service.commitEdit({ pageId: a.id, batch: 1, blocks: [{ ...leaf, payload: payload("paragraph", "Changed after copy") }] }, pageHistory(a.id));
         const result = f.paste(), root = result.blocks[result.children[0]], copiedChild = result.blocks[root.children[0]], copiedLeaf = result.blocks[copiedChild.children[0]];
         assert.ok(![parent.id, child.id, leaf.id].includes(root.id));
         assert.ok(![parent.id, child.id, leaf.id].includes(copiedChild.id));
         assert.ok(![parent.id, child.id, leaf.id].includes(copiedLeaf.id));
         assert.equal(copiedLeaf.payload.inline[0].type === "text" && copiedLeaf.payload.inline[0].text, "Copied leaf");
-        assert.equal(service.commitEdit({ pageId: b.id, tabId: "edit-copy", batch: 1, blocks: [{ ...copiedLeaf, payload: payload("paragraph", "Independent") }] }, pageHistory(b.id)).status, "saved");
+        assert.equal(service.commitEdit({ pageId: b.id, batch: 1, blocks: [{ ...copiedLeaf, payload: payload("paragraph", "Independent") }] }, pageHistory(b.id)).status, "saved");
         if (origin === "live") assert.equal(service.get(a.id).blocks[leaf.id].payload.inline[0].type === "text" && (service.get(a.id).blocks[leaf.id].payload.inline[0] as { text: string }).text, "Changed after copy");
         assert.equal(history.state(pageHistory(f.b.id)).canUndo, true, "both edits belong to the destination page");
         assert.deepEqual(f.database.pragma("foreign_key_check"), []);
@@ -103,7 +103,7 @@ test("one full-copy paste is one undo record and redo restores the complete subt
 
 test("synchronous paste takes current database content, shares identities and undoes once", t => {
     const f = fixture(t), { service, history, leaf, clipboard } = f, before = service.get(f.b.id).children;
-    service.commitEdit({ pageId: f.a.id, tabId: "source", batch: 1, blocks: [{ ...leaf, payload: payload("paragraph", "Current database content") }] }, pageHistory(f.a.id));
+    service.commitEdit({ pageId: f.a.id, batch: 1, blocks: [{ ...leaf, payload: payload("paragraph", "Current database content") }] }, pageHistory(f.a.id));
     const current = service.syncBlocks(clipboard.workspaceId, clipboard.ids)!;
     const pasted = f.paste(current);
     assert.deepEqual(pasted.children, [f.parent.id]);
@@ -112,7 +112,7 @@ test("synchronous paste takes current database content, shares identities and un
     assert.deepEqual(service.get(f.b.id).children, before);
     assert.equal(history.state(pageHistory(f.b.id)).canUndo, false);
     assert.equal(history.apply(pageHistory(f.b.id), "redo").status, "saved");
-    service.commitEdit({ pageId: f.b.id, tabId: "paste", batch: 2, blocks: [{ ...pasted.blocks[leaf.id], payload: payload("paragraph", "Shared edit") }] }, pageHistory(f.b.id));
+    service.commitEdit({ pageId: f.b.id, batch: 2, blocks: [{ ...pasted.blocks[leaf.id], payload: payload("paragraph", "Shared edit") }] }, pageHistory(f.b.id));
     assert.deepEqual(service.get(f.a.id).blocks[leaf.id], service.get(f.b.id).blocks[leaf.id]);
 });
 
@@ -125,22 +125,22 @@ test("sync eligibility requires every root and is rechecked at commit; cycles an
     const cycle = EditorState.create({ schema, doc, selection: NodeSelection.create(doc, position), plugins: [identityPlugin()] });
     assert.throws(() => pasteBlocks(cycle, clipboard, current), hasFailure("block-cycle"));
     const feed = service.create("feed", "Feed");
-    assert.throws(() => service.commitEdit({ pageId: feed.id, tabId: "feed", batch: 0, blocks: [], pageChildren: clipboard.ids, sync: clipboard.ids }, pageHistory(feed.id)), hasFailure("feed-body-forbidden"));
-    confirm(token => service.trash([f.a.id], "trash", workspaceHistory, token));
+    assert.throws(() => service.commitEdit({ pageId: feed.id, batch: 0, blocks: [], pageChildren: clipboard.ids, sync: clipboard.ids }, pageHistory(feed.id)), hasFailure("feed-body-forbidden"));
+    confirm(token => service.trash([f.a.id], workspaceHistory, token));
     const before = service.get(f.b.id);
-    assert.throws(() => service.commitEdit({ ...planned.edit, pageId: f.b.id, tabId: "paste", batch: 0, sync: clipboard.ids }, pageHistory(f.b.id)), hasFailure("block-sync-unavailable"));
+    assert.throws(() => service.commitEdit({ ...planned.edit, pageId: f.b.id, batch: 0, sync: clipboard.ids }, pageHistory(f.b.id)), hasFailure("block-sync-unavailable"));
     assert.deepEqual(service.get(f.b.id), before);
 });
 
 for (const synced of [false, true]) {
     test("pasting whole blocks within existing text preserves both text halves without accidental sync: " + synced, t => {
         const f = fixture(t), original = f.b.blocks[f.b.children[0]];
-        f.service.commitEdit({ pageId: f.b.id, tabId: "setup", batch: 1, blocks: [{ ...original, payload: payload("paragraph", "ABCD") }] }, pageHistory(f.b.id));
+        f.service.commitEdit({ pageId: f.b.id, batch: 1, blocks: [{ ...original, payload: payload("paragraph", "ABCD") }] }, pageHistory(f.b.id));
         const state = f.target(), position = indexDoc(state.doc).get(original.id)![0].pos + 4;
         const selected = state.apply(state.tr.setSelection(TextSelection.create(state.doc, position)));
         const current = synced ? f.service.syncBlocks(f.clipboard.workspaceId, f.clipboard.ids)! : undefined;
         const planned = pasteBlocks(selected, f.clipboard, current);
-        assert.equal(f.service.commitEdit({ ...planned.edit, pageId: f.b.id, tabId: "paste", batch: 1, ...(synced ? { sync: f.clipboard.ids } : {}) }, pageHistory(f.b.id)).status, "saved");
+        assert.equal(f.service.commitEdit({ ...planned.edit, pageId: f.b.id, batch: 1, ...(synced ? { sync: f.clipboard.ids } : {}) }, pageHistory(f.b.id)).status, "saved");
         const saved = f.service.get(f.b.id), bodies = saved.children.map(id => saved.blocks[id]);
         assert.equal(bodies.filter(block => block.id === original.id).length, 1);
         assert.equal(new Set(bodies.map(block => block.id)).size, bodies.length);

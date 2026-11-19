@@ -46,7 +46,7 @@
     import { type ContentBlock, type PageSummary, type PageRecord, type Target } from "../../../shared/types/content";
     import { blockText } from "../../../shared/content/blocks";
     import { blockKindNames } from "../../../shared/content/block-labels";
-    import { knowledgeState } from "./state.svelte";
+    import { knowledgeState } from "./feedback.svelte";
     let { mode = "reference", onselect, onclose }: { mode?: "reference" | "sync" | "page"; onselect: (target: Target, label: string) => void; onclose: () => void } = $props();
     let keyword = $state(""), error = $state<ErrorValue>("");
     let pages = $state<PageSummary[]>([]), chosen = $state.raw<PageRecord | null>(null);

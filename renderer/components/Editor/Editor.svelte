@@ -114,7 +114,8 @@
     import { type Target, type ContentBlockKind } from "../../../shared/types/content";
     import { payload } from "../../../shared/content/blocks";
     import { kinds } from "../../../shared/content/block-labels";
-    import { type PageSession, perform } from "../Knowledge/state.svelte";
+    import { type PageSession } from "../Knowledge/page-session.svelte";
+    import { perform } from "../Knowledge/feedback.svelte";
     import { readingTabs } from "../Tab/activity.svelte";
     import { tabState } from "../Tab/state.svelte";
     import ReferenceView from "../Knowledge/ReferenceView.svelte";
@@ -220,8 +221,8 @@
             const planned = pasteBlocks(state, choice.clipboard, current ?? undefined);
             pendingPaste = null;
             let saved = false;
-            await session.action(async token => {
-                const result = await window.api.pages.commitEdit({ ...planned.edit, pageId: session.state.page!.id, tabId, batch: 0, ...(synced ? { sync: choice.clipboard.ids } : {}) }, session.source, token);
+            await session.action(async (token, writeId) => {
+                const result = await window.api.pages.commitEdit({ ...planned.edit, pageId: session.state.page!.id, batch: 0, ...(synced ? { sync: choice.clipboard.ids } : {}) }, session.source, token, writeId);
                 saved = result.status === "saved";
                 return result;
             });
@@ -266,7 +267,7 @@
         const at = instance.state.doc.resolve(loc.pos), index = at.index() - 1;
         if (index + direction < 0 || index + direction >= at.parent.childCount - 1) return;
         const position = { pageId: session.state.page!.id, containerId: at.depth ? at.parent.attrs.blockId as string : session.state.page!.id, index, blockId: loc.node.attrs.blockId as string };
-        void perform(() => session.action(token => window.api.pages.place({ position, action: direction < 0 ? "move-up" : "move-down", tabId }, session.source, token)));
+        void perform(() => session.action((token, writeId) => window.api.pages.place({ position, action: direction < 0 ? "move-up" : "move-down" }, session.source, token, writeId)));
     }
     function placeholder(): void {
         if (!editor || !host) return;
@@ -367,7 +368,7 @@
         if (!loc || !instance) return;
         const { node, pos } = loc;
         if (action === "delete") {
-            void perform(() => session.action(token => window.api.pages.deleteBlock({ pageId: session.state.page!.id, tabId, blockId: node.attrs.blockId }, session.source, token)));
+            void perform(() => session.action((token, writeId) => window.api.pages.deleteBlock({ pageId: session.state.page!.id, blockId: node.attrs.blockId }, session.source, token, writeId)));
             return;
         }
         if (action === "row" || action === "column") {
@@ -401,12 +402,14 @@
         const history = History.extend({
             addProseMirrorPlugins: () => [], addCommands: () => ({
                 undo: () => ({ dispatch }) => {
-                    if (dispatch) void session.undo("undo");
-                    return session.state.dirty || session.state.history.canUndo;
+                    const available = session.state.dirty || session.state.history.canUndo;
+                    if (dispatch && available) void session.undo("undo");
+                    return available;
                 },
                 redo: () => ({ dispatch }) => {
-                    if (dispatch) void session.undo("redo");
-                    return !!session.state.history.redo.length;
+                    const available = session.state.history.canRedo && !session.state.dirty;
+                    if (dispatch && available) void session.undo("redo");
+                    return available;
                 }
             })
         });

@@ -20,7 +20,7 @@
     import { untrack } from "svelte";
     import { type Target, type ResolvedTarget } from "../../../shared/types/content";
     import { openPage } from "../layout/navigation";
-    import { type PageSession } from "./state.svelte";
+    import { type PageSession } from "./page-session.svelte";
     import { notify } from "./feedback.svelte";
     let { target, session }: { target: Target; session: PageSession } = $props();
     let targetValue = $state<ResolvedTarget | null>(null), pending = $state(true), expanded = $state(false);

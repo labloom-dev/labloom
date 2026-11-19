@@ -871,7 +871,10 @@
     import { feedNavigation } from "./navigation.svelte";
     import SourceForm from "./SourceForm.svelte";
 
-    let { api = window.api.feed, openPaper = openPage, sourcePageId }: { api?: FeedAPI; openPaper?: (id: string) => void; sourcePageId?: string } = $props();
+    import { downloadAttachment, saveSubscription } from "./operations";
+    import { workspaceHistory } from "../../../shared/history/ipc";
+    import { write } from "../Knowledge/page-sessions";
+    let { api = window.api.feed, attachPDF = (pageId, fileId) => window.api.papers.attachFile(pageId, "paper_files", fileId, workspaceHistory), openPaper = openPage, sourcePageId }: { api?: FeedAPI; attachPDF?: (pageId: string, fileId: string) => Promise<void>; openPaper?: (id: string) => void; sourcePageId?: string } = $props();
 
     const followedScope = "#followed";
     const readOptions = [{ value: "all", label: "全部" }, { value: "unread", label: "未读" }, { value: "read", label: "已读" }] as const;
@@ -1021,7 +1024,8 @@
         saving = true;
         formError = "";
         try {
-            const id = await api.saveSource(input);
+            const id = await saveSubscription(api, input, write);
+            if (!id) return;
             showForm = false;
             if (!input.id) {
                 keyword = "";
@@ -1040,7 +1044,7 @@
     async function setStatus(id: string, action: FeedSourceAction): Promise<void> {
         confirming = "";
         try {
-            await api.setSourceStatus(id, action);
+            await write(() => api.setSourceStatus(id, action));
             await reload();
             if (action === "resume") refresh(id);
         }
@@ -1052,7 +1056,7 @@
     async function markAll(): Promise<void> {
         confirming = "";
         try {
-            await api.markAllRead(sourceId || undefined);
+            await write(() => api.markAllRead(sourceId || undefined));
             if (detail && (!sourceId || detail.sourceId === sourceId)) detail.isRead = true;
             await reload();
         }
@@ -1063,7 +1067,7 @@
 
     async function saveKeywords(words: string[]): Promise<void> {
         try {
-            await api.setKeywords(words);
+            await write(() => api.setKeywords(words));
             newKeyword = "";
             await reload();
         }
@@ -1086,7 +1090,8 @@
         if (!moved || !detail || !reader) return;
         moved = false;
         const range = reader.scrollHeight - reader.clientHeight;
-        void api.setPosition(detail.id, range > 0 ? Math.min(1, Math.max(0, reader.scrollTop / range)) : 0).catch(() => {});
+        const id = detail.id, progress = range > 0 ? Math.min(1, Math.max(0, reader.scrollTop / range)) : 0;
+        void write(() => api.setPosition(id, progress)).catch(fail);
     }
 
     function scrolled(): void {
@@ -1112,7 +1117,7 @@
                 requestAnimationFrame(() => restoring = false);
             }
             if (!next.isRead) {
-                await api.setRead(next.id, true);
+                await write(() => api.setRead(next.id, true));
                 if (detail?.id === next.id) detail.isRead = true;
                 await reload();
             }
@@ -1133,7 +1138,7 @@
         const item = detail;
         if (!item) return;
         try {
-            await api.setRead(item.id, !item.isRead);
+            await write(() => api.setRead(item.id, !item.isRead));
             item.isRead = !item.isRead;
             await reload();
         }
@@ -1147,8 +1152,10 @@
         if (!item || importing) return;
         importing = true;
         try {
-            item.paperId = await api.importItem(item.id, replace);
+            const imported = await write(() => api.importItem(item.id, replace));
+            item.paperId = imported.pageId;
             item.paperState = "saved";
+            if (imported.downloadPDF) void fetchPDF(item.id);
             await reload();
         }
         catch (cause) {
@@ -1162,7 +1169,7 @@
     async function fetchPDF(id: string): Promise<void> {
         if (detail?.id === id) detail.pdfStatus = "downloading";
         try {
-            await api.fetchPDF(id);
+            await downloadAttachment(api, id, attachPDF, write);
             await reload();
         }
         catch (cause) {
@@ -1205,6 +1212,7 @@
         });
     });
     onMount(() => {
+        window.addEventListener("workspace-flush", savePosition);
         void reload();
         // Background refreshes and other views report changes; bursts are read once.
         const release = api.onChanged(() => {
@@ -1217,6 +1225,7 @@
             reloadTimer = setTimeout(reload, 120);
         });
         return () => {
+            window.removeEventListener("workspace-flush", savePosition);
             release(); releaseKnowledge?.();
             savePosition();
             clearTimeout(reloadTimer);

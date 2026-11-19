@@ -10,6 +10,8 @@ type Args<Key extends keyof typeof feedChannels> = Parameters<FeedAPI[Key]>;
 const routes = {
     getState: route(typia.createAssert<Args<"getState">>(invalid), feed.getState),
     getItem: route(typia.createAssert<Args<"getItem">>(invalid), feed.getItem),
+    resolveSource: route(typia.createAssert<Args<"resolveSource">>(invalid), feed.resolveSource),
+    discardSource: route(typia.createAssert<Args<"discardSource">>(invalid), feed.discardSource),
     saveSource: route(typia.createAssert<Args<"saveSource">>(invalid), feed.saveSource),
     setSourceStatus: route(typia.createAssert<Args<"setSourceStatus">>(invalid), feed.setSourceStatus),
     refresh: route(typia.createAssert<Args<"refresh">>(invalid), feed.refresh),

@@ -143,7 +143,7 @@ test("targeted reread preserves an untouched node and caret; subtree removal det
 test("saving accepts further edits and retries the original failed batch before later revisions", async () => {
     const a = block("A"), calls: EditCommit[] = [];
     let release!: () => void, fail = false;
-    const writes = new PageWrites("tab", randomUUID(), async input => {
+    const writes = new PageWrites(randomUUID(), async input => {
         calls.push(input);
         if (calls.length === 1) await new Promise<void>(r => {
             release = r;
@@ -172,7 +172,7 @@ test("last-reference cancellation rolls back just the deletion; confirmation com
     a.payload.inline.push({ type: "inlineReference", attrs: { target, label: "B" } });
     const p = page([a]), s = select(state(p), a.id, 1);
     const remove = s.tr.delete(s.selection.from, s.selection.from + 1);
-    const input = { ...documentEdit(s.doc, remove.doc), pageId: p.id, tabId: "tab", batch: 1 };
+    const input = { ...documentEdit(s.doc, remove.doc), pageId: p.id, batch: 1 };
     const preview: ChangePreview = { token: "test", recycled: [{ id: target.id, title: "B" }], direct: [], deletedBlocks: [], causes: [a.id] };
     for (const consent of [false, true]) {
         let current = s.apply(remove), asks = 0, commits = 0;
@@ -210,7 +210,7 @@ test("canceling a fallback confirmation restores only lost positions and preserv
     const restored = restoreOccurrences([a.id, b.id, a.id], [c.id, b.id, a.id], new Set([a.id]));
     assert.deepEqual(restored, [c.id, a.id, b.id, a.id]);
     const calls: EditCommit[] = [];
-    const queue = new PageWrites("tab", p.id, async input => {
+    const queue = new PageWrites(p.id, async input => {
         calls.push(input);
         if (calls.length === 1) {
             queue.stage({ blocks: [{ ...b, payload: payload("paragraph", "typed during confirmation") }] });

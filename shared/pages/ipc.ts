@@ -2,7 +2,7 @@ import type { HistorySource } from "../history/ipc";
 import type { AttributeValue } from "../types/attributes";
 import type { Backlink, CommitResult, BlockDeletion, ChangePreview, ContentBlock, EditCommit, KnowledgeChange, Placement, ResolvedTarget, PageList, PageQuery, PageRecord, PageObjects, Target } from "../types/content";
 import type { PurgeResult } from "../types/knowledge";
-import type { TabId, Channels } from "../ipc/contract";
+import { type Channels } from "../ipc/contract";
 import type { tags } from "typia";
 
 export type PagesAPI = {
@@ -11,15 +11,15 @@ export type PagesAPI = {
     get(id: string): Promise<PageRecord>;
     readObjects(pageId: string, ids: string[]): Promise<PageObjects>;
     syncBlocks(workspaceId: string, ids: string[] & tags.MinItems<1>): Promise<ContentBlock[] | null>;
-    create(title?: string, initial?: Record<string, AttributeValue>, parentId?: string, tabId?: TabId): Promise<PageRecord>;
-    commitEdit(input: EditCommit, source: HistorySource, confirmation?: string): Promise<CommitResult>;
+    create(source: HistorySource, title?: string, initial?: Record<string, AttributeValue>, parentId?: string): Promise<PageRecord>;
+    commitEdit(input: EditCommit, source: HistorySource, confirmation?: string, writeId?: string): Promise<CommitResult>;
     previewEdit(input: EditCommit): Promise<ChangePreview | null>;
-    deleteBlock(input: BlockDeletion, source: HistorySource, confirmation?: string): Promise<CommitResult>;
-    place(input: Placement, source: HistorySource, confirmation?: string): Promise<CommitResult>;
-    trash(ids: string[], tabId: TabId, source: HistorySource, confirmation?: string): Promise<CommitResult>;
-    restore(ids: string[], tabId: TabId, source: HistorySource): Promise<CommitResult>;
-    purge(ids: string[], tabId: TabId, confirmation?: string): Promise<PurgeResult>;
-    emptyTrash(tabId: TabId, confirmation?: string): Promise<PurgeResult>;
+    deleteBlock(input: BlockDeletion, source: HistorySource, confirmation?: string, writeId?: string): Promise<CommitResult>;
+    place(input: Placement, source: HistorySource, confirmation?: string, writeId?: string): Promise<CommitResult>;
+    trash(ids: string[], source: HistorySource, confirmation?: string, writeId?: string): Promise<CommitResult>;
+    restore(ids: string[], source: HistorySource, writeId?: string): Promise<CommitResult>;
+    purge(ids: string[], confirmation?: string): Promise<PurgeResult>;
+    emptyTrash(confirmation?: string): Promise<PurgeResult>;
     backlinks(id: string): Promise<Backlink[]>;
     resolve(target: Target): Promise<ResolvedTarget | null>;
     onChanged(listener: (change: KnowledgeChange) => void): () => void;

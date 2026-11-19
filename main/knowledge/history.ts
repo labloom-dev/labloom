@@ -9,9 +9,9 @@ import * as history from "./history-state";
 import { decodeBlock } from "./records";
 import * as retention from "./retention";
 export { state } from "./history-state";
-export function apply(source: HistorySource, direction: "undo" | "redo", branchId?: string, confirmation?: string): CommitResult {
-    const replay = history.select(source, direction, branchId), node = replay.node.entry;
-    return commit.run({ sourceTab: "", history: source, replay, confirmation }, () => {
+export function apply(source: HistorySource, direction: "undo" | "redo", confirmation?: string, writeId?: string): CommitResult {
+    const replay = history.select(source, direction), node = replay.node.entry;
+    return commit.run({ writeId, history: source, replay, confirmation }, () => {
         const desired = direction === "undo" ? node.before : node.after;
         const plan = new EditChanges();
         for (const [key, value] of Object.entries(desired)) {

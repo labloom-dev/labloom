@@ -1,6 +1,9 @@
 import { attributeTargets, decodeValue } from "../../shared/attrs/values";
 import { references } from "../../shared/content/blocks";
 import type { AttributeDefinition, AttributeValue } from "../../shared/types/attributes";
+import { type FeedSourceInput } from "../../shared/types/feed";
+import { type HistorySource } from "../../shared/history/ipc";
+import { type AnnotationInput } from "../../shared/types/papers";
 import { pageHistory } from "./history";
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { join } from "node:path";
@@ -50,9 +53,9 @@ export function attributeServices(): typeof attributes & {
     return {
         values: pageId => records.get(pageId).attributes,
         ...attributes, write: edits.writeAttributes, cache: edits.cacheAttributes, detach: (pageId, ids) => {
-            edits.commitEdit({ pageId, tabId: "attributes", batch: 0, blocks: [], detach: ids }, pageHistory(pageId));
+            edits.commitEdit({ pageId, batch: 0, blocks: [], detach: ids }, pageHistory(pageId));
         },
-        applyDefinition: (id, input, token) => commit.run({ sourceTab: "", history: false }, context => {
+        applyDefinition: (id, input, token) => commit.run({ history: false }, context => {
             const result = attributes.persistDefinition(id, input, token);
             if (result) context.skip();
             else context.change({ definition: id });
@@ -76,7 +79,7 @@ function timerServices(): Omit<typeof timers, "check"> & { check: (deliver: (not
     };
 }
 function rebuildLinks(): void {
-    commit.run({ sourceTab: "" }, () => {
+    commit.run({}, () => {
         records.statement("DELETE FROM link_refs").run();
         const insert = records.statement("INSERT OR IGNORE INTO link_refs(source_kind,source_id,source_field,target_kind,target_id) VALUES (?,?,?,?,?)");
         const ids = records.statement("SELECT id FROM blocks").pluck().all() as string[];
@@ -93,17 +96,32 @@ export function knowledgeServices(): Knowledge {
     return {
         ...records, ...edits, rebuildLinks, create: edits.createPage, attributes: attributeServices(), timers: timerServices(),
         db: session.getDatabase(), sql: session.getNative(),
-        transaction: <T>(action: () => T): T => commit.run({ sourceTab: "", history: false }, action)
+        transaction: <T>(action: () => T): T => commit.run({ history: false }, action)
     };
 }
-export function feedServices(): typeof feed & { knowledge: Knowledge; checkDue: typeof scheduler.check } {
-    return { ...feed, knowledge: knowledgeServices(), checkDue: scheduler.check };
+export async function saveFeed(input: FeedSourceInput): Promise<string> {
+    const resolution = await feed.resolveSource(input);
+    return resolution ? feed.saveSource(resolution) : "";
+}
+type Feed = Omit<typeof feed, "saveSource" | "importItem"> & {
+    saveSource: typeof saveFeed;
+    importItem(id: string, replace?: boolean): string;
+    knowledge: Knowledge;
+    checkDue: typeof scheduler.check;
+};
+export function feedServices(): Feed {
+    return { ...feed, saveSource: saveFeed, importItem: (id: string, replace?: boolean) => feed.importItem(id, replace).pageId,
+        knowledge: knowledgeServices(), checkDue: scheduler.check };
 }
 export function historyServices(): typeof history {
     return history;
 }
-export function paperServices(): typeof papers {
-    return papers;
+export async function annotate(pageId: string, input: AnnotationInput | string, source: HistorySource, color?: string): Promise<string> {
+    if (!await papers.prepareAnnotation(pageId, input)) return "";
+    return typeof input === "string" ? input : papers.annotate(pageId, input, source, color);
+}
+export function paperServices(): Papers {
+    return { ...papers, annotate };
 }
 export function purgeServices(): typeof purge {
     return purge;
@@ -133,5 +151,5 @@ export type Knowledge = typeof records & Omit<typeof edits, "create"> & {
 };
 export type Attributes = ReturnType<typeof attributeServices>;
 export type History = typeof history;
-export type Papers = typeof papers;
+export type Papers = Omit<typeof papers, "annotate"> & { annotate: typeof annotate };
 export type Purge = typeof purge;

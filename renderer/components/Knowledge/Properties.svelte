@@ -21,7 +21,7 @@
         <div class="property" class:timed={isTimeType(definition.type)}>
             <span class="property-label" title={definition.name}>{definition.name || definition.id}</span>
             <div class="value">
-                <div class="value-input">{#if definition.id === "tags"}<TagInput {definition} value={page.attributes.tags} tabId={session.tabId} disabled={locked} onchange={value => session.attr("tags", value)} />
+                <div class="value-input">{#if definition.id === "tags"}<TagInput {definition} value={page.attributes.tags} disabled={locked} onchange={value => session.attr("tags", value)} />
                 {:else}<AttributeInput {definition} {session} value={page.attributes[definition.id]} disabled={locked} onchange={value => session.attr(definition.id, value)} />{/if}</div>
                 {#if isTimeType(definition.type)}<TimerMenu {session} {definition} disabled={locked} />{/if}
             </div>
@@ -58,7 +58,9 @@
     import { isBuiltin } from "../../../shared/attrs/builtins";
     import { defaultMetadata, defaultValue, emptyValue, nullable } from "../../../shared/attrs/values";
     import { attributeTypes, type AttributeType, type AttributeDefinition } from "../../../shared/types/attributes";
-    import { type PageSession, define, writeFromTab } from "./state.svelte";
+    import { type PageSession } from "./page-session.svelte";
+    import { define } from "./confirmation.svelte";
+    import { write } from "./page-sessions";
     import { attributeLabels } from "./attribute-labels";
     import { openDestination, openPage } from "../layout/navigation";
     import AttributeInput from "./AttributeInput.svelte";
@@ -79,7 +81,7 @@
     async function create(type: AttributeType): Promise<void> {
         const definition: AttributeDefinition = { id: `custom:${crypto.randomUUID()}`, type, name: query.trim(), metadata: defaultMetadata(type) };
         try {
-            if (await writeFromTab(session.tabId, () => define(definition.id, definition, session.tabId))) attach(definition);
+            if (await write(() => define(definition.id, definition))) attach(definition);
         }
         catch (problem) {
             error = failure(problem);

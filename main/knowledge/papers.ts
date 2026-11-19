@@ -1,7 +1,6 @@
-import type { HistoryOrigin, HistorySource } from "../../shared/history/ipc";
+import { type HistorySource } from "../../shared/history/ipc";
 import { eq, sql } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,7 +13,7 @@ import { diagnostic, LabloomError, toFailureInfo } from "../../shared/failure";
 import { type AttributeValue } from "../../shared/types/attributes";
 import { type CommitResult, type PageRecord } from "../../shared/types/content";
 import { type AnnotationInput, type Attachment, type PaperAnnotation, type PaperImport, type PaperResources, type ReadingPosition } from "../../shared/types/papers";
-import { importFeedPDF } from "../feed/pdf";
+import * as attachmentFiles from "../attachments/service";
 import { attachmentPath } from "../storage/files";
 import { attachments } from "../storage/tables";
 import * as workspace from "../workspace-state";
@@ -23,22 +22,10 @@ import * as commit from "./commit";
 import * as edits from "./edits";
 import * as data from "./records";
 
-const mediaTypes: Record<string, string> = {
-    pdf: "application/pdf", txt: "text/plain", md: "text/markdown", csv: "text/csv", tsv: "text/tab-separated-values",
-    json: "application/json", xml: "application/xml", html: "text/html", htm: "text/html", css: "text/css", js: "text/javascript",
-    doc: "application/msword", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    xls: "application/vnd.ms-excel", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    ppt: "application/vnd.ms-powerpoint", pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    odt: "application/vnd.oasis.opendocument.text", rtf: "application/rtf", epub: "application/epub+zip",
-    zip: "application/zip", gz: "application/gzip", tar: "application/x-tar", "7z": "application/x-7z-compressed", rar: "application/vnd.rar",
-    png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", svg: "image/svg+xml", tif: "image/tiff", tiff: "image/tiff", bmp: "image/bmp",
-    mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime"
-};
-const mediaType = (path: string): string => mediaTypes[extname(path).slice(1).toLowerCase()] ?? "application/octet-stream";
-
 const loadingTasks = new Set<PDFDocumentLoadingTask>();
 const documents = new Map<string, Promise<PDFDocumentProxy>>();
-const extracted = new Map<string, Promise<{ bounds: number[]; characters: PdfCharacter[] }>>();
+type PageText = { bounds: number[]; characters: PdfCharacter[] };
+const extracted = new Map<string, PageText | Promise<PageText>>();
 export function release(): void {
     for (const task of loadingTasks) void task.destroy().catch(() => { });
     loadingTasks.clear();
@@ -46,7 +33,7 @@ export function release(): void {
     documents.clear();
     extracted.clear();
 }
-async function pageText(fileId: string, pageNumber: number): Promise<{ bounds: number[]; characters: PdfCharacter[] }> {
+async function pageText(fileId: string, pageNumber: number): Promise<PageText> {
     const session = workspace.requireWorkspace();
     // Check the managed file size even when the parsed document/page is already cached.
     requirePDF(fileId);
@@ -68,8 +55,11 @@ async function pageText(fileId: string, pageNumber: number): Promise<{ bounds: n
             return { bounds: page.view, characters: charactersFromTextContent(content) };
         })();
         extracted.set(key, result);
-        void result.catch(() => {
-            if (workspace.isCurrent(session)) extracted.delete(key);
+        const request = result;
+        void request.then(text => {
+            if (extracted.get(key) === request) extracted.set(key, text);
+        }, () => {
+            if (extracted.get(key) === request) extracted.delete(key);
         });
     }
     return result;
@@ -167,58 +157,44 @@ export function hasPDF(pageId: string): boolean {
         WHERE p.page_id=? AND p.attr_id='paper_files' AND pages.kind='paper' AND a.media_type='application/pdf' LIMIT 1`).get(pageId));
 }
 
-function importing<T>(action: (store: (path: string) => Attachment) => T, sourceTab = ""): T {
-    const created: string[] = [], db = workspace.database();
-    try {
-        return commit.run({ sourceTab, history: false }, () => action(path => {
-            const data = readFileSync(path), suffix = extname(path), type = mediaType(path);
-            if (type === "application/pdf" && !data.subarray(0, 1024).includes(Buffer.from("%PDF-"))) throw new LabloomError({ kind: "pdf-invalid" });
-            const id = randomUUID(), file = { id, storedName: id + suffix, originalName: basename(path), mediaType: type, size: data.length };
-            const target = attachmentPath(workspace.root(), file.storedName);
-            mkdirSync(join(workspace.root(), "attachments"), { recursive: true });
-            writeFileSync(target, data, { flag: "wx" });
-            created.push(target);
-            db.insert(attachments).values(file).run();
-            const { storedName: _name, ...result } = file;
-            return result;
-        }));
-    }
-    catch (error) {
-        for (const path of created) unlinkSync(path);
-        throw error;
-    }
-}
-
-function append(pageId: string, attributeId: string, files: Attachment[], origin?: HistoryOrigin): void {
+function append(pageId: string, attributeId: string, files: Attachment[], source?: HistorySource): void {
     const definition = attributes.definition(attributeId), page = data.get(pageId);
     if (definition.type !== "file" && definition.type !== "files") throw new LabloomError({ kind: "attribute-file-required" });
     if (definition.type === "file" && files.length !== 1) throw new LabloomError({ kind: "attribute-single-file" });
     const current = page.attributes[attributeId];
     const value = definition.type === "file" ? files[0].id : [...new Set([...(Array.isArray(current) ? current as string[] : []), ...files.map(file => file.id)])];
-    const result = edits.commitEdit({ pageId, tabId: origin?.tabId ?? "file-import", batch: 0, blocks: [], attributes: { [attributeId]: value } }, origin?.source ?? false);
+    const result = edits.commitEdit({ pageId, batch: 0, blocks: [], attributes: { [attributeId]: value } }, source ?? false);
     if (result.status !== "saved") throw new LabloomError({ kind: "attachment-write-failed" });
-    if (!origin) commit.invalidate(["page:" + pageId]);
+    if (!source) commit.invalidate(["page:" + pageId]);
 }
 
-export function attachFiles(paths: string[], pageId: string, attributeId: string, origin?: HistoryOrigin): Attachment[] {
+export function attachFile(pageId: string, attributeId: string, fileId: string, source: HistorySource): void {
+    const file = files([fileId])[0];
+    if (!file) throw new LabloomError({ kind: "attachment-unavailable" });
+    const value = data.get(pageId).attributes[attributeId];
+    if (value === fileId || Array.isArray(value) && value.includes(fileId)) return;
+    append(pageId, attributeId, [file], source);
+}
+
+export function attachFiles(paths: string[], pageId: string, attributeId: string, source?: HistorySource): Attachment[] {
     workspace.requireWorkspace();
     if (!Array.isArray(paths) || !paths.length) throw new LabloomError({ kind: "attachment-selection-required" });
-    return importing(store => {
+    return attachmentFiles.importing(store => commit.run({ history: false }, () => {
         const localFiles = paths.map(store);
-        append(pageId, attributeId, localFiles, origin);
+        append(pageId, attributeId, localFiles, source);
         return localFiles;
-    }, origin?.tabId);
+    }));
 }
 
-export function importFile(path: string, pageId?: string, origin?: HistoryOrigin): PaperImport {
+export function importFile(path: string, pageId?: string, source?: HistorySource): PaperImport {
     workspace.requireWorkspace();
     if (pageId) paper(pageId, true);
-    return importing(store => {
+    return attachmentFiles.importing(store => commit.run({ history: false }, () => {
         const file = store(path);
-        const page = pageId ? paper(pageId, true) : edits.createPage("paper", basename(path, extname(path)), { source_snapshot: { originalName: basename(path) } });
-        append(page.id, "paper_files", [file], origin);
+        const page = pageId ? paper(pageId, true) : edits.createPage("paper", basename(path, extname(path)), { source_snapshot: { originalName: basename(path) } }, undefined, source);
+        append(page.id, "paper_files", [file], source);
         return { pageId: page.id };
-    }, origin?.tabId);
+    }));
 }
 
 export function read(id: string): Uint8Array {
@@ -295,58 +271,78 @@ export async function resources(pageId: string): Promise<PaperResources> {
     return { files: localFiles, annotations };
 }
 
-async function prepareAnnotation(pageId: string, value: AnnotationInput): Promise<AnnotationInput> {
+function checkSelection(pageId: string, value: AnnotationInput): void {
     paper(pageId, true);
     if (!record(value) || !validUUID(value.fileId) || !Number.isInteger(value.pageNumber) || value.pageNumber < 1 || !Array.isArray(value.rectangles) || !value.rectangles.length || typeof value.quote !== "string" || typeof value.context !== "string" || typeof value.extractorVersion !== "string") throw new LabloomError({ kind: "annotation-invalid-input" });
     const file = paperFiles(pageId).find(file => file.id === value.fileId);
     if (!file) throw new LabloomError({ kind: "paper-file-removed" });
     if (file.mediaType !== "application/pdf") throw new LabloomError({ kind: "attachment-pdf-required" });
-    const { bounds, characters } = await pageText(value.fileId, value.pageNumber);
+}
+
+export async function prepareAnnotation(pageId: string, input: AnnotationInput | string): Promise<boolean> {
+    const session = workspace.requireWorkspace();
+    try {
+        if (typeof input === "string") {
+            if (!(paper(pageId, true).attributes.paper_annotations as string[]).includes(input)) throw new LabloomError({ kind: "annotation-unavailable" });
+            await getAnnotation(input);
+        }
+        else {
+            checkSelection(pageId, input);
+            await pageText(input.fileId, input.pageNumber);
+        }
+        return workspace.isCurrent(session);
+    }
+    catch (error) {
+        if (workspace.isCurrent(session)) throw error;
+        return false;
+    }
+}
+
+function selectionFromCache(value: AnnotationInput): AnnotationInput {
+    const text = extracted.get(value.fileId + ":" + value.pageNumber);
+    if (!text || text instanceof Promise) throw new LabloomError({ kind: "annotation-invalid-input" });
+    const { bounds, characters } = text;
     for (const rect of value.rectangles) if (!record(rect) || !rectangleWithinPage(rect, bounds)) throw new LabloomError({ kind: "annotation-outside-page" });
     const rectangles = value.rectangles.map(({ x, y, width, height }) => ({ x, y, width, height })), quote = extractText(characters, rectangles);
     return { fileId: value.fileId, pageNumber: value.pageNumber, rectangles, quote, context: quote, extractorVersion: PDF_EXTRACTOR_VERSION };
 }
 
-export function changeAnnotation(id: string, color: string, tabId: string, source: HistorySource): CommitResult {
+export function changeAnnotation(id: string, color: string, source: HistorySource): CommitResult {
     workspace.requireWorkspace();
     if (!Object.hasOwn(annotationColors, color)) throw new LabloomError({ kind: "annotation-invalid-color" });
     if (data.header(id).kind !== "annotation") throw new LabloomError({ kind: "annotation-unavailable" });
-    return edits.commitEdit({ pageId: id, tabId, batch: 0, blocks: [], attributes: { annotation_color: color } }, source);
+    return edits.commitEdit({ pageId: id, batch: 0, blocks: [], attributes: { annotation_color: color } }, source);
 }
 
-export function deleteAnnotation(id: string, tabId: string, source: HistorySource, confirmation?: string): CommitResult {
+export function deleteAnnotation(id: string, source: HistorySource, confirmation?: string): CommitResult {
     workspace.requireWorkspace();
     if (data.header(id).kind !== "annotation") throw new LabloomError({ kind: "annotation-unavailable" });
-    return edits.trash([id], tabId, source, confirmation);
+    return edits.trash([id], source, confirmation);
 }
 
-export async function annotate(pageId: string, input: AnnotationInput | string, tabId: string, source: HistorySource, color = "yellow"): Promise<string> {
-    const session = workspace.requireWorkspace();
+export function annotate(pageId: string, input: AnnotationInput, source: HistorySource, color = "yellow"): string {
+    workspace.requireWorkspace();
     if (!Object.hasOwn(annotationColors, color)) throw new LabloomError({ kind: "annotation-invalid-color" });
-    if (typeof input === "string") {
-        if (!(paper(pageId, true).attributes.paper_annotations as string[]).includes(input)) throw new LabloomError({ kind: "annotation-unavailable" });
-        await getAnnotation(input);
-        return input;
-    }
-    const prepared = await prepareAnnotation(pageId, input).catch(error => {
-        if (workspace.isCurrent(session)) throw error; return null;
-    });
-    if (!workspace.isCurrent(session) || !prepared) return "";
-    return commit.run({ sourceTab: tabId, history: false }, () => {
-        const localPaper = paper(pageId, true);
-        if (!(localPaper.attributes.paper_files as string[]).includes(prepared.fileId)) throw new LabloomError({ kind: "paper-file-removed" });
+    return commit.run({ history: false }, () => {
+        checkSelection(pageId, input);
+        const prepared = selectionFromCache(input);
         const localPosition = { page: prepared.pageNumber, rects: prepared.rectangles };
         return edits.createPage("annotation", [...prepared.quote].slice(0, 70).join(""), {
             annotation_file: prepared.fileId, annotation_position: localPosition, annotation_color: color,
             annotation_quote: prepared.quote, annotation_context: prepared.context, annotation_extractor: PDF_EXTRACTOR_VERSION
-        }, pageId, { tabId, source }).id;
+        }, pageId, source).id;
     });
 }
 
-export function position(pageId: string, fileId: string, position: ReadingPosition, sourceTab = ""): void {
+export function position(pageId: string, fileId: string, position: ReadingPosition): void {
     workspace.requireWorkspace();
-    commit.run({ sourceTab, history: false, updateModified: false }, context => {
-        const page = paper(pageId, true);
+    commit.run({ history: false, updateModified: false }, context => {
+        const page = paper(pageId);
+        // The reader can report its last position after undo has already recycled the paper.
+        if (page.attributes.deleted) {
+            context.skip();
+            return;
+        }
         if (!paperFiles(pageId).some(file => file.id === fileId && file.mediaType === "application/pdf") || !record(position) || !Number.isInteger(position.page) || position.page < 1 || ![0, 90, 180, 270].includes(position.rotation) || !Number.isFinite(position.left) || !Number.isFinite(position.top) || !(typeof position.scale === "number" && position.scale > 0 && position.scale <= 10 || ["auto", "page-width", "page-fit", "page-actual"].includes(String(position.scale)))) throw new LabloomError({ kind: "paper-invalid-position" });
         edits.writeAttributes(pageId, { reading_position: { ...(record(page.attributes.reading_position) ? page.attributes.reading_position : {}), [fileId]: position as unknown as AttributeValue } }, true);
         context.change({ pages: [pageId] });
@@ -357,17 +353,6 @@ export async function get(pageId: string): Promise<PageRecord> {
     const session = workspace.requireWorkspace(), page = data.get(pageId);
     if (page.kind === "annotation" && !page.attributes.deleted) await getAnnotation(pageId);
     return workspace.isCurrent(session) ? data.get(pageId) : page;
-}
-export async function importPDF(pageId: string, url: string): Promise<void> {
-    const session = workspace.requireWorkspace();
-    try {
-        await importFeedPDF(url, path => {
-            if (workspace.isCurrent(session)) importFile(path, pageId);
-        }, session.fetchPDF, undefined, session.controller.signal);
-    }
-    catch (error) {
-        if (workspace.isCurrent(session)) throw error;
-    }
 }
 export function fileSelection(attributeId: string): boolean {
     workspace.requireWorkspace();

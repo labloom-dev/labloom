@@ -1,56 +1,29 @@
 import { watchHistory } from "./history";
-import type { HistorySource } from "../../../shared/history/ipc";
+import { type HistorySource } from "../../../shared/history/ipc";
 import { PageWrites, fallbackFields, fields, reviewEdit, type Fields } from "./page-writes";
 import { confirmationText } from "../../../shared/content/confirmation";
 import { publishTitle } from "../Tab/page-titles";
-import { blockText, changedUses, references } from "../../../shared/content/blocks";
+import { blockText } from "../../../shared/content/blocks";
 import { type AttributeDefinition, type AttributeValue } from "../../../shared/types/attributes";
 import { type Backlink, type ChangePreview, type Changed, type CommitResult, type KnowledgeChange, type PageRecord } from "../../../shared/types/content";
 import { type HistoryState } from "../../../shared/types/knowledge";
 import { PendingInput } from "../Editor/pending-input";
 import { readingTabs, visits } from "../Tab/activity.svelte";
-import type { TabChange, TabView } from "../Tab/visits";
-import { SessionViews, sessionKey } from "./session-views";
+import { registerPageView } from "./page-visits";
+import { WriteReceipts } from "./write-tracker";
+import { ask, confirmed } from "./confirmation.svelte";
+import { copyData } from "../copy-data";
 import { knowledgeState, perform } from "./feedback.svelte";
 import { t, failure, type ErrorValue } from "../../i18n.svelte";
 import { LabloomError } from "../../../shared/failure";
-export { knowledgeState, perform } from "./feedback.svelte";
-export const confirmation = $state<{ heading: () => string; text: () => string; names: string[]; resolve: ((value: boolean) => void) | null }>({ heading: () => "", text: () => "", names: [], resolve: null });
-export function ask(heading: () => string, text: () => string, names: string[] = []): Promise<boolean> {
-    if (confirmation.resolve) return Promise.resolve(false);
-    return new Promise(resolve => Object.assign(confirmation, { heading, text, names, resolve }));
-}
-export function answer(value: boolean): void {
-    const resolve = confirmation.resolve;
-    confirmation.resolve = null;
-    resolve?.(value);
-}
-export async function confirmed(commit: (token?: string) => Promise<CommitResult>): Promise<boolean> {
-    let result = await commit();
-    while (result.status === "confirmation") {
-        const { preview } = result;
-        if (!await ask(() => t(preview.deletedBlocks.length ? "dialog.deleteBlock" : "dialog.change"), () => confirmationText(preview, t))) return false;
-        result = await commit(preview.token);
-    }
-    return true;
-}
-export async function define(id: string, value: AttributeDefinition | null, tabId: string): Promise<boolean> {
-    let impact = await window.api.attributes.define(id, value, tabId);
-    while (impact) {
-        if (!await ask(() => t("dialog.sharedAttribute"), () => t("dialog.attributeImpact") + (impact?.recycled?.length ? t("dialog.attributeRecycle", { count: impact.recycled.length }) : ""), [...impact.pages, ...(impact.recycled ?? [])].map(page => page.title))) return false;
-        impact = await window.api.attributes.define(id, value, tabId, impact.token);
-    }
-    return true;
-}
 
-export const copyData = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 class PageState {
     page = $state.raw<PageRecord | null>(null);
     loading = $state(true);
     saving = $state(false);
     dirty = $state(false);
     error = $state<ErrorValue>("");
-    history = $state<HistoryState>({ canUndo: false, redo: [] });
+    history = $state<HistoryState>({ canUndo: false, canRedo: false });
     definitions = $state.raw<AttributeDefinition[]>([]);
     backlinks = $state.raw<Backlink[]>([]);
 }
@@ -59,73 +32,20 @@ export type PageSession = {
     tabId: string; source: HistorySource; input: PendingInput; release(): void;
     flush(): Promise<boolean>; stage(edit: Fields): void;
     review(edit: Fields, rollback: () => void, accept: (saved: boolean) => void, finish: () => void): void;
-    action(commit: (token?: string) => Promise<CommitResult>): Promise<void>;
+    action(commit: SessionCommit): Promise<void>;
     watchObject(id: string, read: () => Promise<void>, own?: boolean): () => void;
-    ownChange(change: KnowledgeChange): void;
-    undo(direction: "undo" | "redo", branch?: string): Promise<void>; composition(active: boolean): void;
+    undo(direction: "undo" | "redo"): Promise<void>; composition(active: boolean): void;
     attr(id: string, value: AttributeValue): void; detach(id: string): void; listen(fn: Listener): () => void;
 };
 type Listener = (ids: string[], whole: boolean) => void;
-// This registry is not rendered; each session carries its own reactive state.
-// eslint-disable-next-line svelte/prefer-svelte-reactivity
-const sessions = new Map<string, PageSession>();
-// Page views share a tab visit and history, while retaining separate page buffers.
-// eslint-disable-next-line svelte/prefer-svelte-reactivity
-const sessionViews = new Map<string, { views: SessionViews; release: () => void }>();
-function registerPageView(tabId: string, view: TabView): () => void {
-    let group = sessionViews.get(tabId);
-    if (!group) {
-        const views = new SessionViews();
-        const remove = views.add(view);
-        group = { views, release: visits.register(tabId, views) };
-        sessionViews.set(tabId, group);
-        return () => {
-            remove();
-            if (!views.size) {
-                group!.release();
-                sessionViews.delete(tabId);
-            }
-        };
-    }
-    const remove = group.views.add(view);
-    visits.refresh(tabId);
-    return () => {
-        remove();
-        if (!group.views.size) {
-            group.release();
-            sessionViews.delete(tabId);
-        }
-    };
-}
-// Pending writes are awaited at navigation boundaries, never rendered.
-// eslint-disable-next-line svelte/prefer-svelte-reactivity
-const auxiliary = new Map<Promise<unknown>, string>();
-export function trackWrite<T>(tabId: string, promise: Promise<T>): Promise<T> {
-    auxiliary.set(promise, tabId);
-    void promise.finally(() => auxiliary.delete(promise)).catch(() => { });
-    return promise;
-}
-function otherWrites(tabId: string): Promise<unknown>[] {
-    return [...auxiliary].filter(([, owner]) => owner === tabId).map(([write]) => write);
-}
-export function registerList(tabId: string, intersection: TabView["intersection"], read: TabView["read"]): () => void {
-    return visits.register(tabId, { intersection, read, ownChanges: true,
-        pending: () => otherWrites(tabId).length ? "unknown" : undefined,
-        flush: async () => {
-            await Promise.all(otherWrites(tabId));
-            return true;
-        } });
-}
-
-function makeSession(tabId: string, pageId: string, source: HistorySource): PageSession {
+type SessionCommit = (confirmation: string | undefined, writeId: string) => Promise<CommitResult>;
+export function makeSession(tabId: string, pageId: string, source: HistorySource,
+    write: (action: () => Promise<void>) => Promise<void>, unregister: () => void): PageSession {
+    const receipts = new WriteReceipts();
     const state = new PageState(), api = window.api, input = new PendingInput();
     const stopHistory = watchHistory(source, value => {
         state.history = value;
     });
-    // Unacknowledged container edits may change a sync border in another page.
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
-    const pendingUses = new Set<string>();
-    let broadChange = false;
     let readingObjects = false;
     // Cache membership follows containment, including every occurrence of a synchronous block.
     function pruneDetached(): void {
@@ -193,10 +113,11 @@ function makeSession(tabId: string, pageId: string, source: HistorySource): Page
         }
         if (changed) for (const listener of listeners) listener([], false);
     }
-    const writes = new PageWrites(tabId, pageId, async input => {
-        let result = await api.pages.commitEdit(input, source);
+    const writes = new PageWrites(pageId, async input => {
+        let result = await receipts.submit(id => api.pages.commitEdit(input, source, undefined, id));
         while (result.status === "confirmation") {
             // Retention can change between preview and commit. Restore only the disputed fields.
+            // eslint-disable-next-line svelte/prefer-svelte-reactivity -- Temporary lookup for this request.
             const causes = new Set(result.preview.causes);
             const disputed = input.blocks.filter(b => causes.has(b.id));
             const ids = [pageId, ...disputed.map(b => b.id)];
@@ -208,7 +129,8 @@ function makeSession(tabId: string, pageId: string, source: HistorySource): Page
                 writes.retain(fields(safe));
                 return;
             }
-            result = await api.pages.commitEdit(input, source, result.preview.token);
+            const token = result.preview.token;
+            result = await receipts.submit(id => api.pages.commitEdit(input, source, token, id));
             if (result.status === "saved") {
                 for (const key of proposed.keys()) if (!writes.current(key)) proposed.delete(key);
                 apply(fields(proposed));
@@ -251,26 +173,8 @@ function makeSession(tabId: string, pageId: string, source: HistorySource): Page
         const page = state.page;
         if (!page) return;
         for (const block of edit.blocks) if (!page.blocks[block.id]) newBlocks.add(block.id);
-        let structural = false;
-        function trackChildren(before: string[], after: string[]): void {
-            if (!changedChildren(before, after)) return;
-            structural = true;
-            for (const [id, delta] of changedUses(before, after)) {
-                pendingUses.add(id);
-                const removed = page!.blocks[id];
-                if (delta < 0 && removed && (removed.children.length || references(removed).length)) broadChange = true;
-            }
-        }
-        if (edit.pageChildren) trackChildren(page.children, edit.pageChildren);
-        for (const block of edit.blocks) trackChildren(page.blocks[block.id]?.children ?? [], block.children);
-        const attributes = [...Object.keys(edit.attributes ?? {}), ...edit.detach ?? []];
-        // A change to the last reference can recycle pages outside the current document.
-        const linksChanged = edit.blocks.some(block => {
-            const before = page.blocks[block.id] ? references(page.blocks[block.id]) : [], after = references(block);
-            return before.length !== after.length || before.some((target, index) => target.kind !== after[index].kind || target.id !== after[index].id);
-        });
-        broadChange ||= linksChanged || edit.attributes?.independent === false || attributes.some(id =>
-            state.definitions.some(def => def.id === id && (def.type === "page-link" || def.type === "page-links")));
+        const structural = (edit.pageChildren && changedChildren(page.children, edit.pageChildren))
+            || edit.blocks.some(block => changedChildren(page.blocks[block.id]?.children ?? [], block.children));
         apply(edit);
         writes.stage(edit);
         if (structural) pruneDetached();
@@ -293,10 +197,6 @@ function makeSession(tabId: string, pageId: string, source: HistorySource): Page
         finally {
             state.saving = false;
             state.dirty = writes.unsaved || !!reviewing;
-            if (!state.dirty) {
-                broadChange = false;
-                pendingUses.clear();
-            }
         }
     }
     async function flush(): Promise<boolean> {
@@ -336,6 +236,7 @@ function makeSession(tabId: string, pageId: string, source: HistorySource): Page
         // Visited objects for this read request only.
         // eslint-disable-next-line svelte/prefer-svelte-reactivity
         const seen = new Set<string>();
+        // eslint-disable-next-line svelte/prefer-svelte-reactivity -- Temporary lookup for this request.
         let needed = [...new Set(ids)], structural = false;
         while (needed.length) {
             const data = await api.pages.readObjects(pageId, needed);
@@ -356,6 +257,7 @@ function makeSession(tabId: string, pageId: string, source: HistorySource): Page
                 page.blocks[b.id] = b;
                 children.push(...b.children);
             }
+            // eslint-disable-next-line svelte/prefer-svelte-reactivity -- Temporary lookup for this request.
             needed = [...new Set(children.filter(id => !seen.has(id) && !page.blocks[id]))];
         }
         if (structural) pruneDetached();
@@ -377,7 +279,7 @@ function makeSession(tabId: string, pageId: string, source: HistorySource): Page
             try {
                 let savedResult: Extract<CommitResult, { status: "saved" }> | undefined;
                 await reviewEdit(input, value => api.pages.previewEdit(value), prompt, async (value, token) => {
-                    const result = await api.pages.commitEdit(value, source, token);
+                    const result = await receipts.submit(id => api.pages.commitEdit(value, source, token, id));
                     if (result.status === "saved") savedResult = result;
                     return result;
                 }, rollback, saved => {
@@ -403,30 +305,29 @@ function makeSession(tabId: string, pageId: string, source: HistorySource): Page
         });
         state.dirty = true;
     }
-    async function action(commit: (token?: string) => Promise<CommitResult>): Promise<void> {
-        if (!await flush()) return;
+    async function applyAction(commit: SessionCommit): Promise<void> {
         let changed: Changed | undefined;
-        if (await confirmed(async token => {
-            const result = await commit(token);
+        await confirmed(async token => {
+            const result = await receipts.submit(id => commit(token, id));
             if (result.status === "saved") changed = result.changed;
             return result;
-        }) && changed) {
-            const ids = [...changed.pages, ...changed.blocks];
-            // A paper and its open annotation can both display rows from this commit.
-            for (const value of sessions.values()) if (value.tabId === tabId) {
-                const page = value.state.page;
-                if (page) await value.reread(ids.filter(id => id === page.id || Object.hasOwn(page.blocks, id)));
-            }
-            if (!readingTabs.has(tabId) && !state.page?.attributes.deleted) input.replay();
-        }
+        });
+        if (!changed || !state.page) return;
+        const page = state.page;
+        await reread([...changed.pages, ...changed.blocks].filter(id => id === pageId || Object.hasOwn(page.blocks, id)));
+        if (!readingTabs.has(tabId) && !state.page?.attributes.deleted) input.replay();
     }
-    const trackedAction = (commit: (token?: string) => Promise<CommitResult>): Promise<void> => trackWrite(tabId, action(commit));
-    const undo = (direction: "undo" | "redo", branch?: string): Promise<void> => {
+    function undo(direction: "undo" | "redo"): Promise<void> {
         if (readingTabs.has(tabId)) return Promise.resolve();
-        return trackedAction(token => api.history.apply(source, direction, branch, token));
-    };
+        return perform(() => write(async () => {
+            const history = await api.history.state(source);
+            if (direction === "undo" ? history.canUndo : history.canRedo) {
+                await applyAction((token, id) => api.history.apply(source, direction, token, id));
+            }
+        }));
+    }
     let definitionsDirty = false;
-    const intersection = (change: TabChange): string[] => [
+    const intersection = (change: KnowledgeChange): string[] => [
         ...change.pages.filter(id => id === pageId),
         ...(change.summaryPages ?? change.pages).filter(id => observers.has(id)),
         ...change.blocks.filter(id => !state.page || readingObjects || Object.hasOwn(state.page.blocks, id) || observers.has(id)),
@@ -435,22 +336,16 @@ function makeSession(tabId: string, pageId: string, source: HistorySource): Page
         ...change.pages.filter(id => state.backlinks.some(link => link.sourceId === id))
     ];
     const release = registerPageView(tabId, {
-        intersection: change => {
+        changed: change => {
+            if (receipts.take(change.writeId)) {
+                ownChange(change);
+                return [];
+            }
             definitionsDirty ||= !!change.definition;
             return intersection(change);
         },
-        pending: () => {
-            if (composing || reviewing || broadChange || input.waiting || otherWrites(tabId).length) return "unknown";
-            if (writes.unsaved) {
-                const blocks = [...writes.changedBlocks(), ...pendingUses], page = state.page;
-                // A shared ancestor can expose a changed paragraph in a different kind of page.
-                const otherOwners = blocks.length && (Object.keys(page?.sharedUses ?? {}).length || [...pendingUses].some(id => !newBlocks.has(id)));
-                return { pages: [pageId], blocks, kinds: page && !otherOwners ? { [pageId]: page.kind } : undefined };
-            }
-            return undefined;
-        },
+        pending: () => composing || !!reviewing || input.waiting || writes.unsaved,
         flush: async () => {
-            await Promise.all(otherWrites(tabId));
             if (await flush()) return true;
             knowledgeState.error = state.error || { kind: "page-composing" };
             return false;
@@ -489,8 +384,9 @@ function makeSession(tabId: string, pageId: string, source: HistorySource): Page
     });
     return {
         tabId, source, input, release() {
-            stopHistory(); release(); sessions.delete(sessionKey(tabId, pageId));
-        }, state, refresh, reread, objects, flush, stage, review, action: trackedAction, undo, composition, watchObject, ownChange,
+            clearTimeout(timer); stopHistory(); release(); unregister();
+        }, state, refresh, reread, objects, flush, stage, review, undo, composition, watchObject,
+        action: commit => write(() => applyAction(commit)),
         attr: (id: string, value: AttributeValue) => stage({ blocks: [], attributes: { [id]: copyData(value) } }),
         detach: (id: string) => stage({ blocks: [], detach: [id] }),
         listen(fn: Listener) {
@@ -498,59 +394,4 @@ function makeSession(tabId: string, pageId: string, source: HistorySource): Page
             return () => listeners.delete(fn);
         }
     };
-}
-export function session(tabId: string, pageId: string, source: HistorySource): PageSession {
-    const key = sessionKey(tabId, pageId);
-    let value = sessions.get(key);
-    if (!value) {
-        value = makeSession(tabId, pageId, source);
-        sessions.set(key, value);
-    }
-    return value;
-}
-export function receiveChange(change: KnowledgeChange): void {
-    visits.changed(change);
-    for (const value of sessions.values()) if (value.tabId === change.sourceTab) value.ownChange(change);
-    knowledgeState.change = { ...change, seq: knowledgeState.change.seq + 1 };
-}
-export async function saveAll(): Promise<boolean> {
-    window.dispatchEvent(new Event("workspace-flush"));
-    try {
-        const prior = [...auxiliary.keys()];
-        const pages = [...sessions.values()].map(async value => {
-            if (readingTabs.has(value.tabId) && !await visits.settled(value.tabId)) throw new LabloomError({ kind: "page-unsaved" });
-            if (value.input.waiting) throw new LabloomError({ kind: "page-pending-input" });
-            if (!await value.flush()) throw new LabloomError({ kind: "page-composing" });
-        });
-        await Promise.all([...prior, ...pages]);
-    }
-    catch (error) {
-        knowledgeState.error = failure(error);
-        return false;
-    }
-    return true;
-}
-export function writeFromTab<T>(id: string, action: () => Promise<T>): Promise<T | undefined> {
-    // Take the barriers before registering this operation. A quick departure must see the
-    // entire operation, but the operation must never wait for itself.
-    const before = Promise.all([visits.settled(id), saveAll()]);
-    return trackWrite(id, before.then(([ready, saved]) => ready && saved ? action() : undefined));
-}
-export async function closeSession(tabId: string): Promise<boolean> {
-    window.dispatchEvent(new Event("workspace-flush"));
-    const values = [...sessions.values()].filter(value => value.tabId === tabId);
-    if (!await visits.settled(tabId) || values.some(value => value.input.waiting)) {
-        knowledgeState.error = { kind: "page-unsaved-close" };
-        return false;
-    }
-    for (const value of values) if (!await value.flush()) {
-        knowledgeState.error = { kind: "page-unsaved-close" };
-        return false;
-    }
-    await Promise.all(otherWrites(tabId));
-    for (const [key, value] of sessions) if (value.tabId === tabId) {
-        value.release();
-        sessions.delete(key);
-    }
-    return true;
 }

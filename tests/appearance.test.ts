@@ -175,7 +175,7 @@ test("timezone subscriptions recalculate date reminders and notify the workspace
     fixture(t); effects.initialize(); t.after(() => effects.release());
     settings.update({ appearance: { timeZone: "UTC" } });
     session.open(folder(), "create"); t.after(() => session.close());
-    const page = edits.create("A", { schedule_date: dayToSeconds("2027-01-01") });
+    const page = edits.createPage("editable", "A", { schedule_date: dayToSeconds("2027-01-01") });
     timers.set(page.id, "schedule_date", 0, true);
     const sql = session.getNative(), due = (): number => sql.prepare("SELECT due_at FROM timers WHERE page_id=?").pluck().get(page.id) as number;
     const before = due(), modified = records.get(page.id).attributes.modified_at;
@@ -188,9 +188,9 @@ test("timezone subscriptions recalculate date reminders and notify the workspace
 
 test("workspace settings merge, survive reopen and stay out of page timestamps and undo", t => {
     const opened = session.open(folder(), "create"); t.after(() => session.close());
-    const page = edits.create(), modified = records.get(page.id).attributes.modified_at;
+    const page = edits.createPage(), modified = records.get(page.id).attributes.modified_at;
     const tabs = { groups: [{ id: "a", tabs: [], activeTabId: null }], focusedGroupId: "a", layout: { type: "group" as const, groupId: "a" } };
-    commit.run({ sourceTab: "a", history: false }, () => {
+    commit.run({ history: false }, () => {
         workspaceSettings.saveTabs(tabs);
         workspaceSettings.update({ feedKeywords: ["  Large   Models ", "large models", "AI"] });
     });
@@ -199,7 +199,7 @@ test("workspace settings merge, survive reopen and stay out of page timestamps a
     assert.deepEqual(JSON.parse(opened.database.prepare("SELECT settings FROM workspace_meta").pluck().get() as string), expected);
     assert.equal(history.state(pageHistory(page.id)).canUndo, false);
     assert.equal(records.get(page.id).attributes.modified_at, modified);
-    assert.throws(() => commit.run({ sourceTab: "a" }, () => {
+    assert.throws(() => commit.run({}, () => {
         workspaceSettings.update({ feedKeywords: ["rollback"] }); throw new Error("rollback");
     }), /rollback/);
     assert.deepEqual(workspaceSettings.get(), expected);

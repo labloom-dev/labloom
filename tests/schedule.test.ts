@@ -21,7 +21,7 @@ function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { clock: 
         delivered.push(notice); bodies.push(body);
     });
     const edit = (pageId: string, attributes: Record<string, AttributeValue>): void => {
-        assert.equal(knowledge.commitEdit({ pageId, tabId: "timers", batch: 0, blocks: [], attributes }, pageHistory(pageId)).status, "saved");
+        assert.equal(knowledge.commitEdit({ pageId, batch: 0, blocks: [], attributes }, pageHistory(pageId)).status, "saved");
     };
     return { ...ws, clock, knowledge, history, delivered, bodies, check, edit };
 }
@@ -45,7 +45,7 @@ test("day, month and year reminders use local 09:00, and changing zones recalcul
     const query = f.database.prepare("SELECT due_at FROM timers WHERE page_id=? AND attr_id=?").pluck();
     assert.equal(query.get(page.id, "schedule_date"), wallToSeconds("2026-11-13T09:00", "Asia/Shanghai"));
     for (const [type, value, day] of [["month", monthToSeconds("2026-12"), "2026-12-01"], ["year", yearToSeconds("2027"), "2027-01-01"]] as const) {
-        const id = "custom:" + randomUUID(); f.knowledge.setDefinition(id, { id, name: "A", type, metadata: {} }, "types");
+        const id = "custom:" + randomUUID(); f.knowledge.setDefinition(id, { id, name: "A", type, metadata: {} });
         f.edit(page.id, { [id]: value }); f.knowledge.timers.set(page.id, id, 0, true);
         assert.equal(query.get(page.id, id), wallToSeconds(day + "T09:00", "Asia/Shanghai"));
     }
@@ -72,19 +72,19 @@ test("time edits and undo reschedule reminders; empty values retain their settin
 test("recycle, restore, completed tasks, detached attributes and changed types update timer rows", async t => {
     const f = fixture(t), now = Math.floor(f.clock.now / 1000), page = f.knowledge.create("editable", "A", { schedule_start: now + 1000 });
     f.knowledge.timers.set(page.id, "schedule_start", 0, true);
-    const preview = f.knowledge.trash([page.id], "trash", workspaceHistory); if (preview.status !== "confirmation") throw new Error("Expected confirmation");
-    f.knowledge.trash([page.id], "trash", workspaceHistory, preview.preview.token);
+    const preview = f.knowledge.trash([page.id], workspaceHistory); if (preview.status !== "confirmation") throw new Error("Expected confirmation");
+    f.knowledge.trash([page.id], workspaceHistory, preview.preview.token);
     assert.equal(f.database.prepare("SELECT due_at FROM timers").pluck().get(), null);
-    f.knowledge.restore([page.id], "restore", workspaceHistory); assert.equal(f.database.prepare("SELECT due_at FROM timers").pluck().get(), now + 1000);
+    f.knowledge.restore([page.id], workspaceHistory); assert.equal(f.database.prepare("SELECT due_at FROM timers").pluck().get(), now + 1000);
     f.edit(page.id, { task_status: "done" }); f.clock.now = (now + 1000) * 1000; await f.check(); assert.equal(f.delivered.length, 0);
     const id = "custom:" + randomUUID(), definition = { id, type: "minute" as const, name: "A", metadata: {} };
-    f.knowledge.setDefinition(id, definition, "types"); f.edit(page.id, { task_status: "todo", [id]: now + 2000 });
+    f.knowledge.setDefinition(id, definition); f.edit(page.id, { task_status: "todo", [id]: now + 2000 });
     f.knowledge.timers.set(page.id, id, 0, true);
-    f.knowledge.commitEdit({ pageId: page.id, tabId: "timers", batch: 0, blocks: [], detach: [id] }, pageHistory(page.id));
+    f.knowledge.commitEdit({ pageId: page.id, batch: 0, blocks: [], detach: [id] }, pageHistory(page.id));
     assert.equal(f.database.prepare("SELECT count(*) FROM timers WHERE attr_id=?").pluck().get(id), 0);
     f.edit(page.id, { [id]: now + 3000 }); f.knowledge.timers.set(page.id, id, 0, true);
-    const next = { ...definition, type: "string" as const }, impact = f.knowledge.setDefinition(id, next, "types");
-    if (impact) f.knowledge.setDefinition(id, next, "types", impact.token);
+    const next = { ...definition, type: "string" as const }, impact = f.knowledge.setDefinition(id, next);
+    if (impact) f.knowledge.setDefinition(id, next, impact.token);
     assert.equal(f.database.prepare("SELECT count(*) FROM timers WHERE attr_id=?").pluck().get(id), 0);
 });
 
@@ -107,25 +107,25 @@ test("a scheduled reminder catches up after reopening and subsequent checks do n
 
 test("notification identity and title are derived from the current page, with no undo entries for settings or reading", async t => {
     const f = fixture(t), due = Math.floor(f.clock.now / 1000) + 1000, page = f.knowledge.create("editable", "A"), id = "custom:" + randomUUID();
-    f.knowledge.setDefinition(id, { id, name: "结束", type: "hour", metadata: {} }, "types"); f.edit(page.id, { [id]: due });
+    f.knowledge.setDefinition(id, { id, name: "结束", type: "hour", metadata: {} }); f.edit(page.id, { [id]: due });
     const history = f.history.state(pageHistory(page.id)); f.knowledge.timers.set(page.id, id, 0, true); assert.deepEqual(f.history.state(pageHistory(page.id)), history);
     f.clock.now = due * 1000; await f.check();
     const notice = f.knowledge.timers.notices()[0]; assert.equal(notice.seen, false); assert.equal(notice.attrName, "结束");
     f.knowledge.timers.read(page.id, id, 0); assert.equal(f.knowledge.timers.notices()[0].seen, true);
-    const title = page.blocks[page.titleBlockId]; f.knowledge.commitEdit({ pageId: page.id, tabId: "title", batch: 0, blocks: [{ ...title, payload: { ...title.payload, inline: [{ type: "text", text: "B" }] } }] }, pageHistory(page.id));
+    const title = page.blocks[page.titleBlockId]; f.knowledge.commitEdit({ pageId: page.id, batch: 0, blocks: [{ ...title, payload: { ...title.payload, inline: [{ type: "text", text: "B" }] } }] }, pageHistory(page.id));
     assert.equal(f.knowledge.timers.notices()[0].title, "B");
-    const preview = f.knowledge.trash([page.id], "trash", workspaceHistory); if (preview.status === "confirmation") f.knowledge.trash([page.id], "trash", workspaceHistory, preview.preview.token);
+    const preview = f.knowledge.trash([page.id], workspaceHistory); if (preview.status === "confirmation") f.knowledge.trash([page.id], workspaceHistory, preview.preview.token);
     assert.deepEqual(f.knowledge.timers.notices(), []);
 });
 
 test("unchanged writes, attribute renames and repeated enable requests preserve fired notifications", async t => {
     const f = fixture(t), due = Math.floor(f.clock.now / 1000) + 1000, page = f.knowledge.create("editable", "A"), id = "custom:" + randomUUID();
     const definition = { id, name: "A", type: "minute" as const, metadata: {} };
-    f.knowledge.setDefinition(id, definition, "types"); f.edit(page.id, { [id]: due }); f.knowledge.timers.set(page.id, id, 0, true);
+    f.knowledge.setDefinition(id, definition); f.edit(page.id, { [id]: due }); f.knowledge.timers.set(page.id, id, 0, true);
     f.clock.now = due * 1000; await f.check();
     f.knowledge.timers.read(page.id, id, 0);
     f.knowledge.attributes.write(page.id, { [id]: due });
-    assert.equal(f.knowledge.setDefinition(id, { ...definition, name: "B" }, "types"), null);
+    assert.equal(f.knowledge.setDefinition(id, { ...definition, name: "B" }), null);
     f.knowledge.timers.set(page.id, id, 0, true);
     const notice = f.knowledge.timers.notices()[0];
     assert.equal(notice.attrName, "B"); assert.equal(notice.firedAt, due); assert.equal(notice.seen, true);

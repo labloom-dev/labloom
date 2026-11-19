@@ -1,11 +1,11 @@
 import type { Notice } from "../types/knowledge";
-import type { TabId, Channels } from "../ipc/contract";
+import { type Channels } from "../ipc/contract";
 
 export type TimersAPI = {
     settings(pageId: string): Promise<Record<string, number[]>>;
-    set(pageId: string, attrId: string, leadSeconds: number, enabled: boolean, tabId: TabId): Promise<void>;
+    set(pageId: string, attrId: string, leadSeconds: number, enabled: boolean): Promise<void>;
     notices(): Promise<Notice[]>;
-    readNotice(pageId: string, attrId: string, leadSeconds: number, tabId: TabId): Promise<void>;
+    readNotice(pageId: string, attrId: string, leadSeconds: number): Promise<void>;
 };
 
 export const timersChannels = {

@@ -1,7 +1,8 @@
 import type { Component } from "svelte";
 import { readable, type Readable } from "svelte/store";
-import type { View, ViewParams } from "../../../shared/workspace/views";
-import type { HistorySource } from "../../../shared/history/ipc";
+import { type ViewParams } from "../../../shared/workspace/views";
+import { workspaceHistory, type HistorySource } from "../../../shared/history/ipc";
+import Standalone from "./Standalone.svelte";
 import PageView from "../Knowledge/PageView.svelte";
 import Library from "../Knowledge/Library.svelte";
 import Calendar from "../Knowledge/Calendar.svelte";
@@ -21,10 +22,10 @@ type Definition<K extends keyof ViewParams> = {
     history: (params: ViewParams[K]) => HistorySource;
     keepMounted: boolean;
 };
-const workspace = (): HistorySource => ({ kind: "workspace" });
+const workspace = (): HistorySource => workspaceHistory;
 const named = (name: string) => () => readable(name);
 // Standalone screens also render outside the tab host and take no tab inputs.
-const standalone = (component: Component) => (anchor: Parameters<Component>[0]) => component(anchor, {});
+const standalone = (screen: Component): Component<{ tabId: string }> => (anchor, { tabId }) => Standalone(anchor, { tabId, screen });
 const views: { [K in keyof ViewParams]: Definition<K> } = {
     page: { component: PageView, title: p => pageTitle(p.page.id), history: p => ({ kind: "page", id: p.page.id }), keepMounted: true },
     library: { component: Library, title: p => readable(p.scope === "trash" ? "回收站" : p.scope === "pinned" ? "已固定" : p.pageType?.type === "paper" ? "文献库" : "知识库"), history: workspace, keepMounted: true },
@@ -37,8 +38,4 @@ const views: { [K in keyof ViewParams]: Definition<K> } = {
 };
 export function definitionFor<K extends keyof ViewParams>(type: K): Definition<K> {
     return views[type];
-}
-
-export function historySource(view: View): HistorySource {
-    return definitionFor(view.type).history(view.params);
 }
