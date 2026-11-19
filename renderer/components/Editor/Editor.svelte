@@ -125,7 +125,8 @@
     import { pasteBlocks, readClipboard, writeClipboard, type BlockClipboard } from "./clipboard";
     import { borders, borderPlugin } from "./sync-border";
     import { inverse, patchDocument, replay } from "./reconcile";
-    let { session, tabId, anchorId }: { session: PageSession; tabId: string; anchorId?: string } = $props();
+    import { anchors } from "../Tab/anchors";
+    let { session, tabId, pageAnchor = false }: { session: PageSession; tabId: string; pageAnchor?: boolean } = $props();
     let root: HTMLDivElement, host: HTMLDivElement, editor = $state.raw<Editor | null>(null);
     let contextMenu = $state<HTMLDivElement>();
     let workspaceId = "", pasting = $state(false);
@@ -588,8 +589,10 @@
         if (instance && instance.isEditable !== enabled) untrack(() => instance.setEditable(enabled, false));
     });
     $effect(() => {
-        if (editor && anchorId) {
-            const loc = indexDoc(editor.state.doc).get(anchorId)?.[0];
+        const request = pageAnchor && anchors.get(tabId);
+        if (editor && request) {
+            anchors.delete(tabId);
+            const loc = indexDoc(editor.state.doc).get(request.blockId)?.[0];
             if (loc) (editor.view.nodeDOM(loc.pos) as HTMLElement | null)?.scrollIntoView({ block: "center" });
         }
     });

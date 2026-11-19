@@ -90,6 +90,7 @@
     import { commands } from "../../../shared/content/commands";
     import { Tabs } from "bits-ui";
     import GroupHeader from "./GroupHeader.svelte";
+    import { definitionFor } from "./views";
     import Content from "./Content.svelte";
     import type { GroupID } from "./defs";
     import { activateTab, focusGroup } from "./api";
@@ -99,7 +100,7 @@
     const group = $derived(tabState.groups.find(group => group.id === groupId));
     $effect.pre(() => {
         const tab = group?.tabs.find(tab => tab.id === group.activeTabId);
-        if (tab && ["page", "library", "papers", "calendar"].includes(tab.type)) visitedTabs.add(tab.id);
+        if (tab && definitionFor(tab.view.type).keepMounted) visitedTabs.add(tab.id);
     });
 
     function focusPane(event: PointerEvent): void {

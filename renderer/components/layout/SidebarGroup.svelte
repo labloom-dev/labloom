@@ -2,7 +2,7 @@
     <button class="group-name" aria-expanded={expanded} onclick={() => expanded = !expanded}>{expanded ? "⌄" : "›"} {title}</button>
     {#if expanded}
         {#each rows as page (page.id)}
-            <ContextActions items={pageMenu(page, tabId())}>
+            <ContextActions items={pageMenu(page, context)}>
                 <button class="page" title={page.title} onclick={event => openPage(page.id, { otherGroup: event.ctrlKey })}><Icon name={kindIcons[page.kind]} size={16} /><span>{page.title || "未命名"}</span></button>
             </ContextActions>
         {/each}
@@ -27,13 +27,16 @@
     import { pageMenu } from "../Knowledge/page-menu";
     import { kindIcons } from "../Knowledge/labels";
     import { openPage } from "./navigation";
+    import { historySource } from "../Tab/views";
     import { tabState } from "../Tab/state.svelte";
     import Icon from "../utils/Icon.svelte";
     import ContextActions from "../utils/ContextActions.svelte";
     let { title, query, keyword, initiallyOpen = false }: { title: string; query: PageQuery; keyword: string; initiallyOpen?: boolean } = $props();
     let expanded = $state(untrack(() => initiallyOpen)), rows = $state<PageSummary[]>([]), pending = $state(false), more = $state(false), error = $state<ErrorValue>("");
     let offset = 0, generation = 0;
-    const tabId = (): string => tabState.groups.find(group => group.id === tabState.focusedGroupId)?.activeTabId ?? "";
+    const group = $derived(tabState.groups.find(group => group.id === tabState.focusedGroupId));
+    const tab = $derived(group?.tabs.find(tab => tab.id === group.activeTabId));
+    const context = $derived(tab && { tabId: tab.id, source: historySource(tab.view) });
     $effect(() => {
         void query; void keyword;
         if (expanded) untrack(() => void load(true));

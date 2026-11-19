@@ -1,3 +1,4 @@
+import { anchors } from "./anchors";
 import { getGroupID } from "./ids";
 import type { GroupID, LayoutNode, Tab, TabGroup, TabID } from "./defs";
 import type { XYDirection } from "../types";
@@ -31,11 +32,9 @@ export function addTab(groupId: GroupID, tab: Tab, activate = true): boolean {
     return true;
 }
 
-export function updateTab(tab: Tab): boolean {
-    const group = findTabGroup(tab.id);
-    if (!group) return false;
-    group.tabs[group.tabs.findIndex(item => item.id === tab.id)] = tab;
-    return true;
+export function setViewParams(tabId: TabID, params: Tab["view"]["params"]): void {
+    const tab = findTabGroup(tabId)?.tabs.find(tab => tab.id === tabId);
+    if (tab) tab.view.params = params;
 }
 
 export function removeTab(id: TabID): boolean {
@@ -45,12 +44,14 @@ export function removeTab(id: TabID): boolean {
         void tabLifecycle.close(id).then(saved => {
             const current = findTabGroup(id);
             if (saved && current) {
+                anchors.delete(id);
                 visitedTabs.delete(id);
                 detachTab(current, current.tabs.findIndex(tab => tab.id === id));
             }
         });
         return true;
     }
+    anchors.delete(id);
     visitedTabs.delete(id);
     detachTab(group, group.tabs.findIndex(tab => tab.id === id));
     return true;

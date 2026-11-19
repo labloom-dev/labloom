@@ -1,7 +1,7 @@
 import { tick } from "svelte";
 import { visits } from "../Tab/activity.svelte";
 import { commands, shortcutCommand, type Command } from "../../../shared/content/commands";
-import { historySource } from "../Knowledge/history";
+import { historySource } from "../Tab/views";
 import { confirmed, perform, saveAll, writeFromTab } from "../Knowledge/state.svelte";
 import { activateTab, focusGroup, removeTab } from "../Tab/api";
 import type { LayoutNode } from "../Tab/defs";
@@ -43,6 +43,7 @@ async function focusActive(id: string): Promise<void> {
 }
 export function runCommand(id: Command): void {
     const group = tabState.groups.find(g => g.id === tabState.focusedGroupId)!;
+    const tab = group.tabs.find(tab => tab.id === group.activeTabId);
     if (id === "newPage") createPage();
     else if (id === "closeTab") {
         if (group.activeTabId) removeTab(group.activeTabId);
@@ -66,16 +67,16 @@ export function runCommand(id: Command): void {
         }
     }
     else if (id === "importPDF") void perform(async () => {
-        const action = (): ReturnType<typeof window.api.papers.importPDF> => window.api.papers.importPDF(undefined, group.activeTabId ? { tabId: group.activeTabId, source: historySource(group.activeTabId) } : undefined);
+        const action = (): ReturnType<typeof window.api.papers.importPDF> => window.api.papers.importPDF(undefined, tab ? { tabId: tab.id, source: historySource(tab.view) } : undefined);
         const result = group.activeTabId ? await writeFromTab(group.activeTabId, action) : await saveAll() && await action();
         if (result) openPage(result.pageId);
     });
     else if (["undo", "redo", "cut", "copy", "paste", "selectAll"].includes(id)) {
-        if ((id === "undo" || id === "redo") && !lastFocus?.matches("input,textarea") && !document.querySelector(`[data-group-id="${CSS.escape(group.id)}"] [data-tabs-content]:not([hidden]) .tiptap`) && group.activeTabId) {
-            const tabId = group.activeTabId;
+        if ((id === "undo" || id === "redo") && !lastFocus?.matches("input,textarea") && !document.querySelector(`[data-group-id="${CSS.escape(group.id)}"] [data-tabs-content]:not([hidden]) .tiptap`) && tab) {
+            const tabId = tab.id;
             void perform(async () => {
                 await writeFromTab(tabId, async () => {
-                    const source = historySource(tabId), history = await window.api.history.state(source);
+                    const source = historySource(tab.view), history = await window.api.history.state(source);
                     if (id === "undo" ? !history.canUndo : !history.redo.length) return;
                     await confirmed(token => window.api.history.apply(source, id as "undo" | "redo", undefined, token));
                 });

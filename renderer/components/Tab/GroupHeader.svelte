@@ -5,6 +5,7 @@
 }}>
     <Tabs.List class="tab-list">
         {#each group.tabs as tab (tab.id)}
+            {@const title = fromStore(definitionFor(tab.view.type).title(tab.view.params))}
             <ContextActions className="tab-context" items={tabMenu(tab.id)}>
                 <div class="tab" class:active={group.activeTabId === tab.id} draggable="true" role="presentation" onmousedown={event => {
                     if (event.button === 1) event.preventDefault();
@@ -14,11 +15,11 @@
                     }
                 }}>
                     <Tabs.Trigger value={tab.id} onclick={() => {
-                        activateTab(tab.id); if (tab.type === "page") void focusEditor(tab.id);
+                        activateTab(tab.id); if (tab.view.type === "page") void focusEditor(tab.id);
                     }}>
-                        <span>{tab.title}</span>{#if tabDirty(tab.id)}<span class="dirty" aria-label="未保存">●</span>{/if}{#if slowTabs.has(tab.id)}<span class="sync-mark" role="status" aria-label="正在同步">↻</span>{/if}
+                        <span>{title.current}</span>{#if tabDirty(tab.id)}<span class="dirty" aria-label="未保存">●</span>{/if}{#if slowTabs.has(tab.id)}<span class="sync-mark" role="status" aria-label="正在同步">↻</span>{/if}
                     </Tabs.Trigger>
-                    <button class="close-tab" aria-label={`关闭${tab.title}`} title={`关闭${tab.title}`} onclick={event => {
+                    <button class="close-tab" aria-label={`关闭${title.current}`} title={`关闭${title.current}`} onclick={event => {
                         event.stopPropagation(); removeTab(tab.id);
                     }}><Icon name="close" size={12} /></button>
                 </div>
@@ -61,6 +62,8 @@
     import { activateTab, closeGroup, focusGroup, removeTab } from "./api";
     import { createPage, splitCurrent } from "../layout/navigation";
     import { commands } from "../../../shared/content/commands";
+    import { fromStore } from "svelte/store";
+    import { definitionFor } from "./views";
     import { tabState } from "./state.svelte";
     import { slowTabs, visits } from "./activity.svelte";
     import { tabDirty } from "./dirty.svelte";

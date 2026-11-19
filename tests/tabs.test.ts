@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { validate, version } from "uuid";
 import { getGroupID, getTabID } from "../renderer/components/Tab/ids";
+import { restoreTabState } from "../renderer/components/Tab/restore";
 import { TabVisits, type TabView } from "../renderer/components/Tab/visits";
 
 function latch(): { wait: Promise<void>; release: () => void } {
@@ -155,4 +156,46 @@ test("a failed departure protects the destination while the author can return an
     visits.focus("b");
     assert.ok(await visits.settled("b"));
     assert.ok(!locks.has("b"));
+});
+
+const date = { kind: "attribute", type: "day", id: "removed-date" };
+const status = { kind: "attribute", type: "status", id: "removed-status" };
+const savedViews = [
+    { type: "page", params: { page: { kind: "page", id: "11111111-1111-4111-8111-111111111111" } } },
+    { type: "calendar", params: { date, start: { kind: "attribute", type: "minute", id: "start" }, status } },
+    { type: "library", params: { scope: "trash", pageType: { kind: "page-type", type: "paper" }, sort: "title", tags: ["A"], filters: [{ attribute: { kind: "attribute", id: "missing" }, value: { list: [false, null] } }] } },
+    { type: "overview", params: { status } },
+    ...["feed", "attributes", "settings", "about"].map(type => ({ type, params: {} }))
+];
+function layout(views: unknown[]): { groups: { id: string; tabs: { id: string; view: unknown }[]; activeTabId: string | null }[]; focusedGroupId: string; layout: { type: "group"; groupId: string } } {
+    const tabs = views.map((view, i) => ({ id: String(i), view }));
+    return { groups: [{ id: "A", tabs, activeTabId: tabs[0]?.id ?? null }], focusedGroupId: "A", layout: { type: "group", groupId: "A" } };
+}
+test("all view parameters round-trip independently of whether referenced objects exist", () => {
+    const saved = layout(savedViews);
+    assert.deepEqual(restoreTabState(saved), saved);
+    assert.deepEqual(restoreTabState(layout([])), layout([]));
+});
+test("unknown views and invalid parameters discard only their tab and repair the active selection", () => {
+    for (const bad of [
+        { type: "future", params: {} }, { type: "calendar", params: { date: status } },
+        { type: "page", params: { page: { kind: "page", id: "invalid" } } },
+        { type: "overview", params: { status: date } }, { type: "about", params: { keyword: "A" } },
+        { type: "library", params: { scope: "papers" } }
+    ]) {
+        const saved = layout([bad, ...savedViews]);
+        const restored = restoreTabState(saved);
+        assert.deepEqual(restored?.groups[0].tabs, saved.groups[0].tabs.slice(1));
+        assert.equal(restored?.groups[0].activeTabId, "1");
+    }
+});
+test("broken layout relationships and the previous tab format use the default layout", () => {
+    const saved = layout(savedViews);
+    const leaf = saved.layout;
+    for (const broken of [
+        { ...saved, focusedGroupId: "B" }, { ...saved, groups: [...saved.groups, ...saved.groups] },
+        { ...saved, layout: { type: "split", direction: "vertical", ratio: 0.5, children: [leaf, leaf] } },
+        { ...saved, groups: [{ ...saved.groups[0], activeTabId: "absent" }] },
+        { ...saved, groups: [{ ...saved.groups[0], tabs: [{ id: "0", type: "overview", title: "A" }] }] }
+    ]) assert.equal(restoreTabState(broken), undefined);
 });

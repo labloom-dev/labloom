@@ -260,7 +260,7 @@ test("large layouts survive IPC storage and renderer restoration", async t => {
     const { call } = fixture(t);
     for (const count of [33, 41]) {
         const groups: SavedTabs["groups"] = Array.from({ length: count }, (_, i) => ({ id: String(i), tabs: [], activeTabId: null }));
-        groups[0].tabs.push({ id: "T".repeat(101), type: "overview", title: "A".repeat(1000001) });
+        groups[0].tabs.push({ id: "T".repeat(101), view: { type: "library", params: { scope: "all", sort: "title", tags: ["A".repeat(1000001)], filters: [] } } });
         groups[0].activeTabId = groups[0].tabs[0].id;
         let layout: SavedTabs["layout"] = { type: "group", groupId: "0" };
         for (const group of groups.slice(1)) layout = { type: "split", direction: "horizontal", ratio: 0.5, children: [layout, { type: "group", groupId: group.id }] };

@@ -1,8 +1,9 @@
-import { historySource, watchHistory } from "./history";
+import { watchHistory } from "./history";
 import type { HistorySource } from "../../../shared/history/ipc";
 import { PageWrites, fallbackFields, fields, reviewEdit, type Fields } from "./page-writes";
 import { confirmationText } from "../../../shared/content/confirmation";
-import { changedUses, references } from "../../../shared/content/blocks";
+import { publishTitle } from "../Tab/page-titles";
+import { blockText, changedUses, references } from "../../../shared/content/blocks";
 import { type AttributeDefinition, type AttributeValue } from "../../../shared/types/attributes";
 import { type Backlink, type ChangePreview, type Changed, type CommitResult, type KnowledgeChange, type PageRecord } from "../../../shared/types/content";
 import { type HistoryState } from "../../../shared/types/knowledge";
@@ -116,9 +117,8 @@ export function registerList(tabId: string, intersection: TabView["intersection"
         } });
 }
 
-function makeSession(tabId: string, pageId: string): PageSession {
+function makeSession(tabId: string, pageId: string, source: HistorySource): PageSession {
     const state = new PageState(), api = window.api, input = new PendingInput();
-    const source = historySource(tabId);
     const stopHistory = watchHistory(source, value => {
         state.history = value;
     });
@@ -227,7 +227,10 @@ function makeSession(tabId: string, pageId: string): PageSession {
         let publish = !!edit.attributes || !!edit.detach || !!edit.pageChildren;
         for (const block of edit.blocks) {
             page.blocks[block.id] = block;
-            if (block.id === page.titleBlockId) publish = true;
+            if (block.id === page.titleBlockId) {
+                publish = true;
+                publishTitle(pageId, blockText(block));
+            }
         }
         if (edit.pageChildren) page.children = edit.pageChildren;
         if (edit.attributes || edit.detach) {
@@ -460,6 +463,7 @@ function makeSession(tabId: string, pageId: string): PageSession {
                     if (!await flush()) throw new LabloomError({ kind: "page-unsaved" });
                     await reread(ids.filter(id => id === pageId || Object.hasOwn(state.page!.blocks, id)));
                 }
+                if (state.error && state.error.kind === "page-unavailable" && !state.page) return;
                 if (state.error) throw new LabloomError({ kind: "page-unsaved" });
                 if (initial || definitionsDirty) {
                     definitionsDirty = false;
@@ -485,7 +489,7 @@ function makeSession(tabId: string, pageId: string): PageSession {
     });
     return {
         tabId, source, input, release() {
-            stopHistory(); release();
+            stopHistory(); release(); sessions.delete(sessionKey(tabId, pageId));
         }, state, refresh, reread, objects, flush, stage, review, action: trackedAction, undo, composition, watchObject, ownChange,
         attr: (id: string, value: AttributeValue) => stage({ blocks: [], attributes: { [id]: copyData(value) } }),
         detach: (id: string) => stage({ blocks: [], detach: [id] }),
@@ -495,11 +499,11 @@ function makeSession(tabId: string, pageId: string): PageSession {
         }
     };
 }
-export function session(tabId: string, pageId: string): PageSession {
+export function session(tabId: string, pageId: string, source: HistorySource): PageSession {
     const key = sessionKey(tabId, pageId);
     let value = sessions.get(key);
     if (!value) {
-        value = makeSession(tabId, pageId);
+        value = makeSession(tabId, pageId, source);
         sessions.set(key, value);
     }
     return value;

@@ -15,6 +15,7 @@
     </div>
 
     {#if error}<div class="notice error" role="alert">{message(error)} <button class="text-button" onclick={load}>{t("dialog.retry")}</button></div>{/if}
+    {#if missingStatus}<p class="notice">找不到用于统计待办的状态属性。</p>{/if}
     <div class="stats" aria-busy={pending}>
         {#each stats as stat (stat.label)}
             <button class="stat-card" onclick={() => openDestination(stat.destination)}>
@@ -479,10 +480,12 @@
     import { registerList } from "../Knowledge/state.svelte";
     import { visits } from "../Tab/activity.svelte";
 
-    let { tabId }: { tabId: string } = $props();
+    import type { ViewProps } from "../Tab/views";
+    let { tabId, params }: ViewProps<"overview"> = $props();
     let feedState = $state<FeedState | null>(null);
     let counts = $state<{ pages: number; papers: number; tasks: number } | null>(null);
     let recent = $state<PageSummary[]>([]);
+    let missingStatus = $state(false);
     let pending = $state(true);
     let error = $state<ErrorValue>("");
     let now = $state(Date.now());
@@ -501,14 +504,17 @@
         pending = true;
         error = "";
         try {
-            const status = (await window.api.attributes.definitions()).find(def => def.id === "task_status" && def.type === "status");
-            const count = async (id: string): Promise<number> => status?.metadata.options?.some(option => option.id === id)
-                ? (await window.api.pages.list({ attributes: { task_status: id }, limit: 1 })).total : 0;
-            const [result, pages, papers, todo, doing] = await Promise.all([
-                window.api.feed.getState({}), window.api.pages.list({ limit: 5 }), window.api.pages.list({ kind: "paper", limit: 1 }), count("todo"), count("doing")
+            const status = (await window.api.attributes.definitions()).find(def => def.id === params.status?.id && def.type === "status");
+            const taskCounts = status ? (status.metadata.options ?? [])
+                .filter(option => option.group === "incomplete")
+                .map(option => window.api.pages.list({ attributes: { [status.id]: option.id }, limit: 1 })) : [];
+            const [result, pages, papers, tasks] = await Promise.all([
+                window.api.feed.getState({}), window.api.pages.list({ limit: 5 }), window.api.pages.list({ kind: "paper", limit: 1 }),
+                Promise.all(taskCounts)
             ]);
             if (active) {
-                feedState = result; counts = { pages: pages.total, papers: papers.total, tasks: todo + doing }; recent = pages.items;
+                missingStatus = !!params.status && !status;
+                feedState = result; counts = { pages: pages.total, papers: papers.total, tasks: tasks.reduce((sum, list) => sum + list.total, 0) }; recent = pages.items;
             }
         }
         catch (cause) {
@@ -521,7 +527,7 @@
     }
 
     onMount(() => {
-        const release = registerList(tabId, change => change.pages, load);
+        const release = registerList(tabId, change => [...change.pages, ...(change.definition ? [change.definition] : [])], load);
         const timer = setInterval(() => {
             now = Date.now(); visits.refresh(tabId);
         }, 60000);

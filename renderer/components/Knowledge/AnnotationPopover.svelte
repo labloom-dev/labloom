@@ -27,8 +27,9 @@
     import { session, knowledgeState } from "./state.svelte";
     import { openPage } from "../layout/navigation";
     import { message } from "../../i18n.svelte";
-    let { pageId, tabId, position, onclose }: { pageId: string; tabId: string; position: { x: number; y: number }; onclose: () => void } = $props();
-    const current = untrack(() => session(tabId, pageId));
+    import type { HistorySource } from "../../../shared/history/ipc";
+    let { pageId, tabId, source, position, onclose }: { source: HistorySource; pageId: string; tabId: string; position: { x: number; y: number }; onclose: () => void } = $props();
+    const current = untrack(() => session(tabId, pageId, source));
     $effect(() => {
         const key = tabId + ":" + pageId;
         if (current.state.dirty || current.state.saving) dirtyPages.set(key, tabId); else dirtyPages.delete(key);

@@ -163,8 +163,8 @@ test("calendar search and grouping stay on the same day after changing zones and
         assert.deepEqual(new Set(service.list({ keyword: "2026-11" }).items.map(p => p.id)), new Set([event.id, task.id]));
         assert.equal(service.list({ keyword: "2026-11-11" }).total, 2);
         assert.equal(service.list({ keyword: String(day) }).total, 0);
-        assert.equal(scheduleDay(service.get(event.id).attributes, timeZone), "2026-11-11");
-        assert.equal(scheduleDay(service.get(task.id).attributes, timeZone), secondsToWall(instant, timeZone).slice(0, 10));
+        assert.equal(scheduleDay(service.get(event.id).attributes, "schedule_date"), "2026-11-11");
+        assert.equal(scheduleDay(service.get(task.id).attributes, "schedule_date"), "2026-11-11");
     }
     session.close();
     const reopened = openWorkspace(info.path, undefined, { timeZone: () => "America/New_York" });
@@ -172,5 +172,5 @@ test("calendar search and grouping stay on the same day after changing zones and
     const next = knowledgeServices();
     assert.equal(next.get(event.id).attributes.schedule_date, day);
     assert.equal(next.list({ keyword: "2026-11-11" }).total, 2);
-    assert.equal(scheduleDay(next.get(event.id).attributes, "America/New_York"), "2026-11-11");
+    assert.equal(scheduleDay(next.get(event.id).attributes, "schedule_date"), "2026-11-11");
 });

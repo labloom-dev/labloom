@@ -1,16 +1,8 @@
 import type { HistorySource } from "../../../shared/history/ipc";
 import type { HistoryState } from "../../../shared/types/knowledge";
-import { tabState } from "../Tab/state.svelte";
 import { knowledgeState } from "./feedback.svelte";
 import { failure } from "../../i18n.svelte";
 
-export function historySource(tabId: string): HistorySource {
-    for (const group of tabState.groups) {
-        const tab = group.tabs.find(item => item.id === tabId);
-        if (tab?.type === "page") return { kind: "page", id: tab.pageId };
-    }
-    return { kind: "workspace" };
-}
 type Listener = (state: HistoryState) => void;
 type Watch = { source: HistorySource; listeners: Set<Listener>; revision: number; state?: HistoryState };
 const watches = new Map<string, Watch>();

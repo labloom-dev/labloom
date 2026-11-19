@@ -15,14 +15,15 @@
     import { confirmed, perform, writeFromTab } from "./state.svelte";
     import { onMount } from "svelte";
     import { watchHistory } from "./history";
-    let { tabId }: { tabId: string } = $props();
+    import type { HistorySource } from "../../../shared/history/ipc";
+    let { tabId, source }: { tabId: string; source: HistorySource } = $props();
     let history = $state.raw<HistoryState>({ canUndo: false, redo: [] });
-    onMount(() => watchHistory({ kind: "workspace" }, state => {
+    onMount(() => watchHistory(source, state => {
         history = state;
     }));
     function apply(direction: "undo" | "redo", branch?: string): void {
         void perform(async () => {
-            await writeFromTab(tabId, () => confirmed(token => window.api.history.apply({ kind: "workspace" }, direction, branch, token)));
+            await writeFromTab(tabId, () => confirmed(token => window.api.history.apply(source, direction, branch, token)));
         });
     }
 </script>

@@ -33,7 +33,7 @@
         {/if}
         {#if annotationId}
             {#key annotationId}
-                <AnnotationPopover pageId={annotationId} {tabId} position={menuPosition} onclose={() => annotationId = null} />
+                <AnnotationPopover source={session.source} pageId={annotationId} {tabId} position={menuPosition} onclose={() => annotationId = null} />
             {/key}
         {/if}
     {/if}
@@ -80,7 +80,7 @@
         if (at) menuPosition = at;
         if (value) {
             activeHighlight = null;
-            if (annotationId && await pageSession(tabId, annotationId).flush()) annotationId = null;
+            if (annotationId && await pageSession(tabId, annotationId, session.source).flush()) annotationId = null;
         }
     }
     const sourceFiles = new WeakMap<ReaderSource, string>();
@@ -96,7 +96,7 @@
                 request++;
                 source = null; fileId = "";
                 dismiss();
-                if (annotationId && await pageSession(tabId, annotationId).flush()) annotationId = null;
+                if (annotationId && await pageSession(tabId, annotationId, session.source).flush()) annotationId = null;
                 if (available[0]) await openFile(available[0].id);
                 else error = "";
             }
@@ -113,14 +113,14 @@
         };
     });
     async function toggleExpanded(): Promise<void> {
-        if (annotationId && !await pageSession(tabId, annotationId).flush()) return;
+        if (annotationId && !await pageSession(tabId, annotationId, session.source).flush()) return;
         annotationId = null;
         dismiss();
         expanded = !expanded;
     }
     async function openFile(id: string): Promise<void> {
         if (!pdfs.some(file => file.id === id)) return;
-        if (annotationId && !await pageSession(tabId, annotationId).flush()) return;
+        if (annotationId && !await pageSession(tabId, annotationId, session.source).flush()) return;
         annotationId = null;
         const sequence = ++request;
         try {
@@ -172,7 +172,7 @@
         reader?.clearSelection();
     }
     async function selectHighlight(id: string, at: { x: number; y: number }, annotation = false): Promise<void> {
-        if (annotationId && !await pageSession(tabId, annotationId).flush()) return;
+        if (annotationId && !await pageSession(tabId, annotationId, session.source).flush()) return;
         dismiss();
         menuPosition = at;
         const highlight = resources.annotations.find(item => item.id === id);

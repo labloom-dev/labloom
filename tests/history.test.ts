@@ -62,7 +62,7 @@ const empty = { canUndo: false, redo: [] };
 test("two tabs share one page cursor across tab closure, while reopening the workspace clears it", async t => {
     const f = setup(t), page = await f.create(), source = pageHistory(page.id);
     const tabs = (ids: string[]): SavedTabs => ({ groups: [{ id: "G", activeTabId: ids.at(-1) ?? null,
-        tabs: ids.map(id => ({ id, type: "page", pageId: page.id, title: "Page" })) }], focusedGroupId: "G", layout: { type: "group", groupId: "G" } });
+        tabs: ids.map(id => ({ id, view: { type: "page", params: { page: { kind: "page", id: page.id } } } })) }], focusedGroupId: "G", layout: { type: "group", groupId: "G" } });
     await f.call(workspaceChannels.saveTabs, tabs(["first", "second"]));
     await f.edit(page, "first", "A"); f.changed(source);
     await f.edit(page, "second", "B"); f.changed(source);
