@@ -1,15 +1,15 @@
 <section class="workspace-page overview">
     <header class="page-heading">
-        <div><h1>我的花园 <span class="heading-spark"><Icon name="flower" size={30} /></span></h1><p>收集好奇，连接想法。今天也让知识长大一点。</p></div>
+        <div><h1>我的花园</h1><p>收集好奇，连接想法。今天也让知识长大一点。</p></div>
         <span class="date"><Icon name="calendar" size={16} />{date}</span>
     </header>
 
     <div class="welcome-card paper-card">
         <div class="welcome-copy">
-            <span class="welcome-label">给好奇心留一块地方 <span><Icon name="star" size={13} /></span></span>
+            <span class="welcome-label">给好奇心留一块地方</span>
             <h2>每个想法，都值得<span>生根发芽。</span></h2>
             <p>从一篇论文、一段阅读或一个小小的灵感开始，<br />慢慢编织属于你的知识世界。</p>
-            <div class="welcome-actions"><button class="button primary" onclick={() => openDestination("papers")}><Icon name="book" size={15} />开始阅读</button><button class="text-button" onclick={() => createPage()}>记下一个想法 <Icon name="arrow" size={16} /></button></div>
+            <div class="welcome-actions"><button class="button primary" onclick={() => openDestination("papers")}><Icon name="book" size={15} />开始阅读</button><button class="text-button" onclick={() => createPage()}>记下一个想法 <Icon name="arrow-right" size={16} /></button></div>
         </div>
         <div class="hero-art"><span class="art-label">a little idea, a little bloom</span><Bloom /><span class="art-caption">GROW AT YOUR OWN PACE</span></div>
     </div>
@@ -21,18 +21,18 @@
             <button class="stat-card" onclick={() => openDestination(stat.destination)}>
                 <span class="stat-icon {stat.tone}"><Icon name={stat.icon} size={23} /></span>
                 <span class="stat-copy"><span>{stat.label}</span><strong>{pending || error || stat.value === undefined ? "—" : stat.value}<small> {stat.unit}</small></strong></span>
-                <span class="stat-caption">{stat.caption} <Icon name="arrow" size={13} /></span>
+                <span class="stat-caption">{stat.caption} <Icon name="arrow-right" size={13} /></span>
             </button>
         {/each}
     </div>
 
     <div class="dashboard-grid">
         <section class="paper-card feed-card">
-            <header class="card-heading"><h2><span class="heading-icon"><Icon name="feed" size={18} /></span>新知来信</h2><button class="text-button" onclick={() => openDestination("feed")}>全部动态 <Icon name="arrow" size={14} /></button></header>
+            <header class="card-heading"><h2><span class="heading-icon"><Icon name="rss" size={18} /></span>新知来信</h2><button class="text-button" onclick={() => openDestination("feed")}>全部动态 <Icon name="arrow-right" size={14} /></button></header>
             {#if pending}
                 <div class="empty-state" role="status"><strong>正在整理你的来信…</strong><p>读取已保存在工作区的订阅内容。</p></div>
             {:else if error}
-                <div class="empty-state"><Icon name="feed" size={30} /><strong>暂时没能读到订阅</strong><p>已有内容仍保留在工作区，可以重试加载。</p><button class="button" onclick={load}>{t("dialog.retry")}</button></div>
+                <div class="empty-state"><Icon name="rss" size={30} /><strong>暂时没能读到订阅</strong><p>已有内容仍保留在工作区，可以重试加载。</p><button class="button" onclick={load}>{t("dialog.retry")}</button></div>
             {:else if feedState?.items.length}
                 <div class="latest-list">
                     {#each feedState.items.slice(0, 3) as item (item.id)}
@@ -43,21 +43,21 @@
                     {/each}
                 </div>
             {:else}
-                <div class="empty-state letters"><span class="letter-icon"><Icon name="feed" size={30} /><span><Icon name="star" size={22} /></span></span><strong>第一封新知来信，还在路上</strong><p>订阅你喜欢的论文方向或实验室博客，<br />让值得阅读的内容在这里相遇。</p><button class="button" onclick={() => openDestination("feed")}><Icon name="plus" size={14} />添加我的第一个订阅</button></div>
+                <div class="empty-state letters"><span class="letter-icon"><Icon name="rss" size={30} /></span><strong>第一封新知来信，还在路上</strong><p>订阅你喜欢的论文方向或实验室博客，<br />让值得阅读的内容在这里相遇。</p><button class="button" onclick={() => openDestination("feed")}><Icon name="add" size={14} />添加我的第一个订阅</button></div>
             {/if}
         </section>
         <section class="paper-card start-card">
             <header class="card-heading"><h2><span class="heading-icon sage"><Icon name="book" size={18} /></span>从这里开始</h2><span class="badge">一步一步来</span></header>
             <div class="steps">
-                <button onclick={() => openDestination("feed")}><span class="step-number">01</span><span><strong>发现值得读的内容</strong><small>连接 RSS、arXiv 与研究博客</small></span><Icon name="arrow" size={15} /></button>
-                <button onclick={() => openDestination("papers")}><span class="step-number sage">02</span><span><strong>给阅读留一点时间</strong><small>打开 PDF，专心读一篇论文</small></span><Icon name="arrow" size={15} /></button>
-                <button onclick={() => openDestination("settings")}><span class="step-number lilac">03</span><span><strong>让阅读更合心意</strong><small>调整主题、字号与动效</small></span><Icon name="arrow" size={15} /></button>
+                <button onclick={() => openDestination("feed")}><span class="step-number">01</span><span><strong>发现值得读的内容</strong><small>连接 RSS、arXiv 与研究博客</small></span><Icon name="arrow-right" size={15} /></button>
+                <button onclick={() => openDestination("papers")}><span class="step-number sage">02</span><span><strong>给阅读留一点时间</strong><small>打开 PDF，专心读一篇论文</small></span><Icon name="arrow-right" size={15} /></button>
+                <button onclick={() => openDestination("settings")}><span class="step-number lilac">03</span><span><strong>让阅读更合心意</strong><small>调整主题、字号与动效</small></span><Icon name="arrow-right" size={15} /></button>
             </div>
-            <div class="little-note"><span><Icon name="star" size={28} /></span><p>知识不必一次成林。<br /><strong>今天种下一颗种子就很好。</strong></p></div>
+            <div class="little-note"><p>知识不必一次成林。<br /><strong>今天种下一颗种子就很好。</strong></p></div>
         </section>
     </div>
-    <section class="paper-card recent-pages"><header class="card-heading"><h2>最近整理</h2><button class="text-button" onclick={() => openDestination("library")}>全部页面 <Icon name="arrow" size={14} /></button></header>{#each recent as page (page.id)}<button class="recent-page" onclick={() => openPage(page.id)}><strong>{page.title || "未命名"}</strong><span>{page.excerpt || "还没有正文"}</span></button>{:else}<p>从一篇笔记开始，让想法慢慢生长。</p>{/each}</section>
-    <footer class="page-footer"><span><Icon name="flower" size={12} /> 知织，你的知识，慢慢生长</span><span>Where ideas take root.</span></footer>
+    <section class="paper-card recent-pages"><header class="card-heading"><h2>最近整理</h2><button class="text-button" onclick={() => openDestination("library")}>全部页面 <Icon name="arrow-right" size={14} /></button></header>{#each recent as page (page.id)}<button class="recent-page" onclick={() => openPage(page.id)}><strong>{page.title || "未命名"}</strong><span>{page.excerpt || "还没有正文"}</span></button>{:else}<p>从一篇笔记开始，让想法慢慢生长。</p>{/each}</section>
+    <footer class="page-footer"><span>知织，你的知识，慢慢生长</span><span>Where ideas take root.</span></footer>
 </section>
 
 
@@ -66,13 +66,6 @@
     .recent-page { display: flex; justify-content: space-between; gap: 20px; width: 100%; padding: 14px 0; text-align: left; border-bottom: 1px dashed var(--c-line); font-size: 12px; }
     .recent-page span { color: var(--c-muted); max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .recent-pages > p { color: var(--c-muted); font-size: 12px; }
-    .heading-spark {
-        display: inline-block;
-        margin-left: 6px;
-        color: #b18c42;
-        font-size: 30px;
-        transform: rotate(-13deg);
-    }
     .date {
         display: flex;
         align-items: center;
@@ -108,9 +101,6 @@
         color: var(--c-accent);
         font-size: var(--font-min);
         transform: rotate(-2deg);
-    }
-    .welcome-label span {
-        color: #b18c42;
     }
     h2 {
         margin: 19px 0 12px;
@@ -290,13 +280,6 @@
         box-shadow: 3px 3px 0 #e0d4b8;
         transform: rotate(-8deg);
     }
-    .letter-icon > span {
-        position: absolute;
-        right: -17px;
-        top: -10px;
-        color: #ba9145;
-        font-size: 23px;
-    }
     .steps {
         padding: 6px 18px;
     }
@@ -354,10 +337,6 @@
         padding: 11px 15px;
         border-radius: 8px;
         background: var(--c-cream);
-    }
-    .little-note > span {
-        color: #a88a48;
-        font-size: 30px;
     }
     .little-note p {
         margin: 0;

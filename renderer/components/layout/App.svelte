@@ -1,5 +1,5 @@
 {#if startup?.status === "ready"}
-    <NavBar />
+    <NavBar collapsed={shell.collapsed} oncommand={runCommand} disabled={commandDisabled} onremember={prepareCommands}><GSLauncher /></NavBar>
     <div class="container">
         <Sidebar />
         <Main />
@@ -21,7 +21,10 @@
 
 
 <script lang="ts">
-    import { globalShortcut } from "./commands";
+    import { copyData } from "../copy-data";
+    import { commandDisabled, globalShortcut, prepareCommands, runCommand } from "./commands";
+    import { shell } from "./shell.svelte";
+    import GSLauncher from "../globalSearch/GSLauncher.svelte";
     import { onMount, untrack } from "svelte";
     import type { StartupState, WorkspaceAction } from "../../../shared/types/startup";
     import "../../styles/colors.css";
@@ -40,7 +43,7 @@
     import { knowledgeState } from "../Knowledge/feedback.svelte";
     import { tabState } from "../Tab/state.svelte";
     import { tabLifecycle } from "../Tab/lifecycle";
-    import { persistTabs, restoreTabs } from "../Tab/persistence.svelte";
+    import { persistTabs, recordOpen, restoreTabs, navigationState } from "../Tab/persistence.svelte";
     import { visits } from "../Tab/activity.svelte";
     import { toFailureInfo } from "../../../shared/failure";
     import { failure } from "../../i18n.svelte";
@@ -49,6 +52,16 @@
     let pending = $state(true);
     let windowFocused = $state(document.hasFocus());
     const focusedTab = $derived(tabState.groups.find(group => group.id === tabState.focusedGroupId)?.activeTabId ?? null);
+    const activePage = $derived.by(() => {
+        const group = tabState.groups.find(item => item.id === tabState.focusedGroupId);
+        const view = group?.tabs.find(item => item.id === group.activeTabId)?.view;
+        return view?.type === "page" ? view.params.page.id : null;
+    });
+    $effect(() => {
+        const page = activePage;
+        void focusedTab;
+        if (page && startup?.status === "ready") untrack(() => recordOpen(page));
+    });
     let previousTab: string | null = null;
     $effect.pre(() => {
         const id = windowFocused && startup?.status === "ready" ? focusedTab : null;
@@ -142,10 +155,10 @@
         };
     });
     $effect(() => {
-        const snapshot = JSON.stringify(tabState);
         if (startup?.status !== "ready") return;
+        const tabs = copyData(tabState), navigation = copyData(navigationState);
         const timer = setTimeout(() => {
-            void window.api.workspace.saveTabs(JSON.parse(snapshot)).catch(error => knowledgeState.error = failure(error));
+            void window.api.workspace.saveTabs(tabs, navigation).catch(error => knowledgeState.error = failure(error));
         }, 300);
         return () => clearTimeout(timer);
     });

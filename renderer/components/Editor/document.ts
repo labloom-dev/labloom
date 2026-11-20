@@ -1,4 +1,4 @@
-import { Node as ExtensionNode, type JSONContent } from "@tiptap/core";
+import { Node as ExtensionNode, type JSONContent, type NodeViewRenderer } from "@tiptap/core";
 import { Document } from "@tiptap/extension-document";
 import { Text } from "@tiptap/extension-text";
 import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
@@ -45,7 +45,11 @@ const table = ExtensionNode.create({
     name: "pageTable", group: "workspaceBlock", content: "table", defining: true, isolating: true,
     addAttributes: blockAttrs, renderHTML: ({ node }) => ["div", domAttrs(node), 0]
 });
-const inlineReference = ExtensionNode.create({
+export const inlineReference = ExtensionNode.create<{ nodeView: NodeViewRenderer | null }>({
+    addOptions: () => ({ nodeView: null }),
+    addNodeView() {
+        return this.options.nodeView;
+    },
     name: "inlineReference", inline: true, group: "inline", atom: true,
     addAttributes: () => ({ target: { default: null }, label: { default: "引用" } }),
     parseHTML: () => [{ tag: "span[data-inline-target]", getAttrs: el => ({ target: { kind: el.dataset.targetKind, id: el.dataset.inlineTarget }, label: el.textContent?.replace(/^↗ /u, "") }) }],

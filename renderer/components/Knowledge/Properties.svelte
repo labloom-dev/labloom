@@ -3,7 +3,7 @@
         <div class="property"><span class="property-label">来源文献</span><div class="value">{#if sourcePaper}<button class="text-button" onclick={() => openPage(sourcePaper.sourceId)}>{sourcePaper.title}{sourcePaper.deleted ? "（已回收）" : ""}</button>{:else}<span>无</span>{/if}</div></div>
     {/if}
     <Popover.Root bind:open={adding}>
-        <Popover.Trigger class="button add-property" disabled={locked}>＋ 添加属性</Popover.Trigger>
+        <Popover.Trigger class="button add-property" disabled={locked}><Icon name="add" size="1em" /> 添加属性</Popover.Trigger>
         <Popover.Portal><Popover.Content class="compact-menu add-property-menu" sideOffset={4} collisionPadding={8}>
             <input aria-label="搜索属性" placeholder="搜索属性…" bind:value={query} onkeydown={searchKey} />
             {#if creating}
@@ -27,8 +27,8 @@
             </div>
             {#if !definition.readonly}
                 <div class="property-actions">
-                    {#if nullable(definition.type) && definition.type !== "file" && definition.type !== "files"}<button title="清空" aria-label={`清空${definition.name}`} disabled={locked} onclick={() => session.attr(definition.id, emptyValue(definition.type))}>×</button>{/if}
-                    {#if !isBuiltin(definition.id)}<button title="从页面移除属性" aria-label={`移除${definition.name}`} disabled={locked} onclick={() => session.detach(definition.id)}>−</button>{/if}
+                    {#if nullable(definition.type) && definition.type !== "file" && definition.type !== "files"}<button title="清空" aria-label={`清空${definition.name}`} disabled={locked} onclick={() => session.attr(definition.id, emptyValue(definition.type))}><Icon name="close" size="1em" /></button>{/if}
+                    {#if !isBuiltin(definition.id)}<button title="从页面移除属性" aria-label={`移除${definition.name}`} disabled={locked} onclick={() => session.detach(definition.id)}><Icon name="dash" size="1em" /></button>{/if}
                 </div>
             {/if}
         </div>
@@ -51,6 +51,7 @@
     .error { color: var(--c-reader-error-text); }
 </style>
 <script lang="ts">
+    import Icon from "../utils/Icon.svelte";
     import { failure, message, type ErrorValue } from "../../i18n.svelte";
     import { isTimeType } from "../../../shared/content/time";
     import TimerMenu from "./TimerMenu.svelte";

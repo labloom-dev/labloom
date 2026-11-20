@@ -3,7 +3,7 @@
         class="group"
         data-group-id={groupId}
         tabindex="-1"
-        aria-label="标签页分栏"
+        aria-label={t("shell.editorGroup")}
         ondragover={acceptTabDrop}
         ondrop={event => dropTab(event, groupId)}
         onpointerdowncapture={focusPane}
@@ -19,7 +19,9 @@
                 observer.observe(element); return () => observer.disconnect();
             }}>
                 {#if !group.tabs.length}
-                    <div class="empty-group"><img src={icon} alt="labloom" /><p>{commands.newPage.label} {commands.newPage.shortcut}</p><p>{commands.search.label} {commands.search.shortcut}</p><p>{commands.settings.label} {commands.settings.shortcut}</p></div>
+                    <div class="empty-group"><img src={icon} alt="" />
+                        {#each ["newPage", "search", "settings"] as const as id (id)}<p>{commandLabel(id)} <kbd class="ui-shortcut">{commands[id].shortcut}</kbd></p>{/each}
+                    </div>
                 {/if}
                 {#each group.tabs as tab (tab.id)}
                     <Tabs.Content value={tab.id} aria-hidden={group.activeTabId !== tab.id} tabindex={group.activeTabId === tab.id ? 0 : -1}>
@@ -42,6 +44,11 @@
         min-width: 0;
         min-height: 0;
 
+        &:focus-visible {
+            outline: var(--ui-focus-width) solid var(--ui-focus);
+            outline-offset: calc(-1 * var(--ui-focus-width));
+        }
+
         & > :global(.group-root) {
             display: flex;
             flex-direction: column;
@@ -55,9 +62,7 @@
         flex: 1;
         overflow: clip;
         min-height: 0;
-        background-color: var(--c-cream);
-        background-image: radial-gradient(var(--c-dots, #d9cfb9) .85px, transparent .85px);
-        background-size: 18px 18px;
+        background: var(--ui-surface-window);
 
         & > :global([data-tabs-content]) {
             position: absolute;
@@ -77,17 +82,18 @@
         align-items: center;
         justify-content: center;
         min-height: 100%;
-        padding: 30px;
+        padding: var(--ui-space-6);
         text-align: center;
     }
-    .empty-group img { width: 80px; filter: grayscale(1); opacity: .22; margin-bottom: 16px; }
-    .empty-group p { margin: 4px 0; color: var(--c-muted); font-size: var(--font-body); }
+    .empty-group img { width: var(--ui-empty-logo-size); filter: grayscale(1); opacity: .22; margin-bottom: var(--ui-space-5); }
+    .empty-group p { margin: var(--ui-space-2) 0; color: var(--ui-text-secondary); font: var(--ui-font-body)/1.3 var(--ui-font-family); }
 </style>
 
 
 <script lang="ts">
     import { acceptTabDrop, dropTab } from "./interactions";
     import icon from "../../assets/icon.png";
+    import { commandLabel, t } from "../../i18n.svelte";
     import { commands } from "../../../shared/content/commands";
     import { Tabs } from "bits-ui";
     import GroupHeader from "./GroupHeader.svelte";

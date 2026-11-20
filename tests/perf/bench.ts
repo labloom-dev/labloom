@@ -63,7 +63,8 @@ function workspaceScale(): void {
         measure("A | read ordinary page", 10, () => () => assert.equal(service.get(target).children.length, 9));
         measure("A | first page of list", 20, () => () => assert.equal(service.list({ limit: 30 }).items.length, 30));
         measure("A | keyword, 100 matching pages", 1000, () => () => {
-            const result = service.list({ keyword: "quasar", limit: 30 });
+            const result = service.searchPages("quasar", 0, 30);
+            assert.ok(result.items.every(page => page.match.field === "body" && page.match.snippet === "quasar"));
             assert.equal(result.items.length, 30);
             assert.equal(result.total, 100);
         });

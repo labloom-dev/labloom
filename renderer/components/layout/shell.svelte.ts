@@ -1,7 +1,7 @@
 import { defaultSettings } from "../../../shared/settings/defaults";
 import { type Settings } from "../../../shared/settings/Settings";
 
-export const shell = $state({ ...defaultSettings.layout, search: false });
+export const shell = $state({ ...defaultSettings.layout, search: false, query: "", commandStart: false });
 let pending = 0, sequence = 0, revision = -1;
 let saved: Settings["layout"] = defaultSettings.layout;
 export function applyPanel(value: Settings["layout"], nextRevision: number): void {
@@ -23,4 +23,17 @@ export function persistPanel(): void {
 }
 export function togglePanel(): void {
     shell.collapsed = !shell.collapsed; persistPanel();
+}
+
+let searchOrigin: HTMLElement | null = null;
+export function showSearch(commandMode: boolean, origin = document.activeElement): void {
+    if (!shell.search) searchOrigin = origin instanceof HTMLElement ? origin : null;
+    shell.commandStart = commandMode;
+    if (commandMode) shell.query = ">";
+    shell.search = true;
+}
+export function restoreSearchFocus(): void {
+    const origin = searchOrigin;
+    searchOrigin = null;
+    if (origin?.isConnected) origin.focus({ preventScroll: true });
 }

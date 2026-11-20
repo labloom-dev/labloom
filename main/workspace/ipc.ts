@@ -8,6 +8,7 @@ type Args<Key extends keyof typeof workspaceChannels> = Parameters<WorkspaceAPI[
 
 const routes = {
     loadTabs: route(typia.createAssert<Args<"loadTabs">>(invalid), workspace.loadTabs),
+    loadNavigation: route(typia.createAssert<Args<"loadNavigation">>(invalid), workspace.loadNavigation),
     saveTabs: route(typia.createAssert<Args<"saveTabs">>(invalid), workspace.saveTabs)
 } satisfies Routes<WorkspaceAPI>;
 export function registerWorkspaceIPCs(window: BrowserWindow): void {

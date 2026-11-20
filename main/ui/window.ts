@@ -19,11 +19,7 @@ export function createWindow(applicationLog: LogFile | null): void {
     const bounds = settings.get().settings.window;
     const mainWindow = new BrowserWindow({
         ...(process.platform !== "darwin" ? {
-            titleBarOverlay: {
-                color: "#fffdf7",
-                symbolColor: "#302c25",
-                height: 32
-            }
+            titleBarOverlay: { height: 32 }
         } : {}),
         width: bounds.width,
         height: bounds.height,

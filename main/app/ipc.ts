@@ -9,6 +9,9 @@ export function registerAppIPCs(window: BrowserWindow): void {
     const contents = window.webContents;
     register(contents, appChannels, {
         openDevTools: route(typia.createAssert<Args<"openDevTools">>(invalid), () => contents.openDevTools({ mode: "detach" })),
+        setFrameColors: route(typia.createAssert<Args<"setFrameColors">>(invalid), (color, symbolColor) => {
+            if (process.platform !== "darwin" && !window.isDestroyed()) window.setTitleBarOverlay({ color, symbolColor });
+        }),
         editorStarted: route(typia.createAssert<Args<"editorStarted">>(invalid), () => lifecycle.editorStarted(contents)),
         beforeQuitResult: route(typia.createAssert<Args<"beforeQuitResult">>(invalid), (id, blocked) => lifecycle.saveResult(contents, id, blocked))
     } satisfies Messages<AppMessages>, on);

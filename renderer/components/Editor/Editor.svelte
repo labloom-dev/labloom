@@ -9,7 +9,7 @@
                     menu = !menu; picker = null;
                 }} oncontextmenu={event => {
                     event.preventDefault(); event.stopPropagation(); menu = true; picker = null;
-                }}>⠿</button>
+                }}><Icon name="gripper" size="1em" /></button>
                 {#if handle.shared}
                     <button class="unsync" onmousedown={keep} onclick={() => act("unsync")}>解除此位置的同步</button>
                 {/if}
@@ -17,8 +17,8 @@
                     <div class="block-menu">
                     <div class="conversion"><button onmousedown={keep} onkeydown={event => {
                         if (event.key === "ArrowRight") (event.currentTarget.nextElementSibling?.querySelector("button") as HTMLButtonElement)?.focus();
-                    }}>转换为 ▸</button><div class="conversion-list compact-menu">
-                        {#each kinds as item (item[0])}<button class="compact-item" onmousedown={keep} onclick={() => convert(item[0])}><span class="kind-icon">{kindIcons[item[0]]}</span>{item[1]}<kbd>{conversionShortcuts[item[0]] ?? ""}</kbd></button>{/each}
+                    }}>转换为 <Icon name="chevron-right" size="1em" /></button><div class="conversion-list compact-menu">
+                        {#each kinds as item (item[0])}<button class="compact-item" onmousedown={keep} onclick={() => convert(item[0])}><span class="kind-icon"><Icon name={kindIcons[item[0]]} size={14} /></span>{item[1]}<kbd>{conversionShortcuts[item[0]] ?? ""}</kbd></button>{/each}
                     </div></div>
 
                         {#if handle.kind === "table"}
@@ -37,6 +37,7 @@
             </div>
         {/if}
     </div>
+<span hidden bind:this={linkGlyph}><Icon name="link-external" size="1em" /></span>
 <div class="compact-menu body-context" popover="auto" bind:this={contextMenu} role="menu" onkeydown={contextKeys}>
     {#each bodyMenu as item (item.label)}<button class="compact-item" role="menuitem" onmousedown={keep} onclick={() => { contextMenu?.hidePopover(); item.run(); }}>{item.label}<kbd>{item.shortcut}</kbd></button>{/each}
 </div>
@@ -80,7 +81,7 @@
     .editor :global([data-kind=code] > p) { font-family: "JetBrains Mono",monospace; }
     .editor :global(.sync-block) { outline: 2px solid var(--dc-c-fg-blue, #4878b9); outline-offset: -1px; border-radius: 4px; padding-inline: 6px; }
     .editor :global(.inline-reference) { color: var(--dc-c-fg-blue); border-bottom: 1px dashed; cursor: pointer; white-space: nowrap; }
-    .editor :global(.ProseMirror-selectednode) { background: var(--c-selection); }
+    .editor :global(.ProseMirror-selectednode) { background: var(--ui-text-selection); }
     .editor :global(table) { border-collapse: collapse; width: 100%; table-layout: fixed; }
     .editor :global(td), .editor :global(th) { border: 1px solid var(--c-line); padding: 4px 8px; }
     .handle { position: absolute; z-index: 7; }
@@ -99,14 +100,16 @@
     .preview { position: fixed; z-index: 55; inset: auto; margin: 0; width: min(320px, 80vw); pointer-events: none; }
 </style>
 <script lang="ts">
+    import Icon, { type IconName } from "../utils/Icon.svelte";
     import { LabloomError } from "../../../shared/failure";
     import { mount, onMount, unmount, untrack } from "svelte";
     import { Editor, Extension } from "@tiptap/core";
     import History from "@tiptap/extension-history";
-    import { type Node as DocNode } from "@tiptap/pm/model";
+    import { DOMSerializer, type Node as DocNode } from "@tiptap/pm/model";
     import { TextSelection, type SelectionBookmark } from "@tiptap/pm/state";
     import type { EditorView } from "@tiptap/pm/view";
     import { Mapping, type Step } from "@tiptap/pm/transform";
+    import { commandLabel } from "../../i18n.svelte";
     import { conversionShortcuts, commands } from "../../../shared/content/commands";
     import { registerEditing, type EditingCommand } from "../layout/commands";
     import { openTarget } from "../layout/navigation";
@@ -121,7 +124,7 @@
     import ReferenceView from "../Knowledge/ReferenceView.svelte";
     import TargetPicker from "../Knowledge/TargetPicker.svelte";
     import Toolbar from "./Toolbar.svelte";
-    import { blankBlock, blockData, blockJSON, canNest, documentEdit, documentExtensions, indexDoc, kindOf, pageDocument, referenceBlock, removesReference, subtree } from "./document";
+    import { blankBlock, blockData, blockJSON, canNest, documentEdit, documentExtensions, indexDoc, inlineReference, kindOf, pageDocument, referenceBlock, removesReference, subtree } from "./document";
     import { clipboardRows, editing, located, remoteEdit, selectionIn, syncInsert } from "./transactions";
     import { pasteBlocks, readClipboard, writeClipboard, type BlockClipboard } from "./clipboard";
     import { borders, borderPlugin } from "./sync-border";
@@ -129,6 +132,7 @@
     import { anchors } from "../Tab/anchors";
     let { session, tabId, pageAnchor = false }: { session: PageSession; tabId: string; pageAnchor?: boolean } = $props();
     let root: HTMLDivElement, host: HTMLDivElement, editor = $state.raw<Editor | null>(null);
+    let linkGlyph: HTMLSpanElement;
     let contextMenu = $state<HTMLDivElement>();
     let workspaceId = "", pasting = $state(false);
     type PasteChoice = { clipboard: BlockClipboard; bookmark: SelectionBookmark; x: number; y: number };
@@ -137,10 +141,13 @@
     type Handle = { id: string; pos: number; top: number; left: number; kind: ContentBlockKind; shared: boolean; folded: boolean; children: boolean };
     let handle = $state.raw<Handle | null>(null), menu = $state(false), picker = $state<"inline" | "reference" | "sync" | null>(null);
     let caret: SelectionBookmark | null = null, preview = $state.raw<{ target: Target; pos: number; x: number; y: number } | null>(null);
-    const kindIcons: Record<string, string> = { paragraph: "¶", heading_1: "H₁", heading_2: "H₂", heading_3: "H₃", unordered_list: "•", ordered_list: "1.", blockquote: "❞", callout: "ⓘ", code: "‹›", table: "▦", hr: "—" };
+    const kindIcons: Record<typeof kinds[number][0], IconName> = {
+        paragraph: "paragraph", heading_1: "heading-1", heading_2: "heading-2", heading_3: "heading-3",
+        unordered_list: "list-unordered", ordered_list: "list-ordered", blockquote: "quote", callout: "info", code: "code", table: "table", hr: "horizontal-rule"
+    };
     let pickerPosition = $state<{ x: number; y: number } | null>(null), pickerBounds = $state({ left: 0, right: window.innerWidth, bottom: window.innerHeight });
     let hoveredReference: HTMLElement | null = null, previewTimer: ReturnType<typeof setTimeout> | undefined;
-    const bodyMenu: { label: string; shortcut: string; run: () => void }[] = [...(["cut", "copy", "paste"] as const).map(id => ({ label: commands[id].label, shortcut: commands[id].shortcut, run: () => editingCommand(id) })), { label: "插入行内引用", shortcut: "", run: () => editingCommand("inlineReference") }];
+    const bodyMenu: { label: string; shortcut: string; run: () => void }[] = $derived([...(["cut", "copy", "paste"] as const).map(id => ({ label: commandLabel(id), shortcut: commands[id].shortcut, run: () => editingCommand(id) })), { label: "插入行内引用", shortcut: "", run: () => editingCommand("inlineReference") }]);
     function editingCommand(command: EditingCommand): void {
         if (!editor) return;
         if (command === "inlineReference") {
@@ -399,6 +406,14 @@
                 };
             }
         });
+        // Only the live view uses an icon. Serialized references retain their clipboard text.
+        const link = inlineReference.configure({
+            nodeView: ({ node }) => {
+                const dom = DOMSerializer.fromSchema(node.type.schema).serializeNode(node.mark([])) as HTMLElement;
+                dom.replaceChildren(linkGlyph.firstElementChild!.cloneNode(true), " ", node.attrs.label);
+                return { dom };
+            }
+        });
         const history = History.extend({
             addProseMirrorPlugins: () => [], addCommands: () => ({
                 undo: () => ({ dispatch }) => {
@@ -416,7 +431,7 @@
         let held: { maps: Mapping } | null = null;
         const instance = new Editor({
             element: inputHost, content: pageDocument(page), editable: !locked,
-            extensions: [...documentExtensions.filter(e => e !== referenceBlock), card, history, editing, Extension.create({ name: "syncBorders", addProseMirrorPlugins: () => [borderPlugin(() => session.state.page?.sharedUses ?? {})] })],
+            extensions: [...documentExtensions.filter(e => e !== referenceBlock && e !== inlineReference), card, link, history, editing, Extension.create({ name: "syncBorders", addProseMirrorPlugins: () => [borderPlugin(() => session.state.page?.sharedUses ?? {})] })],
             editorProps: {
                 attributes: { tabindex: "0" },
                 handleKeyDown(_view, event) {

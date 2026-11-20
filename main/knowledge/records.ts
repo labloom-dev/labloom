@@ -3,10 +3,11 @@ import { resolveAttributeDefinition } from "../../shared/attrs/definitions";
 import { search } from "../../shared/attrs/format";
 import { decodeValue, emptyValue, encodeValue, nullable, record, validUUID } from "../../shared/attrs/values";
 import { blockText, payload, validateBlock, validTarget } from "../../shared/content/blocks";
+import { matchRanges } from "../../shared/content/matches";
 import { resolveTimeZone } from "../../shared/content/time";
 import { LabloomError } from "../../shared/failure";
 import { type AttributeDefinition, type AttributeValue } from "../../shared/types/attributes";
-import { pageKinds, type Backlink, type ContentBlock, type LinkTarget, type PageKind, type PageList, type PageObjects, type PageQuery, type PageRecord, type PageSummary, type ResolvedTarget, type Target } from "../../shared/types/content";
+import { pageKinds, type Backlink, type ContentBlock, type LinkTarget, type PageKind, type PageList, type PageObjects, type PageQuery, type PageRecord, type PageSummary, type PageSearchResult, type ResolvedTarget, type Target } from "../../shared/types/content";
 import { type blocks, type pages } from "../storage/tables";
 import * as workspace from "../workspace-state";
 
@@ -51,7 +52,7 @@ export function initialize(): void {
             definitions.set(id, cached);
         }
         const names: Record<string, string> = fileNames ? JSON.parse(fileNames) : {};
-        return search(cached.definition, decodeValue(cached.definition, stored), { zone, fileName: id => names[id] }).toLocaleLowerCase();
+        return search(cached.definition, decodeValue(cached.definition, stored), { zone, fileName: id => names[id] });
     });
     sql.function("knowledge_lower", { deterministic: true }, (value: string) => value.toLocaleLowerCase());
 
@@ -203,6 +204,36 @@ function excerpt(ids: string[], blocks: Record<string, ContentBlock>): string {
     return text.slice(0, 240);
 }
 
+// The same formatted attribute value can belong to many pages (tags, dates, options).
+// Format each distinct value once, then use page_attrs_by_value to find its pages.
+const attributeHits = `distinct_values AS MATERIALIZED (
+    SELECT attr_id, value FROM page_attrs WHERE value IS NOT NULL GROUP BY attr_id, value
+), matched_values AS MATERIALIZED (
+    SELECT v.attr_id, v.value FROM distinct_values v JOIN attrs_meta a ON a.id=v.attr_id
+    WHERE instr(knowledge_lower(${attributeText()}), @keyword)>0
+), attribute_hits AS (
+    SELECT p.page_id AS id, min(m.attr_id) AS attr FROM matched_values m
+    JOIN page_attrs p ON p.attr_id=m.attr_id AND p.value=m.value GROUP BY p.page_id
+)`;
+
+function attributeText(): string {
+    return `knowledge_search(a.id,a.type,a.name,a.metadata,v.value,@zone,
+        CASE WHEN a.type IN ('file','files') THEN (
+            SELECT json_group_object(f.id,f.original_name) FROM attachments f
+            JOIN json_each(CASE a.type WHEN 'file' THEN json_array(v.value) ELSE v.value END) j ON j.value=f.id
+        ) END)`;
+}
+
+const blockHits = `block_hits(id) AS MATERIALIZED (
+    SELECT b.id FROM blocks b WHERE instr(knowledge_lower(knowledge_text(b.type,b.content)), @keyword)>0
+), owners(kind,id) AS (
+    SELECT 'block', id FROM block_hits
+    UNION SELECT u.container_kind,u.container_id FROM owners o JOIN sync_refs u ON u.block_id=o.id WHERE o.kind='block'
+)`;
+const searchMatches = `WITH RECURSIVE ${blockHits}, ${attributeHits}, matches(id) AS (
+    SELECT id FROM owners WHERE kind='page' UNION SELECT id FROM attribute_hits
+) `;
+
 function listRows(query: PageQuery): { selected: ListRow[]; total: number } {
     if (!record(query) || (query.kind && !pageKinds.includes(query.kind)) || (query.keyword !== undefined && typeof query.keyword !== "string") ||
         (query.pinned !== undefined && typeof query.pinned !== "boolean") || (query.deleted !== undefined && typeof query.deleted !== "boolean") ||
@@ -244,20 +275,9 @@ function listRows(query: PageQuery): { selected: ListRow[]; total: number } {
     const keyword = query.keyword?.trim().toLocaleLowerCase();
     let cte = "";
     if (keyword) {
-        cte = `WITH RECURSIVE hits(kind,id) AS (
-            SELECT 'block', b.id FROM blocks b WHERE instr(knowledge_lower(knowledge_text(b.type,b.content)), ?) > 0
-            UNION SELECT u.container_kind, u.container_id FROM hits h JOIN sync_refs u ON u.block_id=h.id WHERE h.kind='block'
-        ), matches(id) AS (
-            SELECT id FROM hits WHERE kind='page'
-            UNION SELECT v.page_id FROM page_attrs v JOIN attrs_meta a ON a.id=v.attr_id
-            WHERE v.value IS NOT NULL AND instr(knowledge_search(a.id,a.type,a.name,a.metadata,v.value,?,
-                CASE WHEN a.type IN ('file','files') THEN (
-                    SELECT json_group_object(f.id,f.original_name) FROM attachments f
-                    JOIN json_each(CASE a.type WHEN 'file' THEN json_array(v.value) ELSE v.value END) j ON j.value=f.id
-                ) END),?) > 0
-        ) `;
+        cte = searchMatches;
         where.push("p.id IN (SELECT id FROM matches)");
-        params.unshift(keyword, resolveTimeZone(workspace.timeZone()), keyword);
+        params.unshift({ keyword, zone: resolveTimeZone(workspace.timeZone()) });
     }
     const from = " FROM pages p JOIN page_attrs d ON d.page_id=p.id AND d.attr_id='deleted'";
     const filter = " WHERE " + where.join(" AND ");
@@ -292,6 +312,67 @@ export function list(query: PageQuery = {}): PageList {
     workspace.requireWorkspace();
     const { selected, total } = listRows(query);
     return { items: summaries(selected), total };
+}
+
+type SearchRow = ListRow & { field: "title" | "body" | "attribute"; attr: string | null; name: string | null; text: string | null };
+
+// Within each selected page follow only the first matching branch, in document order.
+// UNION in owners deduplicates shared subtrees regardless of how often they occur.
+const searchSQL = searchMatches + `, ranked AS MATERIALIZED (
+    SELECT p.id, p.kind, p.title_block_id AS titleBlockId, p.children, a.attr, s.value AS modified,
+        CASE WHEN p.title_block_id IN block_hits THEN 'title'
+             WHEN p.id IN (SELECT id FROM owners WHERE kind='page') THEN 'body' ELSE 'attribute' END AS field,
+        count(*) OVER() AS total
+    FROM matches m JOIN pages p ON p.id=m.id
+    JOIN page_attrs d ON d.page_id=p.id AND d.attr_id='deleted' AND d.value=0
+    JOIN page_attrs s ON s.page_id=p.id AND s.attr_id='modified_at'
+    LEFT JOIN attribute_hits a ON a.id=p.id
+    ORDER BY (field='title') DESC, s.value DESC, p.id LIMIT @limit OFFSET @offset
+), walk(page,kind,id) AS (
+    SELECT id,'page',id FROM ranked WHERE field='body'
+    UNION ALL
+    SELECT w.page,'block',(
+        SELECT r.block_id FROM sync_refs r
+        WHERE r.container_kind=w.kind AND r.container_id=w.id AND r.slot='children'
+          AND r.block_id IN (SELECT id FROM owners WHERE kind='block') ORDER BY r.position LIMIT 1
+    ) FROM walk w WHERE w.kind='page' OR w.id NOT IN block_hits
+), body AS (
+    SELECT w.page, b.type, b.content FROM walk w JOIN blocks b ON b.id=w.id WHERE w.kind='block' AND w.id IN block_hits
+)
+SELECT r.*, a.name, CASE r.field WHEN 'body' THEN knowledge_text(b.type,b.content)
+    WHEN 'attribute' THEN ${attributeText()} END AS text FROM ranked r
+LEFT JOIN body b ON b.page=r.id
+LEFT JOIN page_attrs v ON r.field='attribute' AND v.page_id=r.id AND v.attr_id=r.attr
+LEFT JOIN attrs_meta a ON a.id=v.attr_id
+ORDER BY (r.field='title') DESC, r.modified DESC, r.id`;
+
+export function searchPages(keyword: string, offset = 0, limit = 30): { items: PageSearchResult[]; total: number } {
+    workspace.requireWorkspace();
+    if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1) throw new LabloomError({ kind: "page-invalid-range" });
+    keyword = keyword.trim().toLocaleLowerCase();
+    if (!keyword) return { items: [], total: 0 };
+    const params = { keyword, zone: resolveTimeZone(workspace.timeZone()) };
+    const rows = statement(searchSQL).all({ ...params, offset, limit }) as SearchRow[];
+    const pages = summaries(rows);
+    const items = rows.map((row, index): PageSearchResult => {
+        const page = pages[index];
+        if (row.field === "title") return { ...page, match: { field: "title" } };
+        const snippet = matchSnippet(row.text!, keyword);
+        if (row.field === "body") return { ...page, match: { field: "body", snippet } };
+        const id = row.attr!;
+        return { ...page, match: { field: "attribute", id, name: row.name ?? definition(id)!.name, snippet } };
+    });
+    const total = rows[0]?.total ?? (offset ? statement(searchMatches +
+        "SELECT count(*) FROM matches m JOIN page_attrs d ON d.page_id=m.id AND d.attr_id='deleted' AND d.value=0").pluck().get(params) as number : 0);
+    return { items, total };
+}
+
+function matchSnippet(text: string, keyword: string): string {
+    const [first, last] = matchRanges(text, keyword).next().value!;
+    let start = Math.max(0, first - 36), end = Math.min(text.length, last + 36);
+    if (start && /[\uDC00-\uDFFF]/u.test(text[start])) start--;
+    if (end < text.length && /[\uDC00-\uDFFF]/u.test(text[end])) end++;
+    return (start ? "…" : "") + text.slice(start, end) + (end < text.length ? "…" : "");
 }
 
 export function listUpdates(query: PageQuery, unchanged: string[]): PageList & { order: string[] } {

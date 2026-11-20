@@ -1,7 +1,7 @@
 <section class="workspace-page">
     <header class="page-heading"><div><h1>偏好设置</h1><p>让这个小小的知识花园，更合你的心意。</p></div><span class="badge">保存在本机，所有工作区通用</span></header>
     <section class="paper-card settings-card">
-        <h2><Icon name="settings" size={20} />外观与阅读</h2>
+        <h2><Icon name="settings-gear" size={20} />外观与阅读</h2>
         <div class="setting-row"><div><label for="language">{t("language.label")}</label><p>{t("language.hint")}</p></div><select id="language" disabled={!appearance.loaded || appearance.saving} bind:value={appearance.language} onchange={saveAppearance}><option value="zh-CN">简体中文</option><option value="en">English</option></select></div>
         <div class="setting-row"><div><strong>暖纸主题</strong><p>奶油色纸张、柔和配色与手绘小植物。</p></div><select aria-label="主题" disabled={!appearance.loaded || appearance.saving} bind:value={appearance.theme} onchange={saveAppearance}><option value="light">暖纸浅色</option><option value="dark">夜间花园</option><option value="system">跟随系统</option></select></div>
         <div class="setting-row"><div><label for="reading-size">正文字号</label><p>应用于订阅摘要与页面编辑器。</p></div><select id="reading-size" disabled={!appearance.loaded || appearance.saving} bind:value={appearance.readingSize} onchange={saveAppearance}><option value={14}>小，14 px</option><option value={16}>标准，16 px</option><option value={18}>大，18 px</option></select></div>

@@ -2,10 +2,7 @@
     <Popover.Trigger disabled={colorState.every(format => format.disabled)}>
         {#snippet child({ props })}
             <Toolbar.Button {...props} aria-label="文字与背景颜色" class={open ? "tool-button active" : "tool-button"} style={buttonStyle}>
-                <span class="icon">
-                    <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-                    {@html paletteIcon}
-                </span>
+                <Icon name="symbol-color" size="1.125rem" />
             </Toolbar.Button>
         {/snippet}
     </Popover.Trigger>
@@ -51,12 +48,11 @@
                     onclick={() => applyColor(format.name, color.value)}
                 >
                     <span
-                        class="icon color-icon"
+                        class="color-icon"
                         class:background={format.name === "bgColor" && color.value !== null}
                         style:color={color.value === null ? undefined : `var(--dc-c-${format.name === "fgColor" ? "fg" : "bg"}-${color.value})`}
                     >
-                        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-                        {@html format.icon}
+                        <Icon name={format.icon} size="1.375rem" />
                     </span>
                 </button>
             {/each}
@@ -75,16 +71,6 @@
         color: var(--dc-c-popover-text);
         background: transparent;
         font-size: .8125rem;
-    }
-    .icon {
-        display: inline-flex;
-        flex-shrink: 0;
-        width: 1.125rem;
-        height: 1.125rem;
-    }
-    .icon :global(svg) {
-        width: 100%;
-        height: 100%;
     }
     .color-menu {
         --dc-popover-available-height: var(--bits-popover-content-available-height);
@@ -141,10 +127,11 @@
         opacity: .4;
     }
     .color-icon {
+        display: inline-flex;
         width: 1.375rem;
         height: 1.375rem;
     }
-    .color-icon.background :global(svg) {
+    .color-icon.background :global(.icon) {
         color: hsl(from currentColor h s calc(l * .6));
     }
     .color-choice.active {
@@ -162,12 +149,10 @@
 </script>
 
 <script lang="ts">
+    import Icon, { type IconName } from "../utils/Icon.svelte";
     import { tick } from "svelte";
     import { SvelteSet } from "svelte/reactivity";
     import { Popover, Toolbar } from "bits-ui";
-    import paletteIcon from "../../assets/carbon--color-palette.svg?raw";
-    import fgColorIcon from "../../assets/carbon--text-color.svg?raw";
-    import bgColorIcon from "../../assets/carbon--text-highlight.svg?raw";
 
     let { editor, anchor, element = $bindable(null), open = $bindable(false) }: {
         editor: Editor | null;
@@ -180,7 +165,7 @@
     type ColorFormatState = {
         name: ColorMark;
         label: string;
-        icon: string;
+        icon: IconName;
         keys: string[];
         active: ActiveColor;
         disabled: boolean;
@@ -212,9 +197,9 @@
         { value: "pink", label: "粉" },
         { value: "magenta", label: "品红" }
     ];
-    const colorFormats: { name: ColorMark; label: string; icon: string; keys: string[] }[] = [
-        { name: "fgColor", label: "前景色", icon: fgColorIcon, keys: [..."1234567QWERTYU"] },
-        { name: "bgColor", label: "背景色", icon: bgColorIcon, keys: [..."ASDFGHJZXCVBNM"] }
+    const colorFormats: { name: ColorMark; label: string; icon: IconName; keys: string[] }[] = [
+        { name: "fgColor", label: "前景色", icon: "text-color", keys: [..."1234567QWERTYU"] },
+        { name: "bgColor", label: "背景色", icon: "text-highlight", keys: [..."ASDFGHJZXCVBNM"] }
     ];
     const keyColors = new Map<string, { name: ColorMark; value: string | null }>(colorFormats.flatMap(format => format.keys.map((key, index) => [
         `${/\d/.test(key) ? "Digit" : "Key"}${key}`,

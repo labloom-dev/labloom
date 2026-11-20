@@ -1,0 +1,137 @@
+/* VS Code Light Modern / Dark Modern. Only the palette contains literal colors. */
+:root {
+    --ui-p-canvas: #ffffff;
+    --ui-p-neutral-1: #f8f8f8;
+    --ui-p-hover: #f2f2f2;
+    --ui-p-list-selection: #e8e8e8;
+    --ui-p-neutral-4: #e5e5e5;
+    --ui-p-neutral-5: #cecece;
+    --ui-p-neutral-6: #767676;
+    --ui-p-neutral-7: #616161;
+    --ui-p-neutral-8: #3b3b3b;
+    --ui-p-neutral-9: #000000;
+    --ui-p-field: #ffffff;
+    --ui-p-check-gray: #cecece;
+    --ui-p-check-hover-gray: #3b3b3b;
+    --ui-p-list-selection-inactive: #e5ebf1;
+    --ui-p-match-blue: #0066bf;
+    --ui-p-selection-blue: #add6ff;
+    --ui-p-blue: #005fb8;
+    --ui-p-blue-hover: #0258a8;
+    --ui-p-red: #c72e0f;
+    --ui-p-red-hover: #a4260d;
+    --ui-p-white: #ffffff;
+    --ui-p-shadow: #0003;
+    --ui-p-scrim: #0005;
+    --ui-p-clear: transparent;
+}
+
+:root[data-theme="dark"] {
+    --ui-p-canvas: #1f1f1f;
+    --ui-p-neutral-1: #181818;
+    --ui-p-hover: #2a2d2e;
+    --ui-p-list-selection: #04395e;
+    --ui-p-neutral-4: #2b2b2b;
+    --ui-p-neutral-5: #3c3c3c;
+    --ui-p-neutral-6: #989898;
+    --ui-p-neutral-7: #9d9d9d;
+    --ui-p-neutral-8: #cccccc;
+    --ui-p-neutral-9: #ffffff;
+    --ui-p-field: #313131;
+    --ui-p-check-gray: #989898;
+    --ui-p-check-hover-gray: #cccccc;
+    --ui-p-list-selection-inactive: #37373d;
+    --ui-p-match-blue: #2aaaff;
+    --ui-p-selection-blue: #264f78;
+    --ui-p-blue: #0078d4;
+    --ui-p-blue-hover: #026ec1;
+    --ui-p-red: #b63426;
+    --ui-p-red-hover: #c53b2d;
+    --ui-p-shadow: #0009;
+    --ui-p-scrim: #0008;
+}
+
+:root {
+    --ui-surface-window: var(--ui-p-canvas);
+    --ui-surface-panel: var(--ui-p-neutral-1);
+    --ui-surface-popup: var(--ui-p-canvas);
+    --ui-surface-input: var(--ui-p-field);
+    --ui-surface-clear: var(--ui-p-clear);
+    --ui-surface-scrim: var(--ui-p-scrim);
+    --ui-text: var(--ui-p-neutral-8);
+    --ui-text-secondary: var(--ui-p-neutral-7);
+    --ui-text-disabled: var(--ui-p-neutral-6);
+    --ui-text-placeholder: var(--ui-p-neutral-6);
+    --ui-text-on-accent: var(--ui-p-white);
+    --ui-text-selected: var(--ui-p-neutral-9);
+    --ui-border: var(--ui-p-neutral-4);
+    --ui-border-input: var(--ui-p-neutral-5);
+    --ui-border-check: var(--ui-p-check-gray);
+    --ui-border-check-hover: var(--ui-p-check-hover-gray);
+    --ui-divider: var(--ui-p-neutral-4);
+    --ui-hover: var(--ui-p-hover);
+    --ui-pressed: var(--ui-p-neutral-5);
+    --ui-text-selection: var(--ui-p-selection-blue);
+    --ui-selected: var(--ui-p-list-selection);
+    --ui-selected-inactive: var(--ui-p-list-selection-inactive);
+    --ui-text-match: var(--ui-p-match-blue);
+    --ui-titlebar-background: var(--ui-surface-panel);
+    --ui-titlebar-foreground: var(--ui-text);
+    --ui-focus: var(--ui-p-blue);
+    --ui-accent: var(--ui-p-blue);
+    --ui-accent-hover: var(--ui-p-blue-hover);
+    --ui-danger: var(--ui-p-red);
+    --ui-danger-hover: var(--ui-p-red-hover);
+    --ui-shadow-popup: 0 2px 8px var(--ui-p-shadow);
+    --ui-shadow-dialog: 0 8px 32px var(--ui-p-shadow);
+
+    --ui-font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+    --ui-font-small: 12px;
+    --ui-font-body: 14px;
+    --ui-font-title: 20px;
+    --ui-titlebar-height: 32px;
+    --ui-activity-width: 48px;
+    --ui-activity-item-height: 48px;
+    --ui-tabbar-height: 35px;
+    --ui-search-width: 600px;
+    --ui-search-list-height: 360px;
+    --ui-tab-min-width: 80px;
+    --ui-tab-max-width: 210px;
+    --ui-empty-logo-size: 80px;
+    --ui-sash-size: 4px;
+    --ui-sash-delay: 300ms;
+    --ui-active-border: 2px;
+    --ui-toolbar-height: 32px;
+    --ui-row-height: 24px;
+    --ui-button-height: 26px;
+    --ui-input-height: 26px;
+    --ui-icon-small: 12px;
+    --ui-icon-normal: 16px;
+    --ui-icon-large: 20px;
+    --ui-space-1: 2px;
+    --ui-space-2: 4px;
+    --ui-space-3: 8px;
+    --ui-space-4: 12px;
+    --ui-space-5: 16px;
+    --ui-space-6: 24px;
+    --ui-radius-small: 2px;
+    --ui-radius-control: 4px;
+    --ui-radius-panel: 6px;
+    --ui-stroke: 1px;
+    --ui-focus-width: 1px;
+    --ui-focus-offset: 1px;
+
+    /* All portalled to the document body, in ascending paint order. */
+    --ui-z-dropdown: 100;
+    --ui-z-popover: 200;
+    --ui-z-tooltip: 300;
+    --ui-z-dialog: 400;
+    --ui-z-context-menu: 500;
+    --ui-duration-fast: 90ms;
+    --ui-duration-normal: 150ms;
+}
+
+:root[data-motion="off"] {
+    --ui-duration-fast: 0ms;
+    --ui-duration-normal: 0ms;
+}

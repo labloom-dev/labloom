@@ -24,7 +24,7 @@
                             <button class="text-button" disabled={isBuiltin(draft.id) && !editableBuiltinMetadata(draft.id)} onclick={() => draft!.metadata.options = draft!.metadata.options!.filter(item => item.id !== option.id)}>移除</button></div>
                     {/each}
                 </div>
-                <button class="text-button" disabled={isBuiltin(draft.id) && !editableBuiltinMetadata(draft.id)} onclick={addOption}>＋ 添加选项</button>
+                <button class="text-button" disabled={isBuiltin(draft.id) && !editableBuiltinMetadata(draft.id)} onclick={addOption}><Icon name="add" size="1em" /> 添加选项</button>
             {/if}
             <footer><button class="button primary" disabled={busy} onclick={() => apply(draft)}>保存定义</button>{#if !isBuiltin(draft.id)}<button class="button" disabled={busy} onclick={() => apply(null)}>删除属性</button>{/if}</footer>
             {#if error}<p class="error">{message(error)}</p>{/if}
@@ -47,6 +47,7 @@
     footer { margin-top: 12px; }
 </style>
 <script lang="ts">
+    import Icon from "../utils/Icon.svelte";
     import { failure, message, type ErrorValue } from "../../i18n.svelte";
     import { tick } from "svelte";
     import { attributeTypes, type AttributeDefinition, type AttributeType } from "../../../shared/types/attributes";

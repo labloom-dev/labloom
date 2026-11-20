@@ -21,6 +21,7 @@ function values(): Appearance {
     return { theme: appearance.theme, readingSize: appearance.readingSize, motion: appearance.motion, timeZone: appearance.timeZone, language: appearance.language };
 }
 
+let frameColors = "";
 function apply(): void {
     const dark = appearance.theme === "dark"
         || (appearance.theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
@@ -28,6 +29,12 @@ function apply(): void {
     document.documentElement.dataset.motion = appearance.motion ? "on" : "off";
     document.documentElement.style.setProperty("--reading-font-size", `${appearance.readingSize}px`);
     setLocale(appearance.language);
+    const style = getComputedStyle(document.documentElement);
+    const color = style.getPropertyValue("--ui-titlebar-background").trim(), symbol = style.getPropertyValue("--ui-titlebar-foreground").trim();
+    if (color && symbol && frameColors !== color + symbol) {
+        frameColors = color + symbol;
+        window.api.app.setFrameColors(color, symbol);
+    }
 }
 
 
@@ -72,6 +79,7 @@ export async function saveAppearance(): Promise<void> {
 export function initializeAppearance(): () => void {
     const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
     systemTheme.addEventListener("change", apply);
+    apply();
     const off = window.api.settings.onChanged(receive);
     void loadAppearance();
     return () => {

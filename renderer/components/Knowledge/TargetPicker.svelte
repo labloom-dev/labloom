@@ -13,7 +13,7 @@
         <p class="error">{message(error)}</p>
     {/if}
     {#if chosen}
-        <button class="text-button" onclick={() => chosen = null}>← 返回页面列表</button>
+        <button class="text-button" onclick={() => chosen = null}><Icon name="arrow-left" size="1em" /> 返回页面列表</button>
         <div class="results">
             {#each orderedBlocks as { block, key, depth } (key)}
                 <button style:padding-left={4 + depth * 16 + "px"} onclick={() => onselect({ kind: "block", id: block.id }, label(block))}>{label(block)}<small>{blockKindNames[block.type]}</small></button>
@@ -42,6 +42,7 @@
     small { margin-left: 12px; color: var(--c-muted); }
 </style>
 <script lang="ts">
+    import Icon from "../utils/Icon.svelte";
     import { failure, message, type ErrorValue } from "../../i18n.svelte";
     import { type ContentBlock, type PageSummary, type PageRecord, type Target } from "../../../shared/types/content";
     import { blockText } from "../../../shared/content/blocks";

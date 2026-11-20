@@ -1,4 +1,5 @@
 <div class="reader" onkeydown={onkeydown} oncopy={copySelection}>
+    <span hidden bind:this={noteGlyph}><Icon name="comment" size={16} /></span>
     <Toolbar
         bind:this={toolbar}
         disabled={status.kind !== "ready"}
@@ -140,6 +141,7 @@
 
 
 <script lang="ts">
+    import Icon from "../utils/Icon.svelte";
     import type { FailureInfo } from "../../../shared/failure";
     import { message, t } from "../../i18n.svelte";
     import { onMount, untrack } from "svelte";
@@ -386,6 +388,7 @@
         view.div.appendChild(layer);
     }
 
+    let noteGlyph: HTMLSpanElement;
     function paintHighlights(): void {
         if (!pdf) return;
         container.querySelectorAll(".knowledge-highlights").forEach(layer => layer.remove());
@@ -408,7 +411,7 @@
                 const rect = anchor.rectangles[0];
                 const [x, y] = view.viewport.convertToViewportPoint(rect.x + rect.width, rect.y + rect.height);
                 const note = document.createElement("button");
-                note.textContent = "▤";
+                note.appendChild(noteGlyph.firstElementChild!.cloneNode(true));
                 note.title = "编辑批注";
                 note.setAttribute("aria-label", "编辑批注");
                 Object.assign(note.style, { position: "absolute", left: `${x}px`, top: `${y - 18}px`, width: "22px", height: "22px", background: "var(--c-paper)", color: "var(--c-ink)", border: "1px solid var(--c-line)", borderRadius: "4px", pointerEvents: "auto", cursor: "pointer", fontSize: "16px", lineHeight: "20px" });

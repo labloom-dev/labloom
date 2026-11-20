@@ -1,5 +1,9 @@
 import { LabloomError } from "../failure";
-export type WorkspaceSettings = { tabs: unknown | null; feedKeywords: string[] };
+export type RecentPage = { id: string; openedAt: number };
+export type WorkspaceNavigation = { expandedGroups: string[]; recentPages: RecentPage[] };
+export const defaultExpandedGroups = ["pinned", "independent"];
+export const recentPageLimit = 50;
+export type WorkspaceSettings = { tabs: unknown | null; feedKeywords: string[] } & Partial<WorkspaceNavigation>;
 export type WorkspaceSettingsPatch = Partial<WorkspaceSettings>;
 export function normalizeKeywords(value: unknown): string[] {
     if (!Array.isArray(value) || value.some(word => typeof word !== "string")) throw new LabloomError({ kind: "feed-invalid-keywords" });
