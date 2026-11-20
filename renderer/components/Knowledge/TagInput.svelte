@@ -1,7 +1,7 @@
 <div class="tags-input" bind:this={root} onfocusout={event => {
     if (!event.currentTarget.contains(event.relatedTarget as Node)) open = false;
 }}>
-    {#each chosen as option (option.id)}<span class="capsule">{option.name}<button aria-label={`取消${option.name}`} disabled={disabled || busy} onclick={() => onchange(selected.filter(id => id !== option.id))}>×</button></span>{/each}
+    {#each chosen as option (option.id)}<span class="capsule">{option.name}<button aria-label={`取消${option.name}`} disabled={disabled || busy} onclick={() => onchange(selected.filter(id => id !== option.id))}><Icon name="close" size="1em" /></button></span>{/each}
     <input aria-label="标签" placeholder="添加标签…" {disabled} bind:value={query} onfocus={() => open = true} oninput={() => open = true} onclick={() => open = true} onkeydown={keydown} />
     {#if open && !disabled}
         <div class="tag-options" popover="manual" role="listbox" aria-label="可选标签" {@attach element => {
@@ -23,6 +23,7 @@
     .error { color: var(--c-reader-error-text); font-size: var(--font-min); }
 </style>
 <script lang="ts">
+    import Icon from "../utils/Icon.svelte";
     import { failure, message, type ErrorValue } from "../../i18n.svelte";
     import type { AttributeDefinition, AttributeValue } from "../../../shared/types/attributes";
     import { copyData } from "../copy-data";

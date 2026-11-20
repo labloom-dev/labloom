@@ -11,7 +11,6 @@
     --c-muted: #776e5d;
     --c-line: #e3dccb;
     --c-shadow: 3px 4px 0 var(--c-ink);
-    --c-selection: #f2cc7880;
     --c-navbar-background: var(--c-paper);
     --c-sidebar-background: var(--c-paper);
     --c-tab-header-background: #f2ecdd;
@@ -20,7 +19,6 @@
     --c-resizer-background: #c5b58e;
 
     /* Editor surfaces */
-    --dc-c-selection: #f2cc7880;
     --dc-c-paragraph-background: /*#f0f8ff*/transparent;
     --dc-c-code-background: #f3ecd9;
     --dc-c-drop-cursor: #a7782e;
@@ -151,8 +149,6 @@
     --c-search-placeholder: #a69a85;
     --c-search-heading: #b9ae99;
     --c-search-secondary-text: #b9ae99;
-    --c-selection: #b38b4980;
-    --dc-c-selection: #b38b4980;
     --dc-c-accent: #e0b96d;
     --dc-c-popover-border: #68604c;
     --dc-c-drop-cursor: #e0b96d;

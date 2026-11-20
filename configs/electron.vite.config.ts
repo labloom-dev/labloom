@@ -45,12 +45,16 @@ export default defineConfig({
         plugins: [
             typia({ include: [/[/\\]Tab[/\\]restore\.ts$/], tsconfig: resolve("configs/tsconfig.web.json") }),
             svelte({ configFile: resolve("configs/svelte.config.js") }),
-            // pdf.js fetches these at runtime, see renderer/components/Reader/pdfjs.ts.
+            // Serve PDF.js runtime assets and the licenses for bundled fonts and icons.
             viteStaticCopy({
                 targets: [{
                     src: "../node_modules/pdfjs-dist/{cmaps,iccs,standard_fonts,wasm}/*",
                     dest: "pdfjs",
                     rename: { stripBase: 2 }
+                }, {
+                    src: "assets/fonts/*.txt",
+                    dest: "licenses",
+                    rename: { stripBase: true }
                 }]
             })
         ]

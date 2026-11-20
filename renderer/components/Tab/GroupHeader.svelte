@@ -17,7 +17,7 @@
                     <Tabs.Trigger value={tab.id} onclick={() => {
                         activateTab(tab.id); if (tab.view.type === "page") void focusEditor(tab.id);
                     }}>
-                        <span>{title.current}</span>{#if tabDirty(tab.id)}<span class="dirty" aria-label="未保存">●</span>{/if}{#if slowTabs.has(tab.id)}<span class="sync-mark" role="status" aria-label="正在同步">↻</span>{/if}
+                        <span>{title.current}</span>{#if tabDirty(tab.id)}<span class="dirty" aria-label="未保存"><Icon name="circle-small-filled" size="1em" /></span>{/if}{#if slowTabs.has(tab.id)}<span class="sync-mark" role="status" aria-label="正在同步"><Icon name="sync" size="1em" /></span>{/if}
                     </Tabs.Trigger>
                     <button class="close-tab" aria-label={`关闭${title.current}`} title={`关闭${title.current}`} onclick={event => {
                         event.stopPropagation(); removeTab(tab.id);
@@ -27,12 +27,10 @@
         {/each}
     </Tabs.List>
     <button class="group-tool" title={commands.splitRight.label + " (" + commands.splitRight.shortcut + ")"} aria-label="向右拆分" onclick={() => split("horizontal")}>
-        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-        {@html split_right}
+        <Icon name="split-horizontal" size={15} />
     </button>
     <button class="group-tool" title={commands.splitDown.label} aria-label="向下拆分" onclick={() => split("vertical")}>
-        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-        {@html split_down}
+        <Icon name="split-vertical" size={15} />
     </button>
     <button class="group-tool" title="合并标签组" aria-label="合并标签组" disabled={tabState.groups.length === 1} onclick={merge}><Icon name="close" size={12} /></button>
 </div>
@@ -47,7 +45,6 @@
     .dirty, .sync-mark { font-size: var(--font-min); }
     button { display: grid; place-items: center; width: var(--button-height); height: var(--button-height); flex-shrink: 0; border-radius: var(--control-radius); color: var(--c-muted); }
     button:hover:not(:disabled) { background: var(--c-gold-light); color: var(--c-ink); }
-    button :global(svg) { width: 15px; height: 15px; }
     .close-tab { position: absolute; right: 3px; opacity: 0; }
     .tab:hover .close-tab, .tab.active .close-tab, .tab:focus-within .close-tab { opacity: 1; }
 </style>
@@ -67,8 +64,6 @@
     import { tabState } from "./state.svelte";
     import { slowTabs, visits } from "./activity.svelte";
     import { tabDirty } from "./dirty.svelte";
-    import split_right from "../../assets/custom--split-right.svg?raw";
-    import split_down from "../../assets/custom--split-down.svg?raw";
     let { group }: { group: TabGroup } = $props();
     let header = $state<HTMLDivElement | null>(null);
     async function focusEditor(id: TabID): Promise<void> {

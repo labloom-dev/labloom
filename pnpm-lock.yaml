@@ -187,6 +187,9 @@ importers:
       '@tiptap/pm':
         specifier: ^3.31.3
         version: 3.31.3
+      '@vscode/codicons':
+        specifier: 0.0.46-24
+        version: 0.0.46-24
       better-sqlite3:
         specifier: ^13.0.3
         version: 13.0.3
@@ -224,6 +227,9 @@ importers:
       '@eslint/json':
         specifier: ^2.1.0
         version: 2.1.0
+      '@fluentui/svg-icons':
+        specifier: ^1.1.346
+        version: 1.1.346
       '@napi-rs/canvas':
         specifier: 1.0.9
         version: 1.0.9
@@ -953,6 +959,9 @@ packages:
   '@floating-ui/utils@0.2.12':
     resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
 
+  '@fluentui/svg-icons@1.1.346':
+    resolution: {integrity: sha512-pR/ksxLi0Y1O8D1Mk/rEF5Z1TIOSFWDOoN4gkgAUkezakHjTYUVru1yG/bRdvlQnUOMCXESIFIq9eGRFsAVYRA==}
+
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
     engines: {node: '>=18.18.0'}
@@ -1673,6 +1682,9 @@ packages:
 
   '@typia/utils@12.2.1':
     resolution: {integrity: sha512-SI83b5G/Tplk5nxmwjVwazV97AOf1aC6Rrbb3A1PXbauwa+W0Os2+Xmn7KqGgJNm2Iq4chm94CheHKZihZnqiA==}
+
+  '@vscode/codicons@0.0.46-24':
+    resolution: {integrity: sha512-KIDWUYxG6eh+DHRg+3G4bS487T+g1ZkLfB4HylOBbCcHsvLdfLMRM/m92DS1Ljhi8nglLr9ucwwWhHTEAC+DpA==}
 
   '@xmldom/xmldom@0.8.15':
     resolution: {integrity: sha512-/5NV/vDALVFDXgLmfsy9TRCBlKwO2LNBFzpzvb9iIj+jR+eSc6DLYYvVOdivT/jm7MtU6TebYuRmzEOI7w40UA==}
@@ -4298,6 +4310,8 @@ snapshots:
 
   '@floating-ui/utils@0.2.12': {}
 
+  '@fluentui/svg-icons@1.1.346': {}
+
   '@humanfs/core@0.19.2':
     dependencies:
       '@humanfs/types': 0.15.0
@@ -4886,6 +4900,8 @@ snapshots:
   '@typia/utils@12.2.1':
     dependencies:
       '@typia/interface': 12.2.1
+
+  '@vscode/codicons@0.0.46-24': {}
 
   '@xmldom/xmldom@0.8.15': {}
 

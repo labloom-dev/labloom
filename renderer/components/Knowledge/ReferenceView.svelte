@@ -2,7 +2,7 @@
     {#if pending}
         <span>正在读取引用…</span>
     {:else if targetValue}
-        <button onclick={openTarget}>↗ {targetValue.title || "空块"}{targetValue.status === "recycled" ? "（已回收）" : ""}</button>
+        <button onclick={openTarget}><Icon name="link-external" size="1em" /> {targetValue.title || "空块"}{targetValue.status === "recycled" ? "（已回收）" : ""}</button>
         {#if expanded || target.kind === "page"}
             <p>{targetValue.text}</p>
         {/if}
@@ -17,6 +17,7 @@
     .missing { border-style: dashed; color: var(--c-muted); }
 </style>
 <script lang="ts">
+    import Icon from "../utils/Icon.svelte";
     import { untrack } from "svelte";
     import { type Target, type ResolvedTarget } from "../../../shared/types/content";
     import { openPage } from "../layout/navigation";

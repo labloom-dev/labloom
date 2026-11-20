@@ -1,5 +1,5 @@
 <section aria-busy={pending}>
-    <button class="group-name" aria-expanded={expanded} onclick={() => expanded = !expanded}>{expanded ? "⌄" : "›"} {title}</button>
+    <button class="group-name" aria-expanded={expanded} onclick={() => expanded = !expanded}><Icon name={expanded ? "chevron-down" : "chevron-right"} size="1em" /> {title}</button>
     {#if expanded}
         {#each rows as page (page.id)}
             <ContextActions items={pageMenu(page, workspaceHistory)}>

@@ -24,7 +24,7 @@
             <span>在共享属性中添加第一个标签</span>
         {/each}
         {#each params.tags.filter(id => !definitions.find(def => def.id === "tags")?.metadata.options?.some(option => option.id === id)) as id (id)}
-            <button onclick={() => change({ tags: params.tags.filter(tag => tag !== id) })}>找不到标签 {id} ×</button>
+            <button onclick={() => change({ tags: params.tags.filter(tag => tag !== id) })}>找不到标签 {id} <Icon name="close" size="1em" /></button>
         {/each}
     </div>
     <details class="property-filters">
@@ -44,7 +44,7 @@
         {#each Object.entries(filters) as [id, value] (id)}
             <button class="filter-chip" onclick={() => {
                 change({ filters: params.filters.filter(f => f.attribute.id !== id) });
-            }}>{definitions.find(item => item.id === id)?.name ?? `找不到属性 ${id}`}：{attributeText(id, value)} ×</button>
+            }}>{definitions.find(item => item.id === id)?.name ?? `找不到属性 ${id}`}：{attributeText(id, value)} <Icon name="close" size="1em" /></button>
         {/each}
     </details>
     {#if error}<div class="notice error">{message(error)}<button onclick={() => retry++}>{t("dialog.retry")}</button></div>{/if}

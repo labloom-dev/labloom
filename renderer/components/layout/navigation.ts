@@ -28,12 +28,12 @@ export const destinationViews: Record<Destination, View> = {
 
 export const destinations = [
     { type: "overview", icon: "home" },
-    { type: "feed", icon: "feed" },
+    { type: "feed", icon: "rss" },
     { type: "library", icon: "library" },
     { type: "papers", icon: "book" },
     { type: "calendar", icon: "calendar" },
-    { type: "settings", icon: "settings" },
-    { type: "attributes", icon: "settings" },
+    { type: "settings", icon: "settings-gear" },
+    { type: "attributes", icon: "settings-gear" },
     { type: "about", icon: "home" }
 ] satisfies { type: Destination; icon: IconName }[];
 

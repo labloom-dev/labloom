@@ -1,12 +1,10 @@
 <div class="toolbar">
     <div class="group">
         <button aria-label="上一页" disabled={disabled || pageNumber <= 1} onclick={previousPage}>
-            <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-            {@html chevron_up}
+            <Icon name="chevron-up" size={16} />
         </button>
         <button aria-label="下一页" disabled={disabled || pageNumber >= pagesCount} onclick={nextPage}>
-            <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-            {@html chevron_down}
+            <Icon name="chevron-down" size={16} />
         </button>
         <input
             class="page-input"
@@ -23,8 +21,7 @@
 
     <div class="group">
         <button aria-label="缩小" {disabled} onclick={zoomOut}>
-            <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-            {@html zoom_out}
+            <Icon name="zoom-out" size={16} />
         </button>
         <select aria-label="缩放比例" {disabled} value={scaleOption} onchange={event => setScale(parseScale(event.currentTarget.value))}>
             {#each presetOptions as option (option.value)}
@@ -38,19 +35,16 @@
             {/if}
         </select>
         <button aria-label="放大" {disabled} onclick={zoomIn}>
-            <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-            {@html zoom_in}
+            <Icon name="zoom-in" size={16} />
         </button>
         <button aria-label="旋转页面" {disabled} onclick={rotate}>
-            <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-            {@html rotate_clockwise}
+            <Icon name="rotate-clockwise" size={16} />
         </button>
     </div>
 
     <div class="group search">
         <span class="icon">
-            <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-            {@html search}
+            <Icon name="search" size={16} />
         </span>
         <input
             type="search"
@@ -66,12 +60,10 @@
             {findText}
         </span>
         <button aria-label="上一个匹配" disabled={disabled || findStatus.kind !== "found"} onclick={() => find(query, true)}>
-            <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-            {@html chevron_up}
+            <Icon name="chevron-up" size={16} />
         </button>
         <button aria-label="下一个匹配" disabled={disabled || findStatus.kind !== "found"} onclick={() => find(query)}>
-            <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-            {@html chevron_down}
+            <Icon name="chevron-down" size={16} />
         </button>
     </div>
 </div>
@@ -116,10 +108,6 @@
         cursor: default;
         opacity: .4;
     }
-    button :global(svg), .icon :global(svg) {
-        width: 16px;
-        height: 16px;
-    }
     .icon {
         display: flex;
         padding-inline: 4px;
@@ -158,14 +146,9 @@
 
 
 <script lang="ts">
+    import Icon from "../utils/Icon.svelte";
     import type { ReaderFindStatus, ReaderScale } from "./defs";
     import { isScalePreset } from "./pdfjs";
-    import chevron_up from "../../assets/carbon--chevron-up.svg?raw";
-    import chevron_down from "../../assets/carbon--chevron-down.svg?raw";
-    import zoom_in from "../../assets/carbon--zoom-in.svg?raw";
-    import zoom_out from "../../assets/carbon--zoom-out.svg?raw";
-    import rotate_clockwise from "../../assets/carbon--rotate-clockwise.svg?raw";
-    import search from "../../assets/carbon--search.svg?raw";
 
     type Props = {
         disabled: boolean;

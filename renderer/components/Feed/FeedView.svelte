@@ -3,7 +3,7 @@
         <div class="heading-copy"><h1>订阅动态</h1></div>
         <p class="summary-line" role="status">{summary}</p>
         <button disabled={!enabled.length || refreshing > 0} onclick={() => refresh()}><Icon name="refresh" size={15} />{refreshing ? "正在刷新…" : "刷新全部"}</button>
-        <button class="primary" onclick={() => openForm()}><Icon name="plus" size={15} />添加来源</button>
+        <button class="primary" onclick={() => openForm()}><Icon name="add" size={15} />添加来源</button>
     </header>
     {#if error}
         <p class="error banner" role="alert"><span>{message(error)}</span><button onclick={() => error = ""}>{t("dialog.close")}</button></p>
@@ -148,13 +148,13 @@
                             <span class="excerpt">{item.summary || "来源未提供摘要。"}</span>
                         </button>
                         {#if item.url}
-                            <button class="origin" title="在浏览器中打开原文" onclick={() => openOriginal(item.id)}>原文<Icon name="arrow" size={12} /></button>
+                            <button class="origin" title="在浏览器中打开原文" onclick={() => openOriginal(item.id)}>原文<Icon name="arrow-right" size={12} /></button>
                         {/if}
                     </div>
                 {:else}
                     {#if loaded}
                         <div class="empty-state">
-                            <Icon name="feed" size={30} />
+                            <Icon name="rss" size={30} />
                             {#if !active.length && !sourceId}
                                 <strong>还没有新知来信</strong>
                                 <p>添加论文或博客的订阅来源，开始获取更新。</p>

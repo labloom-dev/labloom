@@ -25,9 +25,9 @@
     <div class="calendar-layout">
         <section class="paper-card month-card">
             <header>
-                <button class="button" onclick={() => shift(-1)}>←</button>
+                <button class="button" aria-label="上个月" onclick={() => shift(-1)}><Icon name="arrow-left" size="1em" /></button>
                 <h2>{month.getUTCFullYear()} 年 {month.getUTCMonth() + 1} 月</h2>
-                <button class="button" onclick={() => shift(1)}>→</button>
+                <button class="button" aria-label="下个月" onclick={() => shift(1)}><Icon name="arrow-right" size="1em" /></button>
                 <button class="text-button" onclick={() => {
                     now = nowSeconds(); viewedMonth = undefined; selectedDay = undefined;
                 }}>今天</button>

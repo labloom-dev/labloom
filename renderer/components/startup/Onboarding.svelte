@@ -27,15 +27,12 @@
             {/if}
             <div class="actions">
                 <button class="choice primary" disabled={pending || !state.canChoose} onclick={() => onchoose("create")}>
-                    <span class="symbol">＋</span>
+                    <span class="symbol"><Icon name="add" size={28} /></span>
                     <strong>{t("startup.create")}</strong>
                     <span>{t("startup.createHint")}</span>
                 </button>
                 <button class="choice" disabled={pending || !state.canChoose} onclick={() => onchoose("open")}>
-                    <svg class="folder" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                        <path d="M3 7V5a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7Z" />
-                        <path d="M3 9h18" />
-                    </svg>
+                    <span class="symbol"><Icon name="folder-opened" size={28} /></span>
                     <strong>{t("startup.open")}</strong>
                     <span>{t("startup.openHint")}</span>
                 </button>
@@ -147,11 +144,9 @@
         font-size: 13px;
         line-height: 1.5;
     }
-    .symbol, .folder {
+    .symbol {
         color: var(--c-accent);
         height: 28px;
-    }
-    .symbol {
         font-size: 28px;
         line-height: 28px;
     }
@@ -203,6 +198,7 @@
 
 
 <script lang="ts">
+    import Icon from "../utils/Icon.svelte";
     import Bloom from "../utils/Bloom.svelte";
     import icon from "../../assets/icon.png";
     import type { StartupState, WorkspaceAction } from "../../../shared/types/startup";

@@ -1,7 +1,6 @@
 <div class="search-input">
     <span class="search-icon">
-        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-        {@html search}
+        <Icon name="search" size={20} />
     </span>
     <input placeholder="搜索页面或命令…" autocomplete="off" spellcheck="false" bind:value={keyword} onkeydown={onkeydown} />
 </div>
@@ -74,8 +73,8 @@
 
 
 <script lang="ts">
+    import Icon from "../utils/Icon.svelte";
     import { failure, message, type ErrorValue } from "../../i18n.svelte";
-    import search from "../../assets/carbon--search.svg?raw";
     import { type PageSummary } from "../../../shared/types/content";
     import { commands, runCommand } from "../layout/commands";
     import { openPage } from "../layout/navigation";

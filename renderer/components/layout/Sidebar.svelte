@@ -2,7 +2,7 @@
     {#each destinations.filter(item => ["overview", "feed", "library", "papers", "calendar"].includes(item.type)) as item (item.type)}
         <button class:active={sameView(activeView, destinationViews[item.type])} aria-label={title(item.type)} title={tooltip(item.type)} onclick={() => openView(destinationViews[item.type])}><Icon name={item.icon} size={20} /></button>
     {/each}
-    <button class="settings" class:active={sameView(activeView, destinationViews.settings)} aria-label={title("settings")} title={tooltip("settings")} onclick={() => openDestination("settings")}><Icon name="settings" /></button>
+    <button class="settings" class:active={sameView(activeView, destinationViews.settings)} aria-label={title("settings")} title={tooltip("settings")} onclick={() => openDestination("settings")}><Icon name="settings-gear" size={20} /></button>
 </nav>
 {#if !shell.collapsed}
     <aside class="left-panel" style:width={shell.width + "px"}>

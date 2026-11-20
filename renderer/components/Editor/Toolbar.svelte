@@ -16,14 +16,7 @@
                         disabled={format.disabled}
                         onclick={() => editor?.chain().focus().toggleMark(format.name).run()}
                     >
-                        {#if format.icon}
-                            <span class="icon">
-                                <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-                                {@html format.icon}
-                            </span>
-                        {:else}
-                            {format.label}
-                        {/if}
+                        <Icon name={format.icon} size="1.125rem" />
                     </Toolbar.Button>
                 {/each}
                 <span class="separator"></span>
@@ -34,24 +27,15 @@
                     disabled={!toolbarState.canClear}
                     onclick={clearFormat}
                 >
-                    <span class="icon">
-                        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-                        {@html clearIcon}
-                    </span>
+                    <Icon name="clear-formatting" size="1.125rem" />
                 </Toolbar.Button>
                 <span class="separator"></span>
                 <div class="history-actions">
                     <Toolbar.Button class="tool-button" aria-label="撤销" disabled={!toolbarState.ready || !(session.state.dirty || session.state.history.canUndo)} onclick={() => editor?.chain().focus().undo().run()}>
-                        <span class="icon">
-                            <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-                            {@html undoIcon}
-                        </span>
+                        <Icon name="undo" size="1.125rem" />
                     </Toolbar.Button>
                     <Toolbar.Button class="tool-button" aria-label="重做" disabled={!toolbarState.ready || !session.state.history.canRedo || session.state.dirty} onclick={() => editor?.chain().focus().redo().run()}>
-                        <span class="icon">
-                            <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-                            {@html redoIcon}
-                        </span>
+                        <Icon name="redo" size="1.125rem" />
                     </Toolbar.Button>
                 </div>
             </div>
@@ -108,16 +92,6 @@
     .toolbar :global(button.active) {
         background-color: var(--dc-c-surface-focus);
     }
-    .icon {
-        display: inline-flex;
-        flex-shrink: 0;
-        width: 1.125rem;
-        height: 1.125rem;
-    }
-    .icon :global(svg) {
-        width: 100%;
-        height: 100%;
-    }
     .separator {
         width: 1px;
         height: 1rem;
@@ -128,18 +102,11 @@
 
 
 <script lang="ts">
+    import Icon, { type IconName } from "../utils/Icon.svelte";
     import type { Editor } from "@tiptap/core";
     import { TextSelection } from "@tiptap/pm/state";
     import { Toolbar } from "bits-ui";
     import Color from "./Color.svelte";
-    import boldIcon from "../../assets/carbon--text-bold.svg?raw";
-    import italicIcon from "../../assets/carbon--text-italic.svg?raw";
-    import underlineIcon from "../../assets/carbon--text-underline.svg?raw";
-    import strikeIcon from "../../assets/carbon--text-strikethrough.svg?raw";
-    import clearIcon from "../../assets/carbon--text-clear-format.svg?raw";
-    import codeIcon from "../../assets/carbon--code.svg?raw";
-    import undoIcon from "../../assets/carbon--undo.svg?raw";
-    import redoIcon from "../../assets/carbon--redo.svg?raw";
 
     import { type PageSession } from "../Knowledge/page-session.svelte";
     let { editor, session }: { editor: Editor; session: PageSession } = $props();
@@ -148,12 +115,12 @@
     let colorOpen = $state(false);
 
     const formats = [
-        { name: "bold", label: "加粗", icon: boldIcon },
-        { name: "italic", label: "斜体", icon: italicIcon },
-        { name: "underline", label: "下划线", icon: underlineIcon },
-        { name: "strike", label: "删除线", icon: strikeIcon },
-        { name: "code", label: "行内代码", icon: codeIcon }
-    ];
+        { name: "bold", label: "加粗", icon: "bold" },
+        { name: "italic", label: "斜体", icon: "italic" },
+        { name: "underline", label: "下划线", icon: "underline" },
+        { name: "strike", label: "删除线", icon: "strikethrough" },
+        { name: "code", label: "行内代码", icon: "code" }
+    ] as const;
     let toolbarState = $state(readState(null));
 
     function clearFormat(): void {
@@ -167,7 +134,7 @@
     }
 
     function readState(instance: Editor | null): {
-        formats: { name: string; label: string; icon: string | null; active: boolean; disabled: boolean }[];
+        formats: { name: string; label: string; icon: IconName; active: boolean; disabled: boolean }[];
         canClear: boolean;
         ready: boolean;
     } {

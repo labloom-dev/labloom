@@ -1,10 +1,4 @@
-@font-face {
-    font-family: "Nunito";
-    src: url("../assets/fonts/nunito.ttf") format("truetype");
-    font-style: normal;
-    font-weight: 200 900;
-    font-display: swap;
-}
+@import "./ui-tokens.css";
 
 @font-face {
     font-family: "JetBrains Mono";
@@ -25,11 +19,11 @@
 }
 
 ::selection {
-    background-color: var(--c-selection);
+    background-color: var(--ui-text-selection);
 }
 
 ::-moz-selection {
-    background-color: var(--c-selection);
+    background-color: var(--ui-text-selection);
 }
 
 body {
@@ -39,7 +33,7 @@ body {
     color: var(--c-ink);
     background: var(--c-cream);
     font-size: var(--font-body);
-    font-family: "Nunito", "PingFang SC", "Microsoft YaHei", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", Helvetica, "Apple Color Emoji", "Noto Sans Arabic", "Noto Sans Hebrew", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol";
+    font-family: var(--ui-font-family);
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;

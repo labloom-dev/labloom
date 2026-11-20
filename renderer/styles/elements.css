@@ -14,7 +14,7 @@ button {
 }
 
 .tiptap::selection, .tiptap *::selection {
-    background-color: var(--dc-c-selection);
+    background-color: var(--ui-text-selection);
 }
 
 .dc-paragraph {

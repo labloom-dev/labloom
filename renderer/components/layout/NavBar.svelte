@@ -1,6 +1,6 @@
 <header class="titlebar">
     <!-- Codicon layout-sidebar-left, Microsoft, CC BY 4.0: https://github.com/microsoft/vscode-codicons/blob/main/LICENSE; path unchanged. -->
-    <button class="panel-toggle" class:active={!shell.collapsed} aria-pressed={!shell.collapsed} aria-label={commands.sidebar.label} title={`${commands.sidebar.label} (${commands.sidebar.shortcut})`} onclick={() => runCommand("sidebar")}><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M12.5 1C13.881 1 15 2.119 15 3.5V12.5C15 13.881 13.881 15 12.5 15H3.5C2.119 15 1 13.881 1 12.5V3.5C1 2.119 2.119 1 3.5 1H12.5ZM12.5 14C13.328 14 14 13.328 14 12.5V3.5C14 2.672 13.328 2 12.5 2H7V14H12.5Z" /></svg></button>
+    <button class="panel-toggle" class:active={!shell.collapsed} aria-pressed={!shell.collapsed} aria-label={commands.sidebar.label} title={`${commands.sidebar.label} (${commands.sidebar.shortcut})`} onclick={() => runCommand("sidebar")}><Icon name="layout-sidebar-left" size={16} /></button>
     <button class="brand" onclick={() => openDestination("overview")} aria-label="知织首页"><img src={icon} alt="" /></button>
     <Menu />
     <div class="search"><GSLauncher /></div>
@@ -17,6 +17,7 @@
     @media (max-width: 850px) { .search { position: static; transform: none; flex: 1; width: auto; margin-inline: 8px; } }
 </style>
 <script lang="ts">
+    import Icon from "../utils/Icon.svelte";
     import icon from "../../assets/icon.png";
     import GSLauncher from "../globalSearch/GSLauncher.svelte";
     import Menu from "./Menu.svelte";

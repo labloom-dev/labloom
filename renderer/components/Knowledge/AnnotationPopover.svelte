@@ -1,6 +1,6 @@
 <section class="annotation-popover" popover="manual" {@attach element => element.showPopover()} role="dialog" aria-label="批注编辑器" style:left={left + "px"} style:top={top + "px"}>
     <header>
-        <span>批注{#if current.state.dirty || current.state.saving}<span aria-label="未保存">●</span>{/if}</span>
+        <span>批注{#if current.state.dirty || current.state.saving}<span aria-label="未保存"><Icon name="circle-small-filled" size="1em" /></span>{/if}</span>
         <button onclick={openInTab} disabled={closing}>在标签页中打开</button>
         <button onclick={close} disabled={closing}>关闭</button>
     </header>
@@ -21,6 +21,7 @@
     .error { color: var(--c-reader-error-text); }
 </style>
 <script lang="ts">
+    import Icon from "../utils/Icon.svelte";
     import { dirtyPages } from "../Tab/dirty.svelte";
     import { untrack } from "svelte";
     import Editor from "../Editor/Editor.svelte";

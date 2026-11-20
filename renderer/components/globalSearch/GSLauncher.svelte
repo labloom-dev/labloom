@@ -2,10 +2,7 @@
     <Popover.Trigger>
         {#snippet child({ props })}
             <button {...props} class="trigger">
-                <span class="search-icon">
-                    <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-                    {@html search}
-                </span>
+                <Icon name="search" size={16} />
                 <span>搜索…</span>
             </button>
         {/snippet}
@@ -52,16 +49,6 @@
         outline: var(--focus-width) solid var(--c-accent);
         outline-offset: var(--focus-offset);
     }
-    .search-icon {
-        display: flex;
-        width: 16px;
-        height: 16px;
-        flex-shrink: 0;
-    }
-    .search-icon :global(svg) {
-        width: 100%;
-        height: 100%;
-    }
     .popover-content {
         display: flex;
         flex-direction: column;
@@ -81,8 +68,8 @@
 
 
 <script lang="ts">
+    import Icon from "../utils/Icon.svelte";
     import { shell } from "../layout/shell.svelte";
     import { Popover } from "bits-ui";
     import GSPopover from "./GSPopover.svelte";
-    import search from "../../assets/carbon--search.svg?raw";
 </script>

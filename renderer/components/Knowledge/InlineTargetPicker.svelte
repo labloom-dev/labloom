@@ -6,7 +6,7 @@
     <input aria-label="搜索引用目标" placeholder="搜索页面…" bind:value={keyword} onkeydown={keys} />
     {#if chosen}<button class="compact-item" onclick={() => {
         chosen = null; active = 0;
-    }}>← {chosen.title}</button>{/if}
+    }}><Icon name="arrow-left" size="1em" /> {chosen.title}</button>{/if}
     <div class="results">
         {#each rows as row, index (row.key)}<button class="compact-item" class:active={index === active} onclick={() => choose(index)}>{row.label}<small>{row.kind}</small></button>{/each}
         {#if !rows.length}<p>没有找到页面</p>{/if}
@@ -23,6 +23,7 @@
     p { color: var(--c-muted); font-size: var(--font-secondary); }
 </style>
 <script lang="ts">
+    import Icon from "../utils/Icon.svelte";
     import { failure, message, type ErrorValue } from "../../i18n.svelte";
     import type { PageSummary, PageRecord, Target } from "../../../shared/types/content";
     import { blockText } from "../../../shared/content/blocks";
