@@ -6,6 +6,7 @@ dist
 .local
 .VSCodeCounter
 ~$*
+.claude/
 
 /交付材料/
 /course_docs/**/示例/
