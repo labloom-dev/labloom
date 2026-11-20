@@ -1,24 +1,22 @@
 <script lang="ts">
+    import { mergeProps } from "bits-ui";
+    import { type HTMLButtonAttributes } from "svelte/elements";
     import Icon, { type IconName } from "../utils/Icon.svelte";
     import Tooltip from "./Tooltip.svelte";
 
-    let { icon, label, shortcut, pressed, disabled = false, onclick }: {
+    let { icon, label, shortcut, pressed, size = "var(--ui-icon-normal)", class: className, ...attributes }: HTMLButtonAttributes & {
         icon: IconName;
         label: string;
         shortcut?: string;
         pressed?: boolean;
-        disabled?: boolean;
-        onclick?: (event: MouseEvent) => void;
+        size?: string;
     } = $props();
 </script>
 
 <Tooltip text={label} {shortcut}>
     {#snippet trigger({ props })}
-        <button {...props} type="button" class="ui-control ui-icon-button" aria-label={label} aria-pressed={pressed} {disabled} onclick={event => {
-            if (typeof props.onclick === "function") props.onclick(event);
-            onclick?.(event);
-        }}>
-            <Icon name={icon} size="var(--ui-icon-normal)" />
+        <button {...mergeProps(props, attributes)} type="button" class={["ui-control ui-icon-button", className]} aria-label={label} aria-pressed={pressed}>
+            <Icon name={icon} {size} />
         </button>
     {/snippet}
 </Tooltip>

@@ -1,6 +1,7 @@
+import { t } from "../../i18n.svelte";
 import { tick } from "svelte";
 import { visits } from "../Tab/activity.svelte";
-import type { IconName } from "../utils/Icon.svelte";
+import { type Destination } from "./destinations";
 import type { GroupID, Tab } from "../Tab/defs";
 import { activateTab, addTab, getTabID, splitGroup } from "../Tab/api";
 import { tabState } from "../Tab/state.svelte";
@@ -12,9 +13,10 @@ import { copyData } from "../copy-data";
 import { perform } from "../Knowledge/feedback.svelte";
 import { write } from "../Knowledge/page-sessions";
 
+export type { Destination } from "./destinations";
+
 const status = { kind: "attribute", id: "task_status", type: "status" } as const;
 const library: ViewParams["library"] = { scope: "all", sort: "modified", tags: [], filters: [] };
-export type Destination = Exclude<keyof ViewParams, "page"> | "papers";
 export const destinationViews: Record<Destination, View> = {
     overview: { type: "overview", params: { status } },
     library: { type: "library", params: library },
@@ -26,17 +28,6 @@ export const destinationViews: Record<Destination, View> = {
     about: { type: "about", params: {} }
 };
 
-export const destinations = [
-    { type: "overview", icon: "home" },
-    { type: "feed", icon: "rss" },
-    { type: "library", icon: "library" },
-    { type: "papers", icon: "book" },
-    { type: "calendar", icon: "calendar" },
-    { type: "settings", icon: "settings-gear" },
-    { type: "attributes", icon: "settings-gear" },
-    { type: "about", icon: "home" }
-] satisfies { type: Destination; icon: IconName }[];
-
 function canonical(_key: string, value: unknown): unknown {
     if (value && typeof value === "object" && !Array.isArray(value)) {
         return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0));
@@ -46,7 +37,7 @@ function canonical(_key: string, value: unknown): unknown {
 export function sameView(left: View | undefined, right: View): boolean {
     return left?.type === right.type && JSON.stringify(left.params, canonical) === JSON.stringify(right.params, canonical);
 }
-export function openView(view: View): Tab {
+function openView(view: View): Tab {
     const existing = tabState.groups.flatMap(group => group.tabs).find(tab => sameView(tab.view, view));
     if (existing) {
         activateTab(existing.id);
@@ -87,7 +78,7 @@ export function openPage(id: string, options: { duplicate?: boolean; anchorId?: 
 export async function openTarget(target: { kind: "page" | "block"; id: string }, otherGroup = false): Promise<void> {
     const resolved = await window.api.pages.resolve(target);
     if (!resolved || resolved.status === "deleted") {
-        const { notify } = await import("../Knowledge/feedback.svelte"); notify("目标已删除"); return;
+        const { notify } = await import("../Knowledge/feedback.svelte"); notify(t("shell.targetDeleted")); return;
     }
     if (target.kind === "page") openPage(target.id, { otherGroup });
     else {

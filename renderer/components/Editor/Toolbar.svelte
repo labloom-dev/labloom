@@ -242,7 +242,7 @@
         }
 
         function pointerDown(event: PointerEvent): void {
-            if (menu.contains(event.target as Node) || colorElement?.contains(event.target as Node) || event.target instanceof Element && event.target.closest(".menubar,.compact-menu,.block-menu")) return;
+            if (menu.contains(event.target as Node) || colorElement?.contains(event.target as Node) || event.target instanceof Element && event.target.closest(".menubar,[data-menubar-content],.compact-menu,.block-menu")) return;
             const inside = dom.contains(event.target as Node);
             selecting = event.button === 0 && inside;
             pointerSelection = selecting;

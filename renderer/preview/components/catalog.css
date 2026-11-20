@@ -8,7 +8,7 @@ body { background: var(--ui-surface-window); color: var(--ui-text); font: var(--
 .theme-tools { gap: 18px; }
 .theme-choice { padding: 2px; gap: 2px; border: 1px solid var(--ui-border-input); border-radius: var(--ui-radius-control); }
 .catalog { padding-block: 0 40px; }
-.catalog section { margin-top: 28px; }
+.catalog > section { margin-top: 28px; }
 .catalog h2 { margin: 0 0 12px; font-size: var(--ui-font-title); font-weight: 600; }
 .catalog h2 small { font-size: var(--ui-font-body); color: var(--ui-text-secondary); font-weight: 400; }
 .catalog h3, figcaption { margin: 0 0 10px; color: var(--ui-text-secondary); font-size: var(--ui-font-body); font-weight: 500; }

@@ -17,6 +17,7 @@ import * as commit from "../main/knowledge/commit";
 import * as events from "../main/knowledge/events";
 import { defaultSettings, minWindowHeight, minWindowWidth } from "../shared/settings/defaults";
 import { dayToSeconds } from "../shared/content/time";
+import { randomUUID } from "node:crypto";
 import { hasFailure } from "./failures";
 
 function folder(): string {
@@ -254,4 +255,22 @@ test("workspace keywords are read only from feedKeywords", t => {
         assert.deepEqual(workspaceSettings.get().feedKeywords, expected);
     }
     assert.equal(warnings.mock.callCount(), 1);
+});
+
+test("workspace navigation restores expanded groups and the last fifty distinct page visits", t => {
+    const opened = session.open(folder(), "create");
+    t.after(() => session.close());
+    assert.deepEqual(workspaceSettings.loadNavigation(), { expandedGroups: ["pinned", "independent"], recentPages: [] });
+    const tabs = { groups: [], focusedGroupId: "A", layout: { type: "group" as const, groupId: "A" } };
+    const entries = Array.from({ length: 55 }, (_, i) => ({ id: randomUUID(), openedAt: i }));
+    workspaceSettings.saveTabs(tabs, { expandedGroups: ["tag:A"], recentPages: [...entries, { ...entries[1], openedAt: Number.MAX_SAFE_INTEGER }, { ...entries[0], openedAt: 99 }] });
+    workspaceSettings.update({ feedKeywords: ["A"] });
+    session.close(); session.open(opened.info.path, "open");
+    const navigation = workspaceSettings.loadNavigation();
+    assert.deepEqual(navigation.expandedGroups, ["tag:A"]);
+    assert.deepEqual(navigation.recentPages.map(entry => entry.id), [entries[0], ...entries.slice(-49).reverse()].map(entry => entry.id));
+    assert.equal(navigation.recentPages[0].openedAt, 99);
+    workspaceSettings.saveTabs(tabs, { ...navigation, expandedGroups: [] });
+    session.close(); session.open(opened.info.path, "open");
+    assert.deepEqual(workspaceSettings.loadNavigation().expandedGroups, []);
 });

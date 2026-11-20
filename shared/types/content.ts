@@ -26,6 +26,8 @@ export type PageSummary = {
     excerpt: string;
     attributes: Record<string, AttributeValue>;
 };
+export type PageMatch = { field: "title" } | { field: "body"; snippet: string } | { field: "attribute"; id: string; name: string; snippet: string };
+export type PageSearchResult = PageSummary & { match: PageMatch };
 export type PageRecord = PageSummary & {
     titleBlockId: string;
     sharedUses?: Record<string, number>;

@@ -5,6 +5,7 @@
     import Checkbox from "../../components/base/Checkbox.svelte";
     import Input from "../../components/base/Input.svelte";
     import ListRow from "../../components/base/ListRow.svelte";
+    import ShellExample from "./ShellExample.svelte";
     import StateTable from "./StateTable.svelte";
     import OverlayExample, { overlayNames } from "./OverlayExample.svelte";
     import tokens from "../../styles/ui-tokens.css?raw";
@@ -78,6 +79,7 @@
         </div>
         <output class="feedback" aria-live="polite">{status}</output>
     </section>
+    <section><h2>外壳</h2><ShellExample /></section>
     <section><h2>控件状态</h2><StateTable /></section>
     <section>
         <h2>弹出状态</h2>

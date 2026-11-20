@@ -109,6 +109,7 @@
     import { TextSelection, type SelectionBookmark } from "@tiptap/pm/state";
     import type { EditorView } from "@tiptap/pm/view";
     import { Mapping, type Step } from "@tiptap/pm/transform";
+    import { commandLabel } from "../../i18n.svelte";
     import { conversionShortcuts, commands } from "../../../shared/content/commands";
     import { registerEditing, type EditingCommand } from "../layout/commands";
     import { openTarget } from "../layout/navigation";
@@ -146,7 +147,7 @@
     };
     let pickerPosition = $state<{ x: number; y: number } | null>(null), pickerBounds = $state({ left: 0, right: window.innerWidth, bottom: window.innerHeight });
     let hoveredReference: HTMLElement | null = null, previewTimer: ReturnType<typeof setTimeout> | undefined;
-    const bodyMenu: { label: string; shortcut: string; run: () => void }[] = [...(["cut", "copy", "paste"] as const).map(id => ({ label: commands[id].label, shortcut: commands[id].shortcut, run: () => editingCommand(id) })), { label: "插入行内引用", shortcut: "", run: () => editingCommand("inlineReference") }];
+    const bodyMenu: { label: string; shortcut: string; run: () => void }[] = $derived([...(["cut", "copy", "paste"] as const).map(id => ({ label: commandLabel(id), shortcut: commands[id].shortcut, run: () => editingCommand(id) })), { label: "插入行内引用", shortcut: "", run: () => editingCommand("inlineReference") }]);
     function editingCommand(command: EditingCommand): void {
         if (!editor) return;
         if (command === "inlineReference") {

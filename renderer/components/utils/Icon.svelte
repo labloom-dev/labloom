@@ -24,7 +24,7 @@
         "check", "chevron-down", "chevron-left", "chevron-right", "chevron-up", "circle-small-filled",
         "close", "code", "comment", "dash", "edit", "folder-opened", "gripper", "home",
         "horizontal-rule", "info", "italic", "layout-sidebar-left", "library", "link-external",
-        "list-ordered", "list-unordered", "quote", "refresh", "rss", "search",
+        "list-ordered", "list-unordered", "ellipsis", "quote", "refresh", "rss", "search",
         "settings-gear", "split-horizontal", "split-vertical", "strikethrough", "symbol-color",
         "sync", "table", "trash", "zoom-in", "zoom-out"
     ] as const;

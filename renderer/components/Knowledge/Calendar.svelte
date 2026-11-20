@@ -227,7 +227,7 @@
         }
     }
     function calendarMenu(page: PageSummary): { label: string; run: () => void }[] {
-        const items = pageMenu(page, source).filter(item => !["取消固定", "固定到侧栏"].includes(item.label)).map(item => ({ label: item.label, run: item.run }));
+        const items = pageMenu(page, source).filter(item => item.id !== "pin").map(item => ({ label: item.label, run: item.run }));
         if (canToggle(page)) items.push({ label: isComplete(statusValue(page)) ? "取消完成" : "完成任务", run: () => toggle(page.id) });
         return items;
     }

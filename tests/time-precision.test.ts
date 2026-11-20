@@ -152,12 +152,10 @@ test("definition preview and commit share conversion, invalidate undo, and refre
 });
 
 test("calendar search and grouping stay on the same day after changing zones and reopening", t => {
-    const { service, database, info, setZone } = fixture(t);
+    const { service, info, setZone } = fixture(t);
     const day = dayToSeconds("2026-11-11");
     const event = service.create("editable", "A", { schedule_date: day });
     const task = service.create("editable", "B", { schedule_date: day, schedule_start: instant });
-    // Keep system timestamps from also matching the date keyword under test.
-    database.prepare("UPDATE page_attrs SET value=? WHERE attr_id IN ('created_at','modified_at')").run(yearToSeconds("2000"));
     for (const timeZone of [zone, "UTC", "America/New_York"]) {
         setZone(timeZone);
         assert.deepEqual(new Set(service.list({ keyword: "2026-11" }).items.map(p => p.id)), new Set([event.id, task.id]));

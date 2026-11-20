@@ -61,6 +61,8 @@ export function isBuiltin(id: string): id is BuiltinAttrId {
 
 // Presentation overrides stay outside the serializable attribute definitions.
 export const builtinValueFormats: Partial<Record<BuiltinAttrId, { display?: AttributeFormat; search?: AttributeFormat }>> = {
+    created_at: { search: () => "" },
+    modified_at: { search: () => "" },
     recycle_reason: { search: () => "" },
     recycled_at: { search: () => "" },
     ...Object.fromEntries(["annotation_file", "annotation_position", "annotation_context", "annotation_extractor", "feed_last_refreshed", "feed_last_checked", "feed_last_added", "feed_error", "feed_failures", "feed_etag", "feed_last_modified"].map(id => [id, { search: () => "" }]))

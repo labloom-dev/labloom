@@ -1,15 +1,26 @@
 import { LabloomError } from "../shared/failure";
-import { normalizeKeywords, type WorkspaceSettings, type WorkspaceSettingsPatch } from "../shared/settings/workspace";
+import { defaultExpandedGroups, recentPageLimit, normalizeKeywords, type RecentPage, type WorkspaceNavigation, type WorkspaceSettings, type WorkspaceSettingsPatch } from "../shared/settings/workspace";
 import * as workspace from "./workspace-state";
 import * as data from "./knowledge/records";
 import * as commit from "./knowledge/commit";
-import { record } from "../shared/attrs/values";
+import { record, validUUID } from "../shared/attrs/values";
 import type { SavedTabs } from "../shared/workspace/tabs";
 
 function checkStoredLayout(value: unknown): void {
     if (!record(value) || !Array.isArray(value.groups) || !record(value.layout) || typeof value.focusedGroupId !== "string") throw new LabloomError({ kind: "tabs-invalid-layout" });
 }
 let settings: WorkspaceSettings | undefined;
+
+function recentPages(value: unknown): RecentPage[] {
+    if (!Array.isArray(value)) return [];
+    const latest = new Map<string, number>();
+    for (const entry of value) {
+        if (record(entry) && validUUID(entry.id) && typeof entry.openedAt === "number" && Number.isSafeInteger(entry.openedAt) && entry.openedAt >= 0 && Number.isFinite(new Date(entry.openedAt).getTime())) {
+            latest.set(entry.id, Math.max(entry.openedAt, latest.get(entry.id) ?? 0));
+        }
+    }
+    return [...latest].sort((a, b) => b[1] - a[1]).slice(0, recentPageLimit).map(([id, openedAt]) => ({ id, openedAt }));
+}
 
 function decode(value: unknown): WorkspaceSettings {
     const result: WorkspaceSettings = { tabs: null, feedKeywords: [] };
@@ -26,6 +37,8 @@ function decode(value: unknown): WorkspaceSettings {
             console.warn("Invalid workspace tab layout; using defaults", error);
         }
     }
+    if (Array.isArray(input.expandedGroups) && input.expandedGroups.every(key => typeof key === "string")) result.expandedGroups = [...new Set<string>(input.expandedGroups)];
+    if (input.recentPages !== undefined) result.recentPages = recentPages(input.recentPages);
     const keywords = input.feedKeywords;
     if (keywords !== undefined) {
         try {
@@ -60,7 +73,7 @@ export function get(): WorkspaceSettings {
 }
 export function update(patch: WorkspaceSettingsPatch): WorkspaceSettings {
     workspace.requireWorkspace();
-    if (!patch || typeof patch !== "object" || Array.isArray(patch) || Object.keys(patch).some(key => !["tabs", "feedKeywords"].includes(key))) throw new LabloomError({ kind: "invalid-argument" });
+    if (!patch || typeof patch !== "object" || Array.isArray(patch) || Object.keys(patch).some(key => !["tabs", "feedKeywords", "expandedGroups", "recentPages"].includes(key))) throw new LabloomError({ kind: "invalid-argument" });
     if (Object.hasOwn(patch, "tabs") && patch.tabs !== null) checkStoredLayout(patch.tabs);
     const keywords = Object.hasOwn(patch, "feedKeywords") ? normalizeKeywords(patch.feedKeywords) : undefined;
     return commit.run({ history: false, updateModified: false, feed: keywords !== undefined }, context => {
@@ -75,7 +88,11 @@ export function update(patch: WorkspaceSettingsPatch): WorkspaceSettings {
 export function loadTabs(): unknown {
     return get().tabs;
 }
-export function saveTabs(value: SavedTabs): void {
+export function loadNavigation(): WorkspaceNavigation {
+    const { expandedGroups = [...defaultExpandedGroups], recentPages = [] } = get();
+    return { expandedGroups, recentPages };
+}
+export function saveTabs(value: SavedTabs, navigation?: WorkspaceNavigation): void {
     workspace.requireWorkspace();
-    update({ tabs: value });
+    update(navigation ? { tabs: value, expandedGroups: [...new Set(navigation.expandedGroups)], recentPages: recentPages(navigation.recentPages) } : { tabs: value });
 }

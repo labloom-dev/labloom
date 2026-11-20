@@ -12,6 +12,7 @@ type Args<Key extends keyof typeof pagesChannels> = Parameters<PagesAPI[Key]>;
 
 export const routes = {
     list: route(typia.createAssert<Args<"list">>(invalid), records.list),
+    search: route(typia.createAssert<Args<"search">>(invalid), records.searchPages),
     listUpdates: route(typia.createAssert<Args<"listUpdates">>(invalid), records.listUpdates),
     get: route(typia.createAssert<Args<"get">>(invalid), papers.get),
     readObjects: route(typia.createAssert<Args<"readObjects">>(invalid), records.readObjects),

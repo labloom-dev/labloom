@@ -13,9 +13,8 @@ export function acceptTabDrop(event: DragEvent): boolean {
 }
 
 export function focusTabGroup(groupId: GroupID): void {
-    const group = document.querySelector(`[data-group-id="${CSS.escape(groupId)}"]`);
-    const target = group?.querySelector<HTMLElement>("[data-tabs-trigger][data-state='active']")
-        ?? group?.querySelector<HTMLElement>("[data-open-overview]");
+    const group = document.querySelector<HTMLElement>(`[data-group-id="${CSS.escape(groupId)}"]`);
+    const target = group?.querySelector<HTMLElement>("[data-tabs-trigger][data-state='active']") ?? group;
     target?.focus();
 }
 

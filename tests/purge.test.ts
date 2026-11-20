@@ -11,7 +11,8 @@ import { payload } from "../shared/content/blocks";
 import { PDF_EXTRACTOR_VERSION } from "../shared/content/pdf-text";
 import type { CommitResult } from "../shared/types/content";
 import { knownCoordinatePdf } from "./fixtures/pdf-text";
-import { commands, menus, shortcutCommand } from "../shared/content/commands";
+import { createI18n } from "../shared/i18n";
+import { commands, menus, shortcutCommand, type Command } from "../shared/content/commands";
 
 function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { service: Knowledge; history: History; papers: Papers; purge: Purge } {
     const ws = createWorkspace(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "purge-")));
@@ -223,6 +224,10 @@ test("menus and shortcut dispatch use the same table, respect editor handling an
     assert.equal(shortcutCommand(event("b")), undefined);
     assert.equal(shortcutCommand(event("n", { defaultPrevented: true })), undefined);
     assert.equal(shortcutCommand(event("n", { isComposing: true })), undefined);
-    assert.deepEqual(new Set(menus.map(menu => menu.label)), new Set(["文件", "编辑", "视图", "前往", "帮助"]));
-    assert.ok(menus.flatMap(menu => menu.items).includes("attributes"));
+    const zh = createI18n("zh-CN"), en = createI18n("en");
+    assert.deepEqual(menus.map(menu => zh.t(`menu.${menu.id}`)), ["文件", "编辑", "视图", "前往", "帮助"]);
+    assert.deepEqual(menus.map(menu => en.t(`menu.${menu.id}`)), ["File", "Edit", "View", "Go", "Help"]);
+    const items = menus.flatMap<Command>(menu => [...menu.items]);
+    for (const id of ["attributes", "mergeGroup", "commandPalette"] as const) assert.ok(items.includes(id));
+    for (const id of items) for (const language of ["zh-CN", "en"]) assert.ok(en.getResource(language, "translation", `command.${id}`));
 });

@@ -1,35 +1,30 @@
 <div
-    tabindex="0"
-    style:width={direction === "horizontal" ? "100%" : thickness ? `${thickness}px` : "5px"}
-    style:height={direction === "vertical" ? "100%" : thickness ? `${thickness}px` : "5px"}
-    style:cursor={direction === "horizontal" ? "ns-resize" : "ew-resize"}
-    {onkeydown}
-    {onpointerdown}
-    {onpointermove}
-    {onpointerup}
-    onpointercancel={onpointerup}
+    class="sash" class:vertical={direction === "vertical"} class:dragging
+    role="separator" aria-label={label} aria-orientation={direction} aria-valuenow={Math.round(origin)}
+    aria-valuemin={min} aria-valuemax={max} tabindex="0"
+    {onkeydown} {onpointerdown} {onpointermove} {onpointerup}
+    onlostpointercapture={() => dragging = false} onpointercancel={onpointerup}
 ></div>
 
-
 <style>
-    div {
-        background-color: var(--c-resizer-background);
-        flex-grow: 0;
-        flex-shrink: 0;
-        touch-action: none;
-    }
-    div:hover, div:focus {
-        background-color: var(--c-accent);
-    }
+    .sash { position: relative; flex: none; touch-action: none; outline: none; background: var(--ui-surface-panel); }
+    .sash.vertical { width: var(--ui-sash-size); cursor: ew-resize; }
+    .sash:not(.vertical) { height: var(--ui-sash-size); cursor: ns-resize; }
+    .sash::before, .sash::after { content: ""; position: absolute; inset: 0; pointer-events: none; }
+    .sash::before { background: var(--ui-divider); }
+    .sash.vertical::before { width: var(--ui-stroke); margin-inline: auto; }
+    .sash:not(.vertical)::before { height: var(--ui-stroke); margin-block: auto; }
+    .sash::after { background: var(--ui-accent); opacity: 0; }
+    .sash:hover::after { opacity: 1; transition: opacity 0s var(--ui-sash-delay); }
+    .sash:is(.dragging, :focus-visible)::after { opacity: 1; transition: none; }
 </style>
-
 
 <script lang="ts">
     import type { XYDirection } from "../types";
 
     type Props = {
         direction: XYDirection;
-        thickness?: number;
+        label: string;
         changeCB: (value: number) => void;
         origin: number;
         min?: number;
@@ -42,10 +37,11 @@
     };
 
     const {
-        direction, thickness, changeCB, origin, min, max,
+        direction, label, changeCB, origin, min, max,
         overflowMargin = 0, onMinExceeded, onMaxExceeded
     }: Props = $props();
 
+    let dragging = $state(false);
     let dragStart = 0;
     let dragOrigin = 0;
     let dragMin = -Infinity;
@@ -71,6 +67,7 @@
         if (!handle) return;
         event.preventDefault();
         handle.setPointerCapture(event.pointerId);
+        dragging = true;
         dragStart = getPos(event);
         dragOrigin = origin;
         dragMin = min ?? -Infinity;

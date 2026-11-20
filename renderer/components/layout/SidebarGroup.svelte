@@ -1,26 +1,29 @@
-<section aria-busy={pending}>
-    <button class="group-name" aria-expanded={expanded} onclick={() => expanded = !expanded}><Icon name={expanded ? "chevron-down" : "chevron-right"} size="1em" /> {title}</button>
-    {#if expanded}
-        {#each rows as page (page.id)}
-            <ContextActions items={pageMenu(page, workspaceHistory)}>
-                <button class="page" title={page.title} onclick={event => openPage(page.id, { otherGroup: event.ctrlKey })}><Icon name={kindIcons[page.kind]} size={16} /><span>{page.title || "未命名"}</span></button>
-            </ContextActions>
-        {/each}
-        {#if more}<button class="page more" disabled={pending} onclick={() => void load(false)}>更多…</button>{/if}
-        {#if error}<p class="error">{message(error)}</p>{/if}
-    {/if}
-</section>
+<PanelGroup {groupKey} {title} {expanded} busy={pending} ontoggle={() => toggleGroup(groupKey)}>
+    {#each rows as page (page.id)}
+        <Menu context items={pageMenu(page, workspaceHistory, [page.id], true).map(item => ({ ...item, onselect: item.run }))}>
+            {#snippet trigger({ props })}
+                {@const caption = page.title || t("shell.untitled")}
+                <ListRow icon={kindIcons[page.kind]} title={caption} selected={page.id === currentPage}
+                    buttonProps={{ ...props, tabindex: -1, "data-panel-node": "page", "data-panel-key": groupKey + "/" + page.id }}
+                    onclick={event => openPage(page.id, { currentGroup: true, otherGroup: event.ctrlKey })}>
+                    <Tooltip text={caption}>{#snippet trigger({ props: tip })}<span {...tip} class="ui-row-title">{caption}</span>{/snippet}</Tooltip>
+                </ListRow>
+            {/snippet}
+        </Menu>
+    {/each}
+    {#if more}<Button class="more" variant="text" data-panel-node="more" data-panel-key={groupKey + "/more"} tabindex={-1}
+        aria-disabled={pending} onclick={() => {
+            if (!pending) void load(false);
+        }}>{t("shell.more")}</Button>{/if}
+    {#if error}<p role="alert">{message(error)}</p>{/if}
+</PanelGroup>
+
 <style>
-    .group-name, .page { display: flex; align-items: center; gap: 6px; width: 100%; height: var(--panel-row-height); font-size: var(--font-body); padding-inline: var(--panel-indent); text-align: left; }
-    .group-name { font-weight: 700; }
-    .page { padding-left: calc(var(--panel-indent) * 2); }
-    .page:hover, .group-name:hover { background: var(--c-sage); }
-    .page span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .more { color: var(--c-muted); }
-    p { padding-inline: var(--panel-indent); font-size: var(--font-secondary); }
+    :global(.panel-rows .more) { width: 100%; height: var(--ui-row-height); justify-content: flex-start; padding-inline-start: var(--ui-space-6); color: var(--ui-text-secondary); }
+    p { padding-inline: var(--ui-space-3); color: var(--ui-danger); font-size: var(--ui-font-small); }
 </style>
 <script lang="ts">
-    import { failure, message, type ErrorValue } from "../../i18n.svelte";
+    import { failure, message, t, type ErrorValue } from "../../i18n.svelte";
     import { untrack } from "svelte";
     import type { PageSummary, PageQuery } from "../../../shared/types/content";
     import { knowledgeState } from "../Knowledge/feedback.svelte";
@@ -28,10 +31,15 @@
     import { kindIcons } from "../Knowledge/labels";
     import { openPage } from "./navigation";
     import { workspaceHistory } from "../../../shared/history/ipc";
-    import Icon from "../utils/Icon.svelte";
-    import ContextActions from "../utils/ContextActions.svelte";
-    let { title, query, keyword, initiallyOpen = false }: { title: string; query: PageQuery; keyword: string; initiallyOpen?: boolean } = $props();
-    let expanded = $state(untrack(() => initiallyOpen)), rows = $state<PageSummary[]>([]), pending = $state(false), more = $state(false), error = $state<ErrorValue>("");
+    import ListRow from "../base/ListRow.svelte";
+    import Menu from "../base/Menu.svelte";
+    import Tooltip from "../base/Tooltip.svelte";
+    import Button from "../base/Button.svelte";
+    import PanelGroup from "./PanelGroup.svelte";
+    import { navigationState, toggleGroup } from "../Tab/persistence.svelte";
+    let { groupKey, title, query, keyword, currentPage }: { groupKey: string; title: string; query: PageQuery; keyword: string; currentPage?: string } = $props();
+    const expanded = $derived(navigationState.expandedGroups.includes(groupKey));
+    let rows = $state<PageSummary[]>([]), pending = $state(false), more = $state(false), error = $state<ErrorValue>("");
     let offset = 0, generation = 0;
     $effect(() => {
         void query; void keyword;

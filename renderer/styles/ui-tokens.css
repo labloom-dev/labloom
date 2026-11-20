@@ -14,6 +14,7 @@
     --ui-p-check-gray: #cecece;
     --ui-p-check-hover-gray: #3b3b3b;
     --ui-p-list-selection-inactive: #e5ebf1;
+    --ui-p-match-blue: #0066bf;
     --ui-p-selection-blue: #add6ff;
     --ui-p-blue: #005fb8;
     --ui-p-blue-hover: #0258a8;
@@ -40,6 +41,7 @@
     --ui-p-check-gray: #989898;
     --ui-p-check-hover-gray: #cccccc;
     --ui-p-list-selection-inactive: #37373d;
+    --ui-p-match-blue: #2aaaff;
     --ui-p-selection-blue: #264f78;
     --ui-p-blue: #0078d4;
     --ui-p-blue-hover: #026ec1;
@@ -72,6 +74,9 @@
     --ui-text-selection: var(--ui-p-selection-blue);
     --ui-selected: var(--ui-p-list-selection);
     --ui-selected-inactive: var(--ui-p-list-selection-inactive);
+    --ui-text-match: var(--ui-p-match-blue);
+    --ui-titlebar-background: var(--ui-surface-panel);
+    --ui-titlebar-foreground: var(--ui-text);
     --ui-focus: var(--ui-p-blue);
     --ui-accent: var(--ui-p-blue);
     --ui-accent-hover: var(--ui-p-blue-hover);
@@ -88,6 +93,14 @@
     --ui-activity-width: 48px;
     --ui-activity-item-height: 48px;
     --ui-tabbar-height: 35px;
+    --ui-search-width: 600px;
+    --ui-search-list-height: 360px;
+    --ui-tab-min-width: 80px;
+    --ui-tab-max-width: 210px;
+    --ui-empty-logo-size: 80px;
+    --ui-sash-size: 4px;
+    --ui-sash-delay: 300ms;
+    --ui-active-border: 2px;
     --ui-toolbar-height: 32px;
     --ui-row-height: 24px;
     --ui-button-height: 26px;

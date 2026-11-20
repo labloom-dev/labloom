@@ -12,11 +12,7 @@
     --c-line: #e3dccb;
     --c-shadow: 3px 4px 0 var(--c-ink);
     --c-navbar-background: var(--c-paper);
-    --c-sidebar-background: var(--c-paper);
-    --c-tab-header-background: #f2ecdd;
     --c-tab-header-border: #d6ccb7;
-    --c-side-panel-background: var(--c-paper);
-    --c-resizer-background: #c5b58e;
 
     /* Editor surfaces */
     --dc-c-paragraph-background: /*#f0f8ff*/transparent;
@@ -82,23 +78,14 @@
     --c-border-focus: #b38c48;
 
     /* Search launcher */
-    --c-search-trigger-background: #f8f4e9;
-    --c-search-trigger-border: #c8bda4;
-    --c-search-trigger-border-hover: #ab9670;
     --c-search-trigger-text: #776e5d;
 
     /* Search popover */
     --c-popover-border: #d4c8af;
     --c-popover-text: #302c25;
-    --c-search-divider: #e9e1d0;
-    --c-search-icon: #806b48;
     --c-search-placeholder: #928671;
-    --c-search-heading: #776e5d;
     --c-search-secondary-text: #776e5d;
-    --c-search-footer-background: #faf6eb;
     --c-kbd-border: #d9cfba;
-    --c-popover-shadow: #302c2530;
-    --c-popover-shadow-soft: #302c2510;
 }
 
 :root[data-theme="dark"] {
@@ -115,7 +102,6 @@
     --c-muted: #c0b59f;
     --c-line: #4a463a;
     --c-shadow: 3px 4px 0 #14150f;
-    --c-tab-header-background: #20221c;
     --c-tab-header-border: #68604c;
     --c-accent: #e0b96d;
     --c-surface: var(--c-paper);
@@ -127,10 +113,8 @@
     --c-reader-input-border: #68604c;
     --c-reader-muted-text: var(--c-muted);
     --c-reader-error-text: #f3aa91;
-    --c-search-trigger-background: var(--c-cream);
     --c-search-trigger-text: var(--c-muted);
     --c-popover-text: var(--c-ink);
-    --c-search-footer-background: var(--c-cream);
     --c-kbd-border: #68604c;
     --dc-c-surface: var(--c-paper);
     --dc-c-surface-hover: #37372b;
@@ -141,13 +125,8 @@
     --dc-c-code-background: #403b2e;
     --dc-c-placeholder: #a69a85;
 
-    --c-search-trigger-border: #68604c;
-    --c-search-trigger-border-hover: #a69a85;
     --c-popover-border: #68604c;
-    --c-search-divider: #4a463a;
-    --c-search-icon: #b9ae99;
     --c-search-placeholder: #a69a85;
-    --c-search-heading: #b9ae99;
     --c-search-secondary-text: #b9ae99;
     --dc-c-accent: #e0b96d;
     --dc-c-popover-border: #68604c;

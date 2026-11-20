@@ -1,27 +1,39 @@
-<header class="titlebar">
-    <!-- Codicon layout-sidebar-left, Microsoft, CC BY 4.0: https://github.com/microsoft/vscode-codicons/blob/main/LICENSE; path unchanged. -->
-    <button class="panel-toggle" class:active={!shell.collapsed} aria-pressed={!shell.collapsed} aria-label={commands.sidebar.label} title={`${commands.sidebar.label} (${commands.sidebar.shortcut})`} onclick={() => runCommand("sidebar")}><Icon name="layout-sidebar-left" size={16} /></button>
-    <button class="brand" onclick={() => openDestination("overview")} aria-label="知织首页"><img src={icon} alt="" /></button>
-    <Menu />
-    <div class="search"><GSLauncher /></div>
-</header>
-<style>
-    .titlebar { -webkit-app-region: drag; position: relative; display: flex; align-items: center; height: env(titlebar-area-height, var(--titlebar-height)); min-height: var(--titlebar-height); flex-shrink: 0; padding-left: max(8px, env(titlebar-area-x, 0px)); padding-right: max(8px, calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))); border-bottom: var(--border-width) solid var(--c-line); background: var(--c-navbar-background); }
-    .titlebar :global(button), .search { -webkit-app-region: no-drag; }
-    .brand { display: grid; place-items: center; width: var(--activity-width); height: var(--button-height); flex-shrink: 0; }
-    .panel-toggle { display: grid; place-items: center; width: var(--button-height); height: var(--button-height); flex-shrink: 0; border-radius: var(--control-radius); color: var(--c-muted); }
-    .panel-toggle.active { color: var(--c-ink); background: var(--c-gold-light); }
-    .panel-toggle:hover { background: var(--c-cream); }
-    img { width: var(--logo-size); height: var(--logo-size); object-fit: contain; -webkit-user-drag: none; }
-    .search { position: absolute; left: 50%; transform: translateX(-50%); width: min(var(--search-width), calc(100% - 620px)); min-width: 120px; }
-    @media (max-width: 850px) { .search { position: static; transform: none; flex: 1; width: auto; margin-inline: 8px; } }
-</style>
 <script lang="ts">
-    import Icon from "../utils/Icon.svelte";
-    import icon from "../../assets/icon.png";
-    import GSLauncher from "../globalSearch/GSLauncher.svelte";
+    import { type Snippet } from "svelte";
+    import { commands, type Command } from "../../../shared/content/commands";
+    import { commandLabel } from "../../i18n.svelte";
+    import IconButton from "../base/IconButton.svelte";
     import Menu from "./Menu.svelte";
-    import { openDestination } from "./navigation";
-    import { commands, runCommand } from "./commands";
-    import { shell } from "./shell.svelte";
+
+    let { collapsed, oncommand, disabled, onremember, children }: {
+        collapsed: boolean; oncommand: (id: Command) => void; disabled: (id: Command) => boolean;
+        onremember?: (origin: Element | null) => void; children: Snippet;
+    } = $props();
 </script>
+
+<header class="titlebar">
+    <div class="tools">
+        <IconButton icon="layout-sidebar-left" label={commandLabel("sidebar")} shortcut={commands.sidebar.shortcut} pressed={!collapsed} onclick={() => oncommand("sidebar")} />
+        <Menu {oncommand} {disabled} {onremember} />
+    </div>
+    <div class="search-launcher">{@render children()}</div>
+</header>
+
+<style>
+    .titlebar {
+        -webkit-app-region: drag;
+        display: grid;
+        grid-template-columns: minmax(max-content, 1fr) minmax(0, var(--ui-search-width)) minmax(var(--system-controls), 1fr);
+        align-items: center;
+        column-gap: var(--ui-space-3);
+        height: var(--ui-titlebar-height);
+        flex: none;
+        --system-controls: max(var(--ui-space-3), calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)));
+        padding-left: max(var(--ui-space-3), env(titlebar-area-x, 0px));
+        background: var(--ui-titlebar-background);
+        color: var(--ui-titlebar-foreground);
+        border-bottom: var(--ui-stroke) solid var(--ui-divider);
+    }
+    .tools { display: flex; align-items: center; width: fit-content; -webkit-app-region: no-drag; }
+    .search-launcher { min-width: 0; -webkit-app-region: no-drag; }
+</style>
