@@ -9,12 +9,13 @@
         open?: boolean;
         trigger: NonNullable<Tooltip.TriggerProps["child"]>;
     } = $props();
+    let button = $state<HTMLElement | null>(null);
 </script>
 
 <Tooltip.Provider delayDuration={delay}>
     <Tooltip.Root bind:open>
-        <Tooltip.Trigger child={trigger} />
-        <Tooltip.Portal>
+        <Tooltip.Trigger bind:ref={button} child={trigger} />
+        <Tooltip.Portal to={button?.closest<HTMLElement>(":popover-open") ?? undefined}>
             <Tooltip.Content class="ui-popup ui-tooltip" sideOffset={4} collisionPadding={8}>
                 {text}{#if shortcut}<kbd class="ui-shortcut">{shortcut}</kbd>{/if}
             </Tooltip.Content>

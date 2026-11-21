@@ -22,18 +22,26 @@ export function fields(rows: Map<string, Entry>): Fields {
 }
 export class PageWrites {
     private readonly dirty = new Map<string, Entry>();
+    private readonly boundaries: Map<string, Entry>[] = [];
     private retry?: { input: EditCommit; rows: Map<string, Entry> };
     private pending?: Promise<void>;
     private batch = 0;
     constructor(readonly pageId: string, readonly send: (input: EditCommit) => Promise<void>) { }
     get unsaved(): boolean {
-        return !!this.dirty.size || !!this.retry;
+        return !!this.dirty.size || !!this.retry || !!this.boundaries.length;
     }
     input(edit: Fields): EditCommit {
         return { pageId: this.pageId, batch: ++this.batch, ...edit };
     }
     stage(edit: Fields): void {
         for (const [key, item] of entries(edit)) this.dirty.set(key, item);
+    }
+    // Freeze the current values even if an earlier commit is still in flight.
+    checkpoint(): void {
+        const rows = new Map(this.dirty);
+        for (const previous of [...(this.retry ? [this.retry.rows] : []), ...this.boundaries])
+            for (const [key, row] of previous) if (rows.get(key) === row) rows.delete(key);
+        if (rows.size) this.boundaries.push(rows);
     }
     current(key: string): boolean {
         return this.retry?.rows.get(key) === this.dirty.get(key);
@@ -52,7 +60,7 @@ export class PageWrites {
         }
         const drain = async (): Promise<void> => {
             while (this.unsaved && allowed()) {
-                const rows = this.retry?.rows ?? new Map(this.dirty);
+                const rows = this.retry?.rows ?? this.boundaries.shift() ?? new Map(this.dirty);
                 const input = this.retry?.input ?? this.input(fields(rows));
                 this.retry = { input, rows };
                 await this.send(input);

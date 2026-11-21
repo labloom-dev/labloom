@@ -1,110 +1,111 @@
-<div class="picker paper-card" popover="auto" role="dialog" aria-label="选择引用目标" ontoggle={event => {
-    if (event.newState === "closed") onclose();
-}} {@attach element => {
-    element.showPopover();
-    element.querySelector("input")?.focus();
-}}>
-    <header>
-        <strong>选择{mode === "sync" ? "同步块" : mode === "page" ? "页面" : "引用目标"}</strong>
-        <button class="text-button" onclick={onclose}>关闭</button>
-    </header>
-    <input type="search" placeholder="搜索页面…" bind:value={keyword} />
-    {#if error}
-        <p class="error">{message(error)}</p>
-    {/if}
-    {#if chosen}
-        <button class="text-button" onclick={() => chosen = null}><Icon name="arrow-left" size="1em" /> 返回页面列表</button>
-        <div class="results">
-            {#each orderedBlocks as { block, key, depth } (key)}
-                <button style:padding-left={4 + depth * 16 + "px"} onclick={() => onselect({ kind: "block", id: block.id }, label(block))}>{label(block)}<small>{blockKindNames[block.type]}</small></button>
-            {/each}
-        </div>
-    {:else}
-        <div class="results">
-            {#each pages as page (page.id)}
-                <div class="result">
-                    <button onclick={() => mode === "sync" ? choose(page.id) : onselect({ kind: "page", id: page.id }, page.title || "未命名")}>{page.title || "未命名"}</button>
-                    {#if mode !== "page"}<button class="text-button" onclick={() => choose(page.id)}>选择其中的块</button>{/if}
-                </div>
-            {:else}
-                <p>没有找到页面</p>
-            {/each}
-        </div>
-    {/if}
-</div>
-<style>
-    .picker { position: fixed; inset: 0; margin: auto; padding: 18px; width: min(600px, calc(100vw - 48px)); max-height: calc(100vh - 72px); overflow: auto; font-family: inherit; font-size: 13px; font-weight: 400; line-height: 1.5; color: var(--c-ink); }
-    header, .result { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-    input { width: 100%; margin: 12px 0; padding: 10px; border: 1px solid var(--c-line); border-radius: 6px; background: var(--c-paper); color: var(--c-ink); }
-    .results { max-height: 300px; overflow: auto; }
-    .results button { display: flex; flex: 1; justify-content: space-between; padding: 10px 4px; text-align: left; overflow-wrap: anywhere; }
-    .results button:hover { background: var(--c-sage); }
-    small { margin-left: 12px; color: var(--c-muted); }
-</style>
 <script lang="ts">
-    import Icon from "../utils/Icon.svelte";
-    import { failure, message, type ErrorValue } from "../../i18n.svelte";
-    import { type ContentBlock, type PageSummary, type PageRecord, type Target } from "../../../shared/types/content";
-    import { blockText } from "../../../shared/content/blocks";
-    import { blockKindNames } from "../../../shared/content/block-labels";
-    import { knowledgeState } from "./feedback.svelte";
-    let { mode = "reference", onselect, onclose }: { mode?: "reference" | "sync" | "page"; onselect: (target: Target, label: string) => void; onclose: () => void } = $props();
-    let keyword = $state(""), error = $state<ErrorValue>("");
-    let pages = $state<PageSummary[]>([]), chosen = $state.raw<PageRecord | null>(null);
-    let referenceLabels = $state<Record<string, string>>({});
-    const orderedBlocks = $derived.by(() => {
-        const page = chosen, rows: { block: ContentBlock; key: string; depth: number }[] = [];
-        function visit(ids: string[], path: string[], parentKey: string, depth: number): void {
-            ids.forEach((id, index) => {
-                const block = page?.blocks[id];
-                if (!block || path.includes(id)) return;
-                const next = [...path, id], key = `${parentKey}/${index}:${id}`;
-                rows.push({ block, key, depth });
-                visit(block.children, next, key, depth + 1);
-            });
+    import { onDestroy, tick } from "svelte";
+    import type { PageBlockList, PageSummary, Target } from "../../../shared/types/content";
+    import { t, failure, message, type ErrorValue } from "../../i18n.svelte";
+    import Popover from "../base/Popover.svelte";
+    import GSPopover from "../globalSearch/GSPopover.svelte";
+    import SearchList from "../globalSearch/SearchList.svelte";
+    import { search, recent, blockList } from "../globalSearch/page-search";
+    import { blockIcons } from "./labels";
+
+    type Location = { x: number; y: number; left: number; right: number; bottom: number };
+    const pageSearch = { search, recent, blockList };
+    type Source = typeof pageSearch;
+    let { mode = "reference", position, source = pageSearch, onselect, onclose }: {
+        mode?: "reference" | "sync" | "page"; position?: Location; source?: Source;
+        onselect: (target: Target, label: string) => void; onclose: () => void;
+    } = $props();
+    const origin = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const portal = origin?.closest<HTMLElement>(":popover-open") ?? undefined;
+    let page = $state.raw<PageBlockList | null>(null), pageQuery = $state(""), filter = $state(""), selected = $state(0);
+    let input = $state<HTMLInputElement>(), loading = $state(false), error = $state<ErrorValue>("");
+    let generation = 0;
+    const anchor = {
+        getBoundingClientRect(): DOMRect {
+            if (position) {
+                const width = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--ui-editor-preview-width"));
+                const x = Math.max(position.left, Math.min(position.x, position.right - Math.min(width, position.right - position.left)));
+                return new DOMRect(x, Math.min(position.y, position.bottom), 0, 0);
+            }
+            const search = document.querySelector<HTMLElement>(".search-trigger")?.getBoundingClientRect();
+            return new DOMRect(search ? search.left + search.width / 2 : window.innerWidth / 2, search?.top ?? 0, 0, 0);
         }
-        visit(page?.children ?? [], [], "", 0);
-        return rows;
+    };
+    const ordered = $derived.by(() => {
+        const empty = t("editor.emptyBlock"), missing = t("editor.missingReference");
+        return (page?.rows ?? []).map((block, index) => {
+            const title = block.text || (block.type === "blocked_reference" ? missing : empty);
+            return { id: String(index), blockId: block.id, title, searchText: title.toLocaleLowerCase(), icon: blockIcons[block.type], depth: block.depth };
+        });
     });
-    function label(block: ContentBlock): string {
-        if (block.type === "blocked_reference") return referenceLabels[block.id] || "引用目标缺失";
-        return blockText(block) || "空块";
-    }
+    const needle = $derived(filter.trim().toLocaleLowerCase());
+    const rows = $derived(needle ? ordered.filter(row => row.searchText.includes(needle)) : ordered);
+    const opened = $derived(!!page);
     $effect(() => {
-        void knowledgeState.change.seq;
-        const query = keyword;
-        let active = true;
-        const timer = setTimeout(() => {
-            void window.api.pages.list({ keyword: query, limit: 50 }).then(result => {
-                if (active) pages = result.items;
-            }, problem => {
-                if (active) error = failure(problem);
-            });
-        }, 150);
-        return () => {
-            active = false;
-            clearTimeout(timer);
-        };
+        void opened; const field = input; if (field) field.focus({ preventScroll: true });
     });
-    async function choose(id: string): Promise<void> {
+    onDestroy(() => {
+        generation++;
+    });
+    async function browse(item: Pick<PageSummary, "id">): Promise<void> {
+        const request = ++generation;
+        loading = true; error = "";
         try {
-            const page = await window.api.pages.get(id);
-            chosen = page;
-            referenceLabels = {};
-            error = "";
-            const labels = await Promise.all(Object.values(page.blocks).filter(block => block.type === "blocked_reference" && block.payload.target).map(async block => {
-                try {
-                    const resolved = await window.api.pages.resolve(block.payload.target!);
-                    return [block.id, resolved ? resolved.title || "未命名目标" : "引用目标缺失"];
-                }
-                catch {
-                    return [block.id, "引用目标缺失"];
-                }
-            }));
-            if (chosen === page) referenceLabels = Object.fromEntries(labels);
+            const result = await source.blockList(item.id);
+            if (request !== generation) return;
+            filter = ""; selected = 0; page = result;
         }
         catch (problem) {
-            error = failure(problem);
+            if (generation === request) error = failure(problem);
+        }
+        finally {
+            if (generation === request) loading = false;
         }
     }
+    function back(): void {
+        generation++; page = null; filter = ""; selected = 0; error = "";
+    }
+    function finish(target?: Target, title = ""): void {
+        generation++;
+        if (target) onselect(target, title);
+        else onclose();
+    }
+    let open = $state(true);
+    function toggle(value: boolean): void {
+        open = value; if (!value) finish();
+    }
+    const content = $derived({
+        class: position ? "target-picker inline-picker" : "target-picker title-picker", customAnchor: anchor,
+        style: position ? `max-width: min(calc(100vw - 2 * var(--ui-space-3)), ${position.right - position.left}px)` : undefined,
+        sideOffset: position ? 4 : 0, collisionPadding: { left: 8, right: 8, bottom: 8 }, trapFocus: true,
+        onOpenAutoFocus: (event: Event) => {
+            event.preventDefault(); void tick().then(() => input?.focus({ preventScroll: true }));
+        },
+        onCloseAutoFocus: (event: Event) => {
+            event.preventDefault();
+            if (origin?.isConnected) origin.focus({ preventScroll: true });
+        }
+    });
 </script>
+
+<Popover label={t("editor.choosePage")} bind:open={() => open, toggle} align={position ? "start" : "center"} {portal} contentProps={content}>
+    {#if page}
+        <SearchList bind:query={filter} bind:input bind:selected options={rows} label={t("editor.blocks", { title: page.title || t("shell.untitled") })}
+            empty={t("editor.noBlocks")} onback={back} onchoose={index => {
+                const row = rows[index]; if (row) finish({ kind: "block", id: row.blockId }, row.title);
+            }} />
+    {:else}
+        <GSPopover bind:input bind:query={pageQuery} search={source.search} recent={source.recent} formatTime={() => ""} label={t("editor.pages")}
+            onbrowse={mode === "page" ? undefined : browse} onpage={item => mode === "sync" ? browse(item) : finish({ kind: "page", id: item.id }, item.title || t("shell.untitled"))} />
+    {/if}
+    {#if loading}<div class="progress" role="progressbar" aria-label={t("editor.loadingReference")}></div>{/if}
+    {#if error}<p role="alert">{message(error)}</p>{/if}
+</Popover>
+
+<style>
+    :global(.ui-popover.target-picker) { -webkit-app-region: no-drag; padding: 0; overflow: hidden; }
+    :global(.title-picker) { width: min(var(--ui-search-width), calc(100vw - 2 * var(--ui-space-3))); }
+    :global(.inline-picker) { width: var(--ui-editor-preview-width); }
+    .progress { height: var(--ui-active-border); background: var(--ui-accent); }
+    p { margin: var(--ui-space-2) var(--ui-space-3); font-size: var(--ui-font-small); color: var(--ui-danger); }
+</style>

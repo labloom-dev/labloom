@@ -30,7 +30,7 @@ class PageState {
 export type PageSession = {
     state: PageState; refresh(): Promise<void>; reread(ids: string[]): Promise<void>; objects(ids: string[]): Promise<void>;
     tabId: string; source: HistorySource; input: PendingInput; release(): void;
-    flush(): Promise<boolean>; stage(edit: Fields): void;
+    flush(): Promise<boolean>; checkpoint(): void; stage(edit: Fields): void;
     review(edit: Fields, rollback: () => void, accept: (saved: boolean) => void, finish: () => void): void;
     action(commit: SessionCommit): Promise<void>;
     watchObject(id: string, read: () => Promise<void>, own?: boolean): () => void;
@@ -209,22 +209,31 @@ export function makeSession(tabId: string, pageId: string, source: HistorySource
         composing = active;
         if (active) clearTimeout(timer); else schedule();
     }
-    async function refresh(): Promise<void> {
+    async function readPage(): Promise<PageRecord> {
+        const page = await api.pages.get(pageId);
+        performance.clearMarks("labloom:page-read");
+        performance.mark("labloom:page-read", { detail: pageId });
+        return page;
+    }
+    async function refresh(initial = false): Promise<void> {
         const request = ++load;
         if (!await flush()) return;
         state.loading = true;
         try {
-            const page = await api.pages.get(pageId);
-            performance.clearMarks("labloom:page-read");
-            performance.mark("labloom:page-read", { detail: pageId });
+            // Publish the initial document with its metadata so Chromium lays it out once.
+            const [page, definitions, backlinks] = await Promise.all([readPage(),
+                initial ? api.attributes.definitions() : undefined,
+                initial ? api.pages.backlinks(pageId) : undefined]);
             if (request !== load) return;
+            if (definitions) state.definitions = definitions;
+            if (backlinks) state.backlinks = backlinks;
             newBlocks.clear();
             state.page = page;
             state.error = "";
             notify([], true);
         }
         catch (e) {
-            state.error = failure(e);
+            if (request === load) state.error = failure(e);
         }
         finally {
             if (request === load) state.loading = false;
@@ -353,14 +362,17 @@ export function makeSession(tabId: string, pageId: string, source: HistorySource
         read: async (ids, initial) => {
             readingObjects = true;
             try {
-                if (initial) await refresh();
+                if (initial) {
+                    definitionsDirty = false;
+                    await refresh(true);
+                }
                 else if (state.page) {
                     if (!await flush()) throw new LabloomError({ kind: "page-unsaved" });
                     await reread(ids.filter(id => id === pageId || Object.hasOwn(state.page!.blocks, id)));
                 }
                 if (state.error && state.error.kind === "page-unavailable" && !state.page) return;
                 if (state.error) throw new LabloomError({ kind: "page-unsaved" });
-                if (initial || definitionsDirty) {
+                if (definitionsDirty) {
                     definitionsDirty = false;
                     try {
                         state.definitions = await api.attributes.definitions();
@@ -370,7 +382,7 @@ export function makeSession(tabId: string, pageId: string, source: HistorySource
                         throw error;
                     }
                 }
-                if (initial || ids.includes(pageId) || ids.some(id => state.backlinks.some(link => link.sourceId === id)))
+                if (!initial && (ids.includes(pageId) || ids.some(id => state.backlinks.some(link => link.sourceId === id))))
                     state.backlinks = await api.pages.backlinks(pageId);
                 for (const id of ids) if (observers.has(id)) await Promise.all([...observers.get(id)!.keys()].map(read => read()));
             }
@@ -385,7 +397,7 @@ export function makeSession(tabId: string, pageId: string, source: HistorySource
     return {
         tabId, source, input, release() {
             clearTimeout(timer); stopHistory(); release(); unregister();
-        }, state, refresh, reread, objects, flush, stage, review, undo, composition, watchObject,
+        }, state, refresh, reread, objects, flush, checkpoint: () => writes.checkpoint(), stage, review, undo, composition, watchObject,
         action: commit => write(() => applyAction(commit)),
         attr: (id: string, value: AttributeValue) => stage({ blocks: [], attributes: { [id]: copyData(value) } }),
         detach: (id: string) => stage({ blocks: [], detach: [id] }),

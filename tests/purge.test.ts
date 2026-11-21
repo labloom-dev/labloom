@@ -214,12 +214,13 @@ test("a failed permanent deletion rolls back rows and keeps every page's history
     assert.deepEqual(history.state(workspaceHistory), trash);
 });
 test("menus and shortcut dispatch use the same table, respect editor handling and ignore composing input", () => {
-    const event = (key: string, overrides = {}): Pick<KeyboardEvent, "key" | "ctrlKey" | "altKey" | "shiftKey" | "metaKey" | "isComposing" | "defaultPrevented"> => ({ key, ctrlKey: true, altKey: false, shiftKey: false, metaKey: false, isComposing: false, defaultPrevented: false, ...overrides });
+    const event = (key: string, overrides = {}): Pick<KeyboardEvent, "key" | "ctrlKey" | "altKey" | "shiftKey" | "metaKey" | "isComposing" | "keyCode" | "defaultPrevented"> => ({ key, keyCode: 0, ctrlKey: true, altKey: false, shiftKey: false, metaKey: false, isComposing: false, defaultPrevented: false, ...overrides });
     for (const [id, definition] of Object.entries(commands)) {
         if (!definition.shortcut) continue;
         const parts = definition.shortcut.split("+"), key = parts.at(-1)!;
         assert.equal(shortcutCommand(event(key, { ctrlKey: parts.includes("Ctrl"), altKey: parts.includes("Alt"), shiftKey: parts.includes("Shift") })), id);
         assert.equal(shortcutCommand(event(key, { isComposing: true })), undefined);
+        assert.equal(shortcutCommand(event(key, { keyCode: 229 })), undefined);
     }
     assert.equal(shortcutCommand(event("b")), undefined);
     assert.equal(shortcutCommand(event("n", { defaultPrevented: true })), undefined);

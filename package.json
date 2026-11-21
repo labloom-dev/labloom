@@ -38,6 +38,10 @@
         "extends": "./configs/electron-builder.yml"
     },
     "dependencies": {
+        "@codemirror/legacy-modes": "^6.5.5",
+        "@codemirror/streamparser": "^6.0.0",
+        "@lezer/highlight": "^1.2.5",
+        "@lezer/markdown": "^1.8.1",
         "@tiptap/core": "^3.31.3",
         "@tiptap/extension-document": "^3.31.3",
         "@tiptap/extension-history": "^3.31.3",

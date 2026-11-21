@@ -27,11 +27,6 @@
     import GSLauncher from "../globalSearch/GSLauncher.svelte";
     import { onMount, untrack } from "svelte";
     import type { StartupState, WorkspaceAction } from "../../../shared/types/startup";
-    import "../../styles/colors.css";
-    import "../../styles/layouts.css";
-    import "../../styles/base.css";
-    import "../../styles/elements.css";
-    import "../../styles/workspace.css";
 
     import NavBar from "./NavBar.svelte";
     import Sidebar from "./Sidebar.svelte";

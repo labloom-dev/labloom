@@ -1,3 +1,4 @@
+import { codeLanguages } from "./code-languages";
 import { LabloomError } from "../failure";
 import { jsonValue, record, validUUID } from "../attrs/values";
 import { blockKinds, type BlockPayload, type ContentBlock, type InlineNode, type Target } from "../types/content";
@@ -28,6 +29,7 @@ export function validateBlock(value: unknown): asserts value is ContentBlock {
     const body = value.payload;
     if (!record(body) || body.schemaVersion !== 1 || body.type !== value.type || !Array.isArray(body.inline) || !jsonValue(body)) throw new LabloomError({ kind: "block-invalid-version" });
     if (body.collapsed !== undefined && typeof body.collapsed !== "boolean") throw new LabloomError({ kind: "block-invalid-collapse" });
+    if (body.language !== undefined && (value.type !== "code" || !codeLanguages.includes(body.language as never))) throw new LabloomError({ kind: "block-invalid-language" });
     const marks = new Set(["bold", "italic", "underline", "strike", "code", "fgColor", "bgColor"]);
     const colors = new Set(["default", "gray", "light-gray", "red", "yellow", "orange", "green", "lime", "blue", "purple", "brown", "cyan", "pink", "magenta"]);
     for (const node of body.inline) {

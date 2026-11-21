@@ -2,8 +2,8 @@ import { Fragment, Slice, type Schema } from "@tiptap/pm/model";
 import { type EditorState } from "@tiptap/pm/state";
 import { record, validUUID } from "../../../shared/attrs/values";
 import { LabloomError } from "../../../shared/failure";
-import { type ContentBlock } from "../../../shared/types/content";
-import { documentEdit, subtree, type DocumentEdit } from "./document";
+import { type ContentBlock, type InlineNode } from "../../../shared/types/content";
+import { codeLines, documentEdit, subtree, type DocumentEdit } from "./document";
 import { copyBlocks, syncInsert, wholeBlocks } from "./transactions";
 
 export type BlockClipboard = { workspaceId: string; slice: Slice; ids: string[] };
@@ -16,6 +16,17 @@ export function readClipboard(schema: Schema, text: string): BlockClipboard | nu
     try {
         const value: unknown = JSON.parse(text);
         if (!record(value) || typeof value.workspaceId !== "string") return null;
+        // Clipboard payloads from older versions stored code in a generic pageBlock.
+        function upgrade(node: unknown): void {
+            if (!record(node)) return;
+            if (node.type === "pageBlock" && record(node.attrs) && node.attrs.kind === "code") {
+                node.type = "codeBlock";
+                const body = Array.isArray(node.content) && node.content[0];
+                node.content = codeLines((body?.content ?? []) as InlineNode[]);
+            }
+            if (Array.isArray(node.content)) node.content.forEach(upgrade);
+        }
+        upgrade(value.slice);
         const slice = Slice.fromJSON(schema, value.slice);
         if (!wholeBlocks(slice)) return null;
         const ids = slice.content.content.map(node => node.attrs.blockId as string);

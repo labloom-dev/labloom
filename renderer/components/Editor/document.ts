@@ -1,3 +1,4 @@
+import zhCN from "../../../locales/zh-CN.json";
 import { Node as ExtensionNode, type JSONContent, type NodeViewRenderer } from "@tiptap/core";
 import { Document } from "@tiptap/extension-document";
 import { Text } from "@tiptap/extension-text";
@@ -20,6 +21,7 @@ export const canNest = (kind: string): boolean => ["paragraph", "ordered_list", 
 export function kindOf(node: DocNode): ContentBlockKind {
     if (node.type.name === "pageBlock") return node.attrs.kind;
     if (node.type.name === "pageTitle") return "title";
+    if (node.type.name === "codeBlock") return "code";
     if (node.type.name === "pageTable") return "table";
     return node.type.name as ContentBlockKind;
 }
@@ -37,6 +39,49 @@ const block = ExtensionNode.create({
     addAttributes: () => ({ ...blockAttrs(), kind: { default: "paragraph" } }), parseHTML: () => [{ tag: "section[data-kind]" }],
     renderHTML: ({ node }) => ["section", domAttrs(node), 0]
 });
+const codeLine = ExtensionNode.create({
+    name: "codeLine", content: "(text | inlineReference)*", code: true, whitespace: "pre",
+    parseHTML: () => [{ tag: "[data-code-line]", preserveWhitespace: "full" }],
+    renderHTML: () => ["div", { "data-code-line": "" }, 0]
+});
+export function codeLines(inline: InlineNode[]): JSONContent[] {
+    const lines: JSONContent[] = [{ type: "codeLine", content: [] }];
+    for (const node of inline) {
+        if (node.type === "hardBreak") lines.push({ type: "codeLine", content: [] });
+        else if (node.type === "text") {
+            const parts = node.text.split(/\r\n?|\n/u);
+            for (const [index, text] of parts.entries()) {
+                if (index) lines.push({ type: "codeLine", content: [] });
+                if (text) lines[lines.length - 1].content!.push({ ...node, text });
+            }
+        }
+        else lines[lines.length - 1].content!.push(node);
+    }
+    return lines;
+}
+function codeInline(node: DocNode): InlineNode[] {
+    const result: InlineNode[] = [];
+    function append(item: InlineNode): void {
+        const last = result.at(-1);
+        if (item.type === "text" && last?.type === "text" && ((!last.marks && !item.marks) || JSON.stringify(last.marks) === JSON.stringify(item.marks))) last.text += item.text;
+        else result.push(item);
+    }
+    node.forEach((line, _offset, index) => {
+        if (index) append({ type: "text", text: "\n" });
+        line.forEach(child => append(child.toJSON() as InlineNode));
+    });
+    return result;
+}
+export const codeBlock = ExtensionNode.create<{ nodeView: NodeViewRenderer | null }>({
+    name: "codeBlock", group: "workspaceBlock", content: "codeLine+", defining: true, code: true,
+    addOptions: () => ({ nodeView: null }),
+    addAttributes: () => ({ ...blockAttrs(), language: { default: null, rendered: false } }),
+    parseHTML: () => [{ tag: "section[data-kind=code]", priority: 60, preserveWhitespace: "full", getAttrs: el => ({ language: el.dataset.language || null }) }],
+    renderHTML: ({ node }) => ["section", { ...domAttrs(node), ...(node.attrs.language ? { "data-language": node.attrs.language } : {}) }, 0],
+    addNodeView() {
+        return this.options.nodeView;
+    }
+});
 const cellParagraph = ExtensionNode.create({
     name: "paragraph", group: "block", content: "(text | hardBreak)*",
     parseHTML: () => [{ tag: "p" }], renderHTML: () => ["p", 0]
@@ -45,29 +90,37 @@ const table = ExtensionNode.create({
     name: "pageTable", group: "workspaceBlock", content: "table", defining: true, isolating: true,
     addAttributes: blockAttrs, renderHTML: ({ node }) => ["div", domAttrs(node), 0]
 });
-export const inlineReference = ExtensionNode.create<{ nodeView: NodeViewRenderer | null }>({
-    addOptions: () => ({ nodeView: null }),
+export const inlineReference = ExtensionNode.create<{ nodeView: NodeViewRenderer | null; label: () => string }>({
+    addOptions: () => ({ nodeView: null, label: () => zhCN.block.blocked_reference }),
     addNodeView() {
         return this.options.nodeView;
     },
     name: "inlineReference", inline: true, group: "inline", atom: true,
-    addAttributes: () => ({ target: { default: null }, label: { default: "引用" } }),
+    addAttributes: () => ({ target: { default: null }, label: { default: "" } }),
     parseHTML: () => [{ tag: "span[data-inline-target]", getAttrs: el => ({ target: { kind: el.dataset.targetKind, id: el.dataset.inlineTarget }, label: el.textContent?.replace(/^↗ /u, "") }) }],
-    renderHTML: ({ node }) => ["span", { class: "inline-reference", "data-inline-target": node.attrs.target?.id, "data-target-kind": node.attrs.target?.kind }, "↗ " + node.attrs.label]
+    renderHTML({ node }) {
+        return ["span", { class: "inline-reference", "data-inline-target": node.attrs.target?.id, "data-target-kind": node.attrs.target?.kind }, "↗ " + (node.attrs.label || this.options.label())];
+    }
 });
-function atom(name: "hr" | "blocked_reference"): ExtensionNode {
-    return ExtensionNode.create({
+function atom(name: "hr" | "blocked_reference"): ExtensionNode<{ nodeView: NodeViewRenderer | null; label: () => string }> {
+    return ExtensionNode.create<{ nodeView: NodeViewRenderer | null; label: () => string }>({
         name, group: "workspaceBlock", atom: true, selectable: true,
+        addOptions: () => ({ nodeView: null, label: () => zhCN.block.blocked_reference }),
         addAttributes: () => ({ ...blockAttrs(), ...name === "blocked_reference" ? { target: { default: null } } : {} }),
-        renderHTML: ({ node }) => ["div", domAttrs(node), name === "hr" ? ["hr"] : "链接引用"],
-        addNodeView: () => ({ node }) => {
-            const dom = document.createElement("div");
-            dom.dataset.blockId = node.attrs.blockId;
-            dom.dataset.kind = name;
-            dom.contentEditable = "false";
-            if (name === "hr") dom.append(document.createElement("hr"));
-            else dom.textContent = "引用目标缺失";
-            return { dom };
+        renderHTML({ node }) {
+            return ["div", domAttrs(node), name === "hr" ? ["hr"] : this.options.label()];
+        },
+        addNodeView() {
+            if (this.options.nodeView) return this.options.nodeView;
+            return ({ node }) => {
+                const dom = document.createElement("div");
+                dom.dataset.blockId = node.attrs.blockId;
+                dom.dataset.kind = name;
+                dom.contentEditable = "false";
+                if (name === "hr") dom.append(document.createElement("hr"));
+                else dom.textContent = zhCN.editor.missingReference;
+                return { dom };
+            };
         }
     });
 }
@@ -79,13 +132,14 @@ const HardBreak = ExtensionNode.create({
     }
 });
 export const referenceBlock = atom("blocked_reference");
-export const documentExtensions = [Document.extend({ content: "pageTitle workspaceBlock*" }), title, block, body, table,
+export const documentExtensions = [Document.extend({ content: "pageTitle workspaceBlock*" }), title, block, body, codeLine, codeBlock, table,
 Table.configure({ resizable: false }), TableRow, TableCell.extend({ content: "paragraph+" }), TableHeader.extend({ content: "paragraph+" }),
     cellParagraph, atom("hr"), referenceBlock, inlineReference, Text, HardBreak, bold, italic, underline, strike, code, fgColor, bgColor];
 export const blankTable = (): RichNode => ({ type: "table", content: Array.from({ length: 2 }, () => ({ type: "tableRow", content: Array.from({ length: 2 }, () => ({ type: "tableCell", content: [{ type: "paragraph", content: [] }] })) })) });
 
 export function blockJSON(b: ContentBlock, children: JSONContent[] = []): JSONContent {
     const attrs = { blockId: b.id, collapsed: b.payload.collapsed };
+    if (b.type === "code") return { type: "codeBlock", attrs: { ...attrs, language: b.payload.language }, content: codeLines(b.payload.inline) };
     if (b.type === "title") return { type: "pageTitle", attrs, content: b.payload.inline };
     if (b.type === "table") return { type: "pageTable", attrs, content: [b.payload.table ?? blankTable()] };
     if (b.type === "hr" || b.type === "blocked_reference") return { type: b.type, attrs: { ...attrs, target: b.payload.target } };
@@ -126,8 +180,10 @@ function tableData(node: DocNode): RichNode {
 export function blockData(node: DocNode): ContentBlock {
     const type = kindOf(node), value = payload(type);
     if (node.attrs.collapsed != null) value.collapsed = node.attrs.collapsed;
+    if (type === "code" && node.attrs.language) value.language = node.attrs.language;
     if (type === "table") value.table = tableData(node.firstChild!);
     else if (type === "blocked_reference") value.target = node.attrs.target;
+    else if (node.type.name === "codeBlock") value.inline = codeInline(node);
     else if (node.type.name === "pageBlock" || type === "title") value.inline = ((type === "title" ? node : node.firstChild!).content.toJSON() ?? []) as InlineNode[];
     return { id: node.attrs.blockId, type, payload: value, children: childIds(node) };
 }

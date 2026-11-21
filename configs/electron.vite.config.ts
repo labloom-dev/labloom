@@ -33,6 +33,8 @@ export default defineConfig({
     },
     renderer: {
         root: "renderer",
+        worker: { format: "es" },
+        optimizeDeps: { entries: ["index.html", "components/Editor/code-worker.ts"] },
         server: {
             port: 15173
         },

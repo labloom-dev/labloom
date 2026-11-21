@@ -97,7 +97,7 @@ function removeEverywhere(plan: EditChanges, id: string): ReturnType<typeof data
 function deletionSubject(block: ContentBlock): string {
     const names: Record<ContentBlock["type"], string> = {
         title: "标题", paragraph: "段落", heading_1: "一级标题", heading_2: "二级标题", heading_3: "三级标题",
-        unordered_list: "无序列表项", ordered_list: "有序列表项", blockquote: "引文", callout: "提示块",
+        unordered_list: "无序列表项", ordered_list: "有序列表项", blockquote: "引言", callout: "提示块",
         code: "代码块", table: "表格", hr: "分隔线", blocked_reference: "链接引用"
     };
     const target = block.payload.target;
@@ -117,17 +117,23 @@ function deletionSubject(block: ContentBlock): string {
 export function deleteBlock(input: BlockDeletion, source: HistorySource, confirmation?: string, writeId?: string): CommitResult {
     workspace.requireWorkspace();
     return commit.run({ history: source, confirmation, writeId }, () => {
-        const { pageId, blockId } = input;
+        const { pageId } = input;
         writable(pageId);
-        const plan = new EditChanges(), block = plan.block(blockId), pages = data.owners(blockId);
-        if (!block || !pages.includes(pageId)) throw new LabloomError({ kind: "block-delete-not-owned" });
-        const uses = removeEverywhere(plan, blockId);
+        const ids = [...new Set("blockId" in input ? [input.blockId] : input.blockIds)];
+        if (!ids.length) throw new LabloomError({ kind: "block-delete-not-owned" });
+        const plan = new EditChanges(), deleted: ChangePreview["deletedBlocks"] = [];
+        const positions: { uses: data.Use[]; links: data.LinkRow[]; pages: string[] }[] = [];
+        for (const id of ids) {
+            const block = plan.block(id), pages = data.owners(id);
+            if (!block || !pages.includes(pageId)) throw new LabloomError({ kind: "block-delete-not-owned" });
+            const uses = removeEverywhere(plan, id), links = data.incoming({ kind: "block", id });
+            plan.blocks.add(id);
+            for (const owner of pages) plan.pages.add(owner);
+            deleted.push({ id, excerpt: deletionSubject(block), pages: pages.length, positions: uses.length, links: links.length });
+            positions.push({ uses, links, pages: pages.sort() });
+        }
         plan.touches.add(pageId);
-        plan.blocks.add(blockId);
-        for (const id of pages) plan.pages.add(id);
-        const links = data.incoming({ kind: "block", id: blockId });
-        const deleted = [{ id: blockId, excerpt: deletionSubject(block), pages: pages.length, positions: uses.length, links: links.length }];
-        const preview = commit.preview(plan, input, deleted, [], { uses, links, pages: pages.sort() });
+        const preview = commit.preview(plan, input, deleted, [], positions);
         return commit.finish(plan, pageId, 0, preview);
     });
 }

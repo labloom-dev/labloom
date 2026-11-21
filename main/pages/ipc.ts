@@ -3,6 +3,7 @@ import typia from "typia";
 import { pagesChannels, pagesChanged, type PagesAPI } from "../../shared/pages/ipc";
 import { invalid, register, route, type Routes } from "../ipc";
 import * as records from "../knowledge/records";
+import * as picker from "../knowledge/block-list";
 import * as edits from "../knowledge/edits";
 import * as papers from "../knowledge/papers";
 import * as purge from "../knowledge/purge";
@@ -14,6 +15,7 @@ export const routes = {
     list: route(typia.createAssert<Args<"list">>(invalid), records.list),
     search: route(typia.createAssert<Args<"search">>(invalid), records.searchPages),
     listUpdates: route(typia.createAssert<Args<"listUpdates">>(invalid), records.listUpdates),
+    blockList: route(typia.createAssert<Args<"blockList">>(invalid), picker.blockList),
     get: route(typia.createAssert<Args<"get">>(invalid), papers.get),
     readObjects: route(typia.createAssert<Args<"readObjects">>(invalid), records.readObjects),
     syncBlocks: route(typia.createAssert<Args<"syncBlocks">>(invalid), edits.syncBlocks),

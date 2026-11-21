@@ -148,10 +148,10 @@ export function flags(id: string): { independent: boolean; deleted: boolean } {
     return { independent: state.some(a => a.id === "independent" && a.value === 1), deleted: !state.length || state.some(a => a.id === "deleted" && a.value === 1) };
 }
 
-export function title(id: string): string {
+export function title(id: string, fallback = "未命名"): string {
     workspace.requireWorkspace();
     const row = statement("SELECT knowledge_text(b.type,b.content) AS title FROM pages p JOIN blocks b ON b.id = p.title_block_id WHERE p.id = ?").get(id) as { title: string } | undefined;
-    return row?.title || "未命名";
+    return row?.title || fallback;
 }
 
 export function valuesFor(ids: string[]): Map<string, Record<string, AttributeValue>> {
@@ -387,13 +387,13 @@ export function resolve(target: Target): ResolvedTarget | null {
     if (!validTarget(target)) throw new LabloomError({ kind: "reference-invalid" });
     if (target.kind === "block") {
         const row = blockRow(target.id), block = row ? decodeBlock(row) : null, owned = owners(target.id);
-        if (!block || !owned.length) return { status: "deleted", title: "已删除", text: "" };
+        if (!block || !owned.length) return { status: "deleted", title: "", text: "" };
         const text = blockText(block);
         return { status: owned.every(id => flags(id).deleted) ? "recycled" : "ok", title: text, text, block };
     }
     if (!statement("SELECT 1 FROM pages WHERE id=?").get(target.id)) return null;
     const page = get(target.id);
-    return { title: page.title || "未命名", text: page.excerpt, status: page.attributes.deleted ? "recycled" : "ok" };
+    return { title: page.title, text: page.excerpt, status: page.attributes.deleted ? "recycled" : "ok" };
 }
 
 export function backlinks(id: string): Backlink[] {
@@ -404,7 +404,8 @@ export function backlinks(id: string): Backlink[] {
         const block = edge.sourceKind === "block";
         for (const owner of block ? owners(edge.sourceId) : [edge.sourceId]) {
             const before = result.get(owner), fields = [...new Set([...(before?.sourceFields ?? []), ...block ? [] : [edge.sourceField]])];
-            result.set(owner, { sourceId: owner, title: title(owner), sourceKind: block || before?.sourceKind === "reference" ? "reference" : "attribute", ...(fields.length ? { sourceFields: fields } : {}), deleted: flags(owner).deleted });
+            const anchor = before?.sourceBlockId ?? (block ? edge.sourceId : undefined);
+            result.set(owner, { sourceId: owner, ...(anchor ? { sourceBlockId: anchor } : {}), pageKind: before?.pageKind ?? header(owner).kind, title: before?.title ?? title(owner, ""), sourceKind: block || before?.sourceKind === "reference" ? "reference" : "attribute", ...(fields.length ? { sourceFields: fields } : {}), deleted: flags(owner).deleted });
         }
     }
     return [...result.values()];

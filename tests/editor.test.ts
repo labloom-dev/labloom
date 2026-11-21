@@ -7,6 +7,10 @@ import { EditorState, TextSelection } from "@tiptap/pm/state";
 import { Mapping } from "@tiptap/pm/transform";
 import { blockData, blankTable, documentEdit, documentExtensions, indexDoc, pageDocument, removesReference } from "../renderer/components/Editor/document";
 import { clipboardRows, copyBlocks, identityPlugin, indent, split, syncInsert } from "../renderer/components/Editor/transactions";
+import { BlockSelection } from "../renderer/components/Editor/block-selection";
+import { moveBlocks } from "../renderer/components/Editor/block-move";
+import { fold, reveal } from "../renderer/components/Editor/folding";
+import { inputAction, convertPrefix, restoreLiteral } from "../renderer/components/Editor/input-conversion";
 import { inverse, patchDocument, replay } from "../renderer/components/Editor/reconcile";
 import { PageWrites, restoreOccurrences, reviewEdit } from "../renderer/components/Knowledge/page-writes";
 import { PendingInput } from "../renderer/components/Editor/pending-input";
@@ -222,4 +226,79 @@ test("canceling a fallback confirmation restores only lost positions and preserv
     assert.deepEqual(calls[1].pageChildren, restored);
     assert.equal(calls[1].blocks.find(row => row.id === b.id)?.payload.inline[0].type, "text");
     assert.deepEqual(calls[1].blocks.find(row => row.id === b.id)?.payload.inline, payload("paragraph", "typed during confirmation").inline);
+});
+test("typed prefixes keep the literal for undo and respect child, table and code boundaries", () => {
+    for (const [prefix, kind] of [["# ", "heading_1"], ["## ", "heading_2"], ["### ", "heading_3"], ["- ", "unordered_list"], ["* ", "unordered_list"], ["+ ", "unordered_list"], ["19. ", "ordered_list"], ["> ", "blockquote"], ["```", "code"], ["---", "hr"]] as const) {
+        const a = block("tail"), before = select(state(page([a])), a.id);
+        const literal = before.apply(before.tr.insertText(prefix));
+        assert.equal(inputAction(literal, literal.selection.from, literal.selection.to, ""), kind);
+        const converted = literal.apply(convertPrefix(literal, kind));
+        assert.equal(blockData(converted.doc.child(1)).type, kind);
+        assert.equal(converted.doc.textContent.endsWith("tail"), true);
+        const restored = converted.apply(restoreLiteral(converted, literal));
+        assert.ok(restored.doc.eq(literal.doc));
+        assert.equal(restored.selection.head, literal.selection.head);
+    }
+    const a = block("# "), b = block("nested");
+    a.children = [b.id];
+    const nested = select(state(page([a, b], [a.id])), a.id, 2);
+    assert.equal(inputAction(nested, nested.selection.head, nested.selection.head, ""), undefined);
+    for (const kind of ["code", "heading_1", "ordered_list", "blockquote"] as const) {
+        const row = block("# ", kind), s = select(state(page([row])), row.id, 2);
+        assert.equal(inputAction(s, s.selection.head, s.selection.head, ""), undefined);
+    }
+});
+test("block ranges include descendants, move a subtree atomically and reject paths through synced descendants", () => {
+    const a = block("A"), b = block("B"), c = block("C"), d = block("D");
+    a.children = [b.id];
+    const s = state(page([a, b, c, d], [a.id, c.id, b.id, d.id])), positions = indexDoc(s.doc);
+    const A = positions.get(a.id)![0], B = positions.get(b.id)!, C = positions.get(c.id)![0];
+    const range = new BlockSelection(s.doc, A.pos, C.pos);
+    assert.deepEqual(range.places().map(p => p.node.attrs.blockId), [a.id, c.id]);
+    assert.equal(range.content().content.firstChild!.lastChild!.attrs.blockId, b.id);
+    assert.equal(moveBlocks(s, [A], B[1].pos + B[1].node.nodeSize - 1), null);
+    const moved = moveBlocks(s, range.places(), s.doc.content.size)!;
+    assert.deepEqual(s.apply(moved.tr).doc.content.content.slice(1).map(n => n.attrs.blockId), [b.id, d.id, a.id, c.id]);
+    const folded = s.apply(fold(s.tr, A)), revealed = reveal(folded.tr, B[0].pos);
+    assert.ok(folded.doc.child(1).attrs.collapsed && revealed.docChanged);
+    assert.equal(revealed.doc.child(1).attrs.collapsed, false);
+});
+test("dragging between two visible occurrences of the same synced parent reorders the shared child array once", () => {
+    const a = block("parent"), b = block("first"), c = block("second");
+    a.children = [b.id, c.id];
+    const s = state(page([a, b, c], [a.id, a.id])), entries = indexDoc(s.doc);
+    const moved = moveBlocks(s, [entries.get(b.id)![0]], entries.get(a.id)![1].pos + s.doc.child(1).nodeSize - 1)!;
+    assert.deepEqual(s.apply(moved.tr).doc.content.content.slice(1).map(n => blockData(n).children), [[c.id, b.id], [c.id, b.id]]);
+});
+
+test("code languages round-trip through blocks", () => {
+    const a = block("const a = 1;\nconst b = 2;", "code");
+    a.payload.language = "typescript";
+    validateBlock(a);
+    assert.deepEqual(blockData(state(page([a])).doc.child(1)), a);
+});
+
+test("invalid code language reports a language failure for both unknown languages and other block kinds", () => {
+    const a = block("code", "code");
+    const invalid = { failure: { kind: "block-invalid-language" } };
+    assert.throws(() => validateBlock({ ...a, payload: { ...a.payload, language: "unknown" } }), invalid);
+    const b = block("note");
+    assert.throws(() => validateBlock({ ...b, payload: { ...b.payload, language: "typescript" } }), invalid);
+});
+test("an in-flight page write preserves both sides of a queued conversion boundary", async () => {
+    const a = block("A"), commits: string[] = [];
+    let release!: () => void;
+    const first = new Promise<void>(resolve => {
+        release = resolve;
+    });
+    const writes = new PageWrites(randomUUID(), async edit => {
+        commits.push(edit.blocks[0].type + "/" + edit.blocks[0].payload.inline.map(n => n.type === "text" ? n.text : "").join(""));
+        if (commits.length === 1) await first;
+    });
+    writes.stage({ blocks: [a] });
+    const pending = writes.flush();
+    writes.stage({ blocks: [{ ...a, payload: payload("paragraph", "# ") }] }); writes.checkpoint();
+    writes.stage({ blocks: [{ ...a, type: "heading_1", payload: payload("heading_1") }] }); writes.checkpoint();
+    release(); await pending;
+    assert.deepEqual(commits, ["paragraph/A", "paragraph/# ", "heading_1/"]);
 });

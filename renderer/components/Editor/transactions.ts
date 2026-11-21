@@ -1,3 +1,4 @@
+import { isComposingKey } from "../../../shared/content/commands";
 import { Extension } from "@tiptap/core";
 import { Fragment, Slice, type Node as DocNode } from "@tiptap/pm/model";
 import { NodeSelection, Plugin, TextSelection, type Command, type EditorState, type Transaction } from "@tiptap/pm/state";
@@ -32,8 +33,15 @@ export const backspace: Command = (state, dispatch) => {
     const loc = located(state);
     if (!loc || loc.node.type.name !== "pageBlock") return false;
     const { node, pos } = loc, at = state.doc.resolve(pos), previous = at.nodeBefore;
-    if (!node.firstChild!.content.size) {
-        if (dispatch) dispatch(selectionIn(state.tr.delete(pos, pos + node.nodeSize), Math.max(1, pos - 2)).scrollIntoView());
+    if (["heading_1", "heading_2", "heading_3", "ordered_list", "unordered_list", "blockquote", "callout"].includes(kindOf(node))) {
+        if (dispatch) dispatch(state.tr.setNodeMarkup(pos, undefined, { ...node.attrs, kind: "paragraph" }));
+        return true;
+    }
+    if (!node.firstChild!.content.size && node.childCount === 1) {
+        if (dispatch) {
+            const cursor = previous?.attrs.collapsed ? pos - previous.nodeSize + 2 + previous.firstChild!.content.size : Math.max(1, pos - 2);
+            dispatch(selectionIn(state.tr.delete(pos, pos + node.nodeSize), cursor).scrollIntoView());
+        }
         return true;
     }
     if (!previous || !["pageBlock", "pageTitle"].includes(previous.type.name)) return false;
@@ -141,20 +149,17 @@ export function identityPlugin(): Plugin {
 }
 export const editing = Extension.create({
     name: "workspaceEditing", priority: 1200,
-    addProseMirrorPlugins: () => [identityPlugin()],
-    addKeyboardShortcuts() {
-        const command = (cmd: Command): boolean => cmd(this.editor.state, this.editor.view.dispatch);
-        return {
-            Escape: () => {
-                const { state, view } = this.editor, place = located(state);
-                if (!place || !state.selection.empty || place.node.type.name === "pageTitle") return false;
-                view.dispatch(state.tr.setSelection(NodeSelection.create(state.doc, place.pos)));
-                return true;
-            },
-            Enter: () => !this.editor.view.composing && command(split),
-            Backspace: () => !this.editor.view.composing && command(backspace),
-            Tab: () => command(indent(false)),
-            "Shift-Tab": () => command(indent(true))
-        };
-    }
+    addProseMirrorPlugins: () => [identityPlugin(), new Plugin({ props: { handleKeyDown(view, event) {
+        if (view.composing || isComposingKey(event) || event.ctrlKey || event.metaKey || event.altKey || !view.editable) return false;
+        const { state } = view;
+        if (event.key === "Escape") {
+            const place = located(state);
+            if (!place || !state.selection.empty || place.node.type.name === "pageTitle") return false;
+            view.dispatch(state.tr.setSelection(NodeSelection.create(state.doc, place.pos)));
+            return true;
+        }
+        const command = event.key === "Tab" ? indent(event.shiftKey) : event.shiftKey ? undefined :
+            event.key === "Enter" ? split : event.key === "Backspace" ? backspace : undefined;
+        return command ? command(state, view.dispatch) : false;
+    } } })]
 });

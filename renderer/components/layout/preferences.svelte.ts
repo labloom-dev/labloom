@@ -28,6 +28,7 @@ function apply(): void {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
     document.documentElement.dataset.motion = appearance.motion ? "on" : "off";
     document.documentElement.style.setProperty("--reading-font-size", `${appearance.readingSize}px`);
+    document.documentElement.style.setProperty("--ui-editor-font-body", appearance.readingSize === defaultAppearance.readingSize ? "" : `${appearance.readingSize}px`);
     setLocale(appearance.language);
     const style = getComputedStyle(document.documentElement);
     const color = style.getPropertyValue("--ui-titlebar-background").trim(), symbol = style.getPropertyValue("--ui-titlebar-foreground").trim();

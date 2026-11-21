@@ -244,6 +244,26 @@ test("a new edit after undo replaces the old redo step", t => {
     assert.equal(blockText(service.get(page.id).blocks[a.id]), "A1");
 });
 
+test("one block-menu deletion and one undo cover every selected block and repeated occurrence", t => {
+    const { service, history } = fixture(t);
+    const page = service.create("editable", "Bulk deletion"), another = service.create("editable", "Mirror");
+    const first = page.children[0], second = randomUUID();
+    const children = [first, second, first];
+    edit(service, page, [{ id: second, type: "paragraph", payload: payload("paragraph", "B"), children: [] }], children);
+    edit(service, another, [], [second, first]);
+    const remove = (token?: string): CommitResult => service.deleteBlock({ pageId: page.id, blockIds: [first, second, first] }, pageHistory(page.id), token);
+    const pending = remove();
+    assert.equal(pending.status, "confirmation");
+    assert.equal(pending.preview.deletedBlocks.length, 2);
+    assert.deepEqual(service.get(page.id).children, children);
+    assert.equal(remove(pending.preview.token).status, "saved");
+    assert.deepEqual(service.get(page.id).children, []);
+    assert.deepEqual(service.get(another.id).children, []);
+    history.apply(pageHistory(page.id), "undo");
+    assert.deepEqual(service.get(page.id).children, children);
+    assert.deepEqual(service.get(another.id).children, [second, first]);
+});
+
 test("deleteBlock removes every use, keeps live links and undo restores nested and repeated positions", t => {
     const { service, history } = fixture(t);
     const a = service.create("editable", "A"), b = service.create("editable", "B"), c = service.create("editable", "C");

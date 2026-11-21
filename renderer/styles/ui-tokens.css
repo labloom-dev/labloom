@@ -1,6 +1,14 @@
 /* VS Code Light Modern / Dark Modern. Only the palette contains literal colors. */
 :root {
     --ui-p-canvas: #ffffff;
+    --ui-p-syntax-keyword: #0000ff;
+    --ui-p-syntax-control: #af00db;
+    --ui-p-syntax-string: #a31515;
+    --ui-p-syntax-comment: #008000;
+    --ui-p-syntax-number: #098658;
+    --ui-p-syntax-variable: #001080;
+    --ui-p-syntax-type: #267f99;
+    --ui-p-syntax-function: #795e26;
     --ui-p-neutral-1: #f8f8f8;
     --ui-p-hover: #f2f2f2;
     --ui-p-list-selection: #e8e8e8;
@@ -24,10 +32,45 @@
     --ui-p-shadow: #0003;
     --ui-p-scrim: #0005;
     --ui-p-clear: transparent;
+
+    --ui-p-ink-gray: #4d5056;
+    --ui-p-ink-light-gray: #666970;
+    --ui-p-ink-red: #a12e35;
+    --ui-p-ink-yellow: #7e6000;
+    --ui-p-ink-orange: #994a12;
+    --ui-p-ink-green: #27663f;
+    --ui-p-ink-lime: #486716;
+    --ui-p-ink-blue: #175e9b;
+    --ui-p-ink-purple: #70418e;
+    --ui-p-ink-brown: #775035;
+    --ui-p-ink-cyan: #14686e;
+    --ui-p-ink-pink: #9f3b67;
+    --ui-p-ink-magenta: #8b3584;
+    --ui-p-tint-gray: #e4e5e7;
+    --ui-p-tint-light-gray: #f0f0f1;
+    --ui-p-tint-red: #f9deda;
+    --ui-p-tint-yellow: #fff0ba;
+    --ui-p-tint-orange: #ffe3ca;
+    --ui-p-tint-green: #dbefde;
+    --ui-p-tint-lime: #e9f2ce;
+    --ui-p-tint-blue: #dcecfb;
+    --ui-p-tint-purple: #ecdef8;
+    --ui-p-tint-brown: #eee2d6;
+    --ui-p-tint-cyan: #d7efed;
+    --ui-p-tint-pink: #f9dfe9;
+    --ui-p-tint-magenta: #f2def2;
 }
 
 :root[data-theme="dark"] {
     --ui-p-canvas: #1f1f1f;
+    --ui-p-syntax-keyword: #569cd6;
+    --ui-p-syntax-control: #c586c0;
+    --ui-p-syntax-string: #ce9178;
+    --ui-p-syntax-comment: #6a9955;
+    --ui-p-syntax-number: #b5cea8;
+    --ui-p-syntax-variable: #9cdcfe;
+    --ui-p-syntax-type: #4ec9b0;
+    --ui-p-syntax-function: #dcdcaa;
     --ui-p-neutral-1: #181818;
     --ui-p-hover: #2a2d2e;
     --ui-p-list-selection: #04395e;
@@ -49,6 +92,33 @@
     --ui-p-red-hover: #c53b2d;
     --ui-p-shadow: #0009;
     --ui-p-scrim: #0008;
+
+    --ui-p-ink-gray: #c5c8cd;
+    --ui-p-ink-light-gray: #a7aab0;
+    --ui-p-ink-red: #ffaaa4;
+    --ui-p-ink-yellow: #ebcf78;
+    --ui-p-ink-orange: #f3b481;
+    --ui-p-ink-green: #9bd4ab;
+    --ui-p-ink-lime: #c0d48d;
+    --ui-p-ink-blue: #98cdf6;
+    --ui-p-ink-purple: #cfafea;
+    --ui-p-ink-brown: #d4b49b;
+    --ui-p-ink-cyan: #91d1d0;
+    --ui-p-ink-pink: #f0aecb;
+    --ui-p-ink-magenta: #dda7db;
+    --ui-p-tint-gray: #393c42;
+    --ui-p-tint-light-gray: #2d3035;
+    --ui-p-tint-red: #4a2e31;
+    --ui-p-tint-yellow: #443d25;
+    --ui-p-tint-orange: #483426;
+    --ui-p-tint-green: #293e30;
+    --ui-p-tint-lime: #363f29;
+    --ui-p-tint-blue: #273b4d;
+    --ui-p-tint-purple: #3c3049;
+    --ui-p-tint-brown: #41342d;
+    --ui-p-tint-cyan: #283e3f;
+    --ui-p-tint-pink: #47313c;
+    --ui-p-tint-magenta: #423044;
 }
 
 :root {
@@ -71,6 +141,14 @@
     --ui-divider: var(--ui-p-neutral-4);
     --ui-hover: var(--ui-p-hover);
     --ui-pressed: var(--ui-p-neutral-5);
+    --ui-syntax-keyword: var(--ui-p-syntax-keyword);
+    --ui-syntax-control: var(--ui-p-syntax-control);
+    --ui-syntax-string: var(--ui-p-syntax-string);
+    --ui-syntax-comment: var(--ui-p-syntax-comment);
+    --ui-syntax-number: var(--ui-p-syntax-number);
+    --ui-syntax-variable: var(--ui-p-syntax-variable);
+    --ui-syntax-type: var(--ui-p-syntax-type);
+    --ui-syntax-function: var(--ui-p-syntax-function);
     --ui-text-selection: var(--ui-p-selection-blue);
     --ui-selected: var(--ui-p-list-selection);
     --ui-selected-inactive: var(--ui-p-list-selection-inactive);
@@ -86,6 +164,7 @@
     --ui-shadow-dialog: 0 8px 32px var(--ui-p-shadow);
 
     --ui-font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+    --ui-font-mono: "Cascadia Mono", Consolas, ui-monospace, "SFMono-Regular", Menlo, "Liberation Mono", monospace;
     --ui-font-small: 12px;
     --ui-font-body: 14px;
     --ui-font-title: 20px;
@@ -120,6 +199,52 @@
     --ui-stroke: 1px;
     --ui-focus-width: 1px;
     --ui-focus-offset: 1px;
+
+    --ui-editor-font-body: 15px;
+    --ui-editor-font-title: 30px;
+    --ui-editor-font-h1: 24px;
+    --ui-editor-font-h2: 20px;
+    --ui-editor-font-h3: 17px;
+    --ui-editor-font-code: 13px;
+    --ui-editor-line-height: 1.6;
+    --ui-editor-heading-line-height: 1.3;
+    --ui-editor-content-width: 800px;
+    --ui-editor-gutter: 32px;
+    --ui-editor-indent: 28px;
+    --ui-editor-block-gap: var(--ui-space-2);
+    --ui-editor-heading-gap: var(--ui-space-6);
+    --ui-editor-min-height: 180px;
+    --ui-properties-width: 300px;
+    --ui-editor-preview-width: 320px;
+    --ui-editor-drag-preview-height: 200px;
+    --ui-editor-block-selection: var(--ui-text-selection);
+    --ui-editor-sync-border: var(--ui-text-match);
+    --ui-editor-fg-gray: var(--ui-p-ink-gray);
+    --ui-editor-fg-light-gray: var(--ui-p-ink-light-gray);
+    --ui-editor-fg-red: var(--ui-p-ink-red);
+    --ui-editor-fg-yellow: var(--ui-p-ink-yellow);
+    --ui-editor-fg-orange: var(--ui-p-ink-orange);
+    --ui-editor-fg-green: var(--ui-p-ink-green);
+    --ui-editor-fg-lime: var(--ui-p-ink-lime);
+    --ui-editor-fg-blue: var(--ui-p-ink-blue);
+    --ui-editor-fg-purple: var(--ui-p-ink-purple);
+    --ui-editor-fg-brown: var(--ui-p-ink-brown);
+    --ui-editor-fg-cyan: var(--ui-p-ink-cyan);
+    --ui-editor-fg-pink: var(--ui-p-ink-pink);
+    --ui-editor-fg-magenta: var(--ui-p-ink-magenta);
+    --ui-editor-bg-gray: var(--ui-p-tint-gray);
+    --ui-editor-bg-light-gray: var(--ui-p-tint-light-gray);
+    --ui-editor-bg-red: var(--ui-p-tint-red);
+    --ui-editor-bg-yellow: var(--ui-p-tint-yellow);
+    --ui-editor-bg-orange: var(--ui-p-tint-orange);
+    --ui-editor-bg-green: var(--ui-p-tint-green);
+    --ui-editor-bg-lime: var(--ui-p-tint-lime);
+    --ui-editor-bg-blue: var(--ui-p-tint-blue);
+    --ui-editor-bg-purple: var(--ui-p-tint-purple);
+    --ui-editor-bg-brown: var(--ui-p-tint-brown);
+    --ui-editor-bg-cyan: var(--ui-p-tint-cyan);
+    --ui-editor-bg-pink: var(--ui-p-tint-pink);
+    --ui-editor-bg-magenta: var(--ui-p-tint-magenta);
 
     /* All portalled to the document body, in ascending paint order. */
     --ui-z-dropdown: 100;

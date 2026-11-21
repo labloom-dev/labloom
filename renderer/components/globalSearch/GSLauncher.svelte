@@ -1,9 +1,8 @@
 <script lang="ts">
     import { Popover } from "bits-ui";
     import { tick } from "svelte";
-    import { type PageSummary } from "../../../shared/types/content";
+    import { recent, search } from "./page-search";
     import { t } from "../../i18n.svelte";
-    import { navigationState } from "../Tab/persistence.svelte";
     import { commandDisabled, prepareCommands, rememberFocus, runCommand } from "../layout/commands";
     import { openPage } from "../layout/navigation";
     import { appearance, currentTimeZone } from "../layout/preferences.svelte";
@@ -15,16 +14,6 @@
     let choice: SearchChoice | undefined;
     const clock = $derived(new Intl.DateTimeFormat(appearance.language, { dateStyle: "short", timeStyle: "short", timeZone: currentTimeZone() }));
 
-    async function recent(): Promise<(PageSummary & { openedAt: number })[]> {
-        const history = navigationState.recentPages;
-        if (!history.length) return [];
-        const { items } = await window.api.pages.list({ ids: history.map(entry => entry.id), limit: history.length });
-        const byId = new Map(items.map(page => [page.id, page]));
-        return history.flatMap(({ id, openedAt }) => {
-            const page = byId.get(id);
-            return page ? [{ ...page, openedAt }] : [];
-        });
-    }
     function setOpen(value: boolean): void {
         if (value) {
             prepareCommands(); showSearch(false);
@@ -64,7 +53,7 @@
         <Popover.Content class="ui-popup search-popup" aria-label={t("quickOpen.input")} align="center"
             sideOffset={-(trigger?.offsetHeight ?? 0)} collisionPadding={{ left: 8, right: 8 }} onOpenAutoFocus={opened} onCloseAutoFocus={event => event.preventDefault()}>
             {#if shell.search}
-                <GSPopover bind:input bind:query={shell.query} search={(keyword, offset) => window.api.pages.search(keyword, offset)}
+                <GSPopover bind:input bind:query={shell.query} {search}
                     {recent} formatTime={ms => clock.format(ms)} disabled={commandDisabled}
                     onchoose={selected => {
                         if (shell.search) {

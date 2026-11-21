@@ -3,6 +3,7 @@ import { tick } from "svelte";
 import { definitionFor } from "../Tab/views";
 import { visits } from "../Tab/activity.svelte";
 import { shortcutCommand, type Command } from "../../../shared/content/commands";
+import { toggleProperties } from "../Knowledge/page-header";
 import { tabDirty } from "../Tab/dirty.svelte";
 import { workspaceHistory, type HistorySource } from "../../../shared/history/ipc";
 import { confirmed } from "../Knowledge/confirmation.svelte";
@@ -15,7 +16,7 @@ import { createPage, openDestination, openPage, splitCurrent } from "./navigatio
 import { focusTabGroup } from "../Tab/interactions";
 import { shell, showSearch, togglePanel } from "./shell.svelte";
 
-export type EditingCommand = "undo" | "redo" | "cut" | "copy" | "paste" | "selectAll" | "inlineReference";
+export type EditingCommand = "undo" | "redo" | "cut" | "copy" | "paste" | "selectAll" | "inlineReference" | "blockMenu";
 const editors = new WeakMap<HTMLElement, (command: EditingCommand) => void>();
 let lastFocus: HTMLElement | null = null;
 export function rememberFocus(): void {
@@ -99,6 +100,9 @@ async function focusActive(id: string): Promise<void> {
 }
 export function commandDisabled(id: Command): boolean {
     const group = tabState.groups.find(item => item.id === tabState.focusedGroupId);
+    const current = group?.tabs.find(tab => tab.id === group.activeTabId);
+    if (id === "toggleProperties") return current?.view.type !== "page";
+    if (id === "blockMenu") return !group || !current || !document.querySelector(`[data-tabs-content][data-value="${CSS.escape(current.id)}"] .tiptap[contenteditable=true]`);
     if (id === "mergeGroup") return tabState.groups.length < 2;
     if (id === "closeTab") return !group?.activeTabId;
     if (id === "nextTab" || id === "previousTab") return (group?.tabs.length ?? 0) < 2;
@@ -108,7 +112,17 @@ export function commandDisabled(id: Command): boolean {
 
 export function runCommand(id: Command): void {
     const group = tabState.groups.find(g => g.id === tabState.focusedGroupId)!;
-    if (id === "newPage") createPage();
+    if (id === "toggleProperties") {
+        const tab = group.tabs.find(item => item.id === group.activeTabId);
+        if (tab?.view.type === "page") toggleProperties(tab.id, tab.view.params);
+    }
+    else if (id === "blockMenu") {
+        const activeEditor = lastFocus?.closest<HTMLElement>(".tiptap");
+        const pane = group.activeTabId && document.querySelector(`[data-tabs-content][data-value="${CSS.escape(group.activeTabId)}"]`);
+        const editor = pane && (activeEditor && pane.contains(activeEditor) ? activeEditor : pane.querySelector<HTMLElement>(".tiptap"));
+        if (editor) editors.get(editor)?.("blockMenu");
+    }
+    else if (id === "newPage") createPage();
     else if (id === "closeTab") {
         if (group.activeTabId) removeTab(group.activeTabId);
     }
@@ -148,6 +162,7 @@ export function globalShortcut(event: KeyboardEvent): void {
     const id = shortcutCommand(event);
     if (!id || (shell.search && id !== "commandPalette" && id !== "search")) return;
     const target = event.target instanceof Element ? event.target : null;
+    if (id === "blockMenu" && !target?.closest(".tiptap[contenteditable=true]")) return;
     if (["undo", "redo", "cut", "copy", "paste", "selectAll"].includes(id) && target?.closest("input,textarea,.tiptap,[contenteditable=true]")) return;
     event.preventDefault();
     if (!shell.search) rememberFocus();
