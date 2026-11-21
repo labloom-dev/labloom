@@ -66,7 +66,9 @@ test("annotation creation is retained, reversible and has an empty paragraph, wh
     assert.equal(page.children.length, 1); assert.equal(page.blocks[page.children[0]].type, "paragraph");
     assert.equal(page.excerpt, ""); assert.match(page.attributes.annotation_quote as string, /HELLO/);
     assert.equal(page.attributes.annotation_color, "yellow"); assert.equal(page.attributes.annotation_file, fileId);
-    assert.deepEqual(knowledge.backlinks(id)[0].sourceFields, ["paper_annotations"]);
+    const [backlink] = knowledge.backlinks(id);
+    assert.equal(backlink.pageKind, "paper");
+    assert.deepEqual(backlink.sourceFields, ["paper_annotations"]);
     assert.equal((await papers.resources(paperId)).annotations.length, 1);
     assert.equal(history.apply(pageHistory(paperId), "undo").status, "saved");
     assert.deepEqual(knowledge.get(paperId).attributes.paper_annotations, []);

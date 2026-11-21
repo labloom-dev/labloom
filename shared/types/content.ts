@@ -1,3 +1,4 @@
+import type { CodeLanguage } from "../content/code-languages";
 import { type AttributeValue } from "./attributes";
 
 export const pageKinds = ["editable", "paper", "annotation", "feed"] as const;
@@ -15,6 +16,7 @@ export type BlockPayload = {
     type: ContentBlockKind;
     inline: InlineNode[];
     collapsed?: boolean;
+    language?: CodeLanguage;
     target?: Target | null;
     table?: RichNode;
 };
@@ -34,6 +36,8 @@ export type PageRecord = PageSummary & {
     children: string[];
     blocks: Record<string, ContentBlock>;
 };
+export type BlockListItem = { id: string; type: ContentBlockKind; text: string; depth: number };
+export type PageBlockList = { title: string; rows: BlockListItem[] };
 export type PageObjects = {
     page?: Pick<PageRecord, "attributes" | "children">;
     blocks: ContentBlock[];
@@ -48,7 +52,7 @@ export type EditCommit = {
 };
 type Position = { pageId: string; containerId: string; index: number; blockId: string };
 export type Placement = { position: Position; action: "insert" | "remove" | "clone" | "duplicate" | "move-up" | "move-down"; blockId?: string };
-export type BlockDeletion = { pageId: string; blockId: string };
+export type BlockDeletion = { pageId: string } & ({ blockId: string } | { blockIds: string[] });
 export type Changed = { pages: string[]; blocks: string[]; backlinks?: string[]; highlightPages?: string[] };
 export type KnowledgeChange = Changed & { writeId?: string; titlePages?: string[]; kinds?: Record<string, PageKind>; summaryPages?: string[]; definition?: string; notices?: boolean; purged?: string[] };
 type NamedPage = { id: string; title: string };
@@ -59,4 +63,4 @@ export type ChangePreview = {
 };
 export type CommitResult = { status: "saved"; batch: number; changed: Changed; sharedUses?: Record<string, number> } | { status: "confirmation"; preview: ChangePreview };
 export type ResolvedTarget = { title: string; text: string; status: "ok" | "recycled" | "deleted"; block?: ContentBlock };
-export type Backlink = { sourceId: string; title: string; sourceKind: "reference" | "attribute"; sourceFields?: string[]; deleted: boolean };
+export type Backlink = { sourceId: string; sourceBlockId?: string; pageKind: PageKind; title: string; sourceKind: "reference" | "attribute"; sourceFields?: string[]; deleted: boolean };

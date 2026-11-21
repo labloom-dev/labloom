@@ -1,125 +1,58 @@
 <Toolbar.Root>
     {#snippet child({ props })}
-        <div
-            {...props}
-            class="toolbar"
-            popover="manual"
-            bind:this={element}
-            onmousedown={keepSelection}
-            style="position: fixed; inset: auto; margin: 0;"
-        >
-            <div class="actions">
-                {#each toolbarState.formats as format (format.name)}
-                    <Toolbar.Button
-                        class={format.active ? "tool-button active" : "tool-button"}
-                        aria-label={format.label}
-                        disabled={format.disabled}
-                        onclick={() => editor?.chain().focus().toggleMark(format.name).run()}
-                    >
-                        <Icon name={format.icon} size="1.125rem" />
-                    </Toolbar.Button>
-                {/each}
-                <span class="separator"></span>
-                <Color {editor} anchor={element} bind:element={colorElement} bind:open={colorOpen} />
-                <Toolbar.Button
-                    class="tool-button"
-                    aria-label="清除格式"
-                    disabled={!toolbarState.canClear}
-                    onclick={clearFormat}
-                >
-                    <Icon name="clear-formatting" size="1.125rem" />
+        <div {...props} class="toolbar ui-popup" aria-label={t("editor.toolbar")} aria-keyshortcuts="Alt+F10" popover="manual" bind:this={element} onmousedown={keepSelection}>
+            {#each toolbarState.formats as format (format.name)}
+                <Toolbar.Button disabled={format.disabled}>
+                    {#snippet child({ props: button })}<IconButton {...button} label={t(`editor.${format.name}`)} shortcut={format.shortcut} icon={format.icon}
+                        pressed={format.active} onclick={() => editor.chain().focus().toggleMark(format.name).run()} />{/snippet}
                 </Toolbar.Button>
-                <span class="separator"></span>
-                <div class="history-actions">
-                    <Toolbar.Button class="tool-button" aria-label="撤销" disabled={!toolbarState.ready || !(session.state.dirty || session.state.history.canUndo)} onclick={() => editor?.chain().focus().undo().run()}>
-                        <Icon name="undo" size="1.125rem" />
-                    </Toolbar.Button>
-                    <Toolbar.Button class="tool-button" aria-label="重做" disabled={!toolbarState.ready || !session.state.history.canRedo || session.state.dirty} onclick={() => editor?.chain().focus().redo().run()}>
-                        <Icon name="redo" size="1.125rem" />
-                    </Toolbar.Button>
-                </div>
-            </div>
+            {/each}
+            <span class="separator"></span>
+            <Color {editor} anchor={element} bind:element={colorElement} bind:open={colorOpen} />
+            <Toolbar.Button disabled={!toolbarState.canClear}>
+                {#snippet child({ props: button })}<IconButton {...button} icon="clear-formatting" label={t("editor.clearFormat")} onclick={clearFormat} />{/snippet}
+            </Toolbar.Button>
+            <span class="separator"></span>
+            {#each ["undo", "redo"] as const as id (id)}
+                <Toolbar.Button disabled={!toolbarState.ready || (id === "undo" ? !(dirty || history.canUndo) : !history.canRedo || dirty)}>
+                    {#snippet child({ props: button })}<IconButton {...button} icon={id} label={commandLabel(id)} shortcut={commands[id].shortcut}
+                        onclick={() => editor.chain().focus()[id]().run()} />{/snippet}
+                </Toolbar.Button>
+            {/each}
         </div>
     {/snippet}
 </Toolbar.Root>
 
 <style>
-    .toolbar {
-        max-width: calc(100vw - 16px);
-        height: var(--pagebar-height);
-        padding: 1px;
-        overflow: visible;
-        border: var(--border-width) solid var(--dc-c-popover-border);
-        border-radius: var(--control-radius);
-        color: var(--dc-c-popover-text);
-        background: var(--dc-c-surface);
-        box-shadow: 0 3px 12px #0002;
-        font-size: .8125rem;
-    }
-    .actions, .history-actions {
-        display: flex;
-        align-items: center;
-        gap: .125rem;
-    }
-    .actions {
-        overflow-x: auto;
-    }
-    .toolbar :global(button) {
-        box-sizing: border-box;
-        color: inherit;
-        font: inherit;
-        border-radius: .25rem;
-    }
-    .toolbar :global(.tool-button) {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-width: var(--button-height);
-        height: var(--button-height);
-        padding: 0 5px;
-        white-space: nowrap;
-    }
-    .toolbar :global(button:hover:not(:disabled)) {
-        background-color: var(--dc-c-surface-hover);
-    }
-    .toolbar :global(button:focus-visible) {
-        outline: 2px solid var(--dc-c-accent);
-        outline-offset: 1px;
-    }
-    .toolbar :global(button:disabled) {
-        opacity: .4;
-    }
-    .toolbar :global(button.active) {
-        background-color: var(--dc-c-surface-focus);
-    }
-    .separator {
-        width: 1px;
-        height: 1rem;
-        margin: 0 .25rem;
-        background: var(--dc-c-popover-border);
-    }
+    .toolbar { position: fixed; inset: auto; margin: 0; max-width: calc(100vw - var(--ui-space-5)); height: var(--ui-toolbar-height); padding: var(--ui-space-1); overflow: visible; }
+    .toolbar:popover-open { display: flex; align-items: center; gap: var(--ui-space-1); }
+    .toolbar:not(:popover-open) { display: none; }
+    .toolbar :global(.ui-icon-button) { flex: 1 1 var(--ui-button-height); min-width: 0; }
+    .separator { width: var(--ui-stroke); height: var(--ui-icon-normal); margin-inline: var(--ui-space-1); background: var(--ui-divider); }
 </style>
 
-
 <script lang="ts">
-    import Icon, { type IconName } from "../utils/Icon.svelte";
+    import { commandLabel, t } from "../../i18n.svelte";
+    import { isComposingKey, commands } from "../../../shared/content/commands";
+    import IconButton from "../base/IconButton.svelte";
     import type { Editor } from "@tiptap/core";
+    import { located } from "./transactions";
     import { TextSelection } from "@tiptap/pm/state";
     import { Toolbar } from "bits-ui";
     import Color from "./Color.svelte";
 
-    import { type PageSession } from "../Knowledge/page-session.svelte";
-    let { editor, session }: { editor: Editor; session: PageSession } = $props();
+    import type { HistoryState } from "../../../shared/types/knowledge";
+    let { editor, history, dirty }: { editor: Editor; history: HistoryState; dirty: boolean } = $props();
     let element = $state<HTMLDivElement>();
     let colorElement = $state<HTMLDivElement | null>(null);
     let colorOpen = $state(false);
 
     const formats = [
-        { name: "bold", label: "加粗", icon: "bold" },
-        { name: "italic", label: "斜体", icon: "italic" },
-        { name: "underline", label: "下划线", icon: "underline" },
-        { name: "strike", label: "删除线", icon: "strikethrough" },
-        { name: "code", label: "行内代码", icon: "code" }
+        { name: "bold", shortcut: "Ctrl+B", icon: "bold" },
+        { name: "italic", shortcut: "Ctrl+I", icon: "italic" },
+        { name: "underline", shortcut: "Ctrl+U", icon: "underline" },
+        { name: "strike", shortcut: "Ctrl+S", icon: "strikethrough" },
+        { name: "code", shortcut: "Ctrl+E", icon: "code" }
     ] as const;
     let toolbarState = $state(readState(null));
 
@@ -134,7 +67,7 @@
     }
 
     function readState(instance: Editor | null): {
-        formats: { name: string; label: string; icon: IconName; active: boolean; disabled: boolean }[];
+        formats: (typeof formats[number] & { active: boolean; disabled: boolean })[];
         canClear: boolean;
         ready: boolean;
     } {
@@ -171,12 +104,13 @@
         function position(): void {
             frame = 0;
             if (disposed) return;
+            if (colorOpen && colorElement?.contains(document.activeElement)) return;
             if (instance?.isDestroyed || !instance?.isEditable) {
                 colorOpen = false;
                 hide();
                 return;
             }
-            if (!(instance.state.selection instanceof TextSelection) || instance.state.selection.empty || dismissed) {
+            if (located(instance.state)?.node.type.name === "codeBlock" || !(instance.state.selection instanceof TextSelection) || instance.state.selection.empty || dismissed) {
                 hide();
                 return;
             }
@@ -242,7 +176,7 @@
         }
 
         function pointerDown(event: PointerEvent): void {
-            if (menu.contains(event.target as Node) || colorElement?.contains(event.target as Node) || event.target instanceof Element && event.target.closest(".menubar,[data-menubar-content],.compact-menu,.block-menu")) return;
+            if (menu.contains(event.target as Node) || colorElement?.contains(event.target as Node) || event.target instanceof Element && event.target.closest(".menubar,[data-menubar-content],.ui-menu,.ui-popover,.target-picker,.handle,.group-header")) return;
             const inside = dom.contains(event.target as Node);
             selecting = event.button === 0 && inside;
             pointerSelection = selecting;
@@ -268,9 +202,14 @@
         }
 
         function shortcut(event: KeyboardEvent): void {
-            if (event.defaultPrevented || event.isComposing || event.key === "Process") return;
+            if (event.defaultPrevented || isComposingKey(event) || instance?.view.composing || instance && located(instance.state)?.node.type.name === "codeBlock") return;
             const target = event.target as Node;
             if (!dom.contains(target) && !menu.contains(target) && !colorElement?.contains(target)) return;
+            if (event.altKey && !event.ctrlKey && event.key === "F10" && dom.contains(target) && menu.matches(":popover-open")) {
+                event.preventDefault(); event.stopPropagation();
+                menu.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true });
+                return;
+            }
             if (event.key !== "Escape" || event.defaultPrevented || event.repeat || colorOpen || !menu.matches(":popover-open")) return;
             if (!dom.contains(event.target as Node) && !menu.contains(event.target as Node)) return;
             event.preventDefault();
@@ -282,7 +221,7 @@
 
         function keyDown(event: KeyboardEvent): void {
             // Unhandled shortcuts can leave the selection intact; position follows the editor state.
-            if (!event.defaultPrevented && !["Escape", "Tab", "Alt", "AltGraph", "Control", "Meta", "Shift"].includes(event.key) && dom.contains(event.target as Node)) {
+            if (!event.defaultPrevented && !isComposingKey(event) && !["Escape", "Tab", "Alt", "AltGraph", "Control", "Meta", "Shift"].includes(event.key) && dom.contains(event.target as Node)) {
                 pointerSelection = false;
                 dismissed = false;
                 update();

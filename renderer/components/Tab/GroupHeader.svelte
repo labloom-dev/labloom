@@ -1,4 +1,4 @@
-<TabBar focused={tabState.focusedGroupId === group.id} canMerge={tabState.groups.length > 1} hasTabs={!!group.tabs.length}
+<TabBar {focused} {header} canMerge={tabState.groups.length > 1} hasTabs={!!group.tabs.length}
     onsplit={down => void split(down ? "vertical" : "horizontal")} onmerge={() => {
         focusGroup(group.id); runCommand("mergeGroup");
     }}
@@ -42,6 +42,9 @@
     import { tabDirty } from "./dirty.svelte";
 
     let { group }: { group: TabGroup } = $props();
+    const focused = $derived(tabState.focusedGroupId === group.id);
+    const current = $derived(group.tabs.find(tab => tab.id === group.activeTabId));
+    const header = $derived(focused && current ? definitionFor(current.view.type).header?.(current.id, current.view.params) : undefined);
     function viewIcon(view: Tab["view"]): IconName {
         if (view.type === "page") return kindIcons.editable;
         return destinationIcons[view.type === "library" && view.params.pageType?.type === "paper" ? "papers" : view.type];

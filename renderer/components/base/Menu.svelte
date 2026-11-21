@@ -13,18 +13,34 @@
 </script>
 
 <script lang="ts">
+    import { isComposingKey } from "../../../shared/content/commands";
+    import { tick } from "svelte";
     import { ContextMenu, DropdownMenu } from "bits-ui";
     import Icon from "../utils/Icon.svelte";
     import "./controls.css";
 
-    let { items, trigger, context = false, open = $bindable(false) }: {
+    let { items, trigger, context = false, anchor, align, portal, first = false, onrestore, open = $bindable(false) }: {
         items: MenuItem[];
-        trigger: NonNullable<DropdownMenu.TriggerProps["child"]>;
-        context?: boolean;
+        trigger?: NonNullable<DropdownMenu.TriggerProps["child"]>;
+        context?: boolean; first?: boolean; portal?: HTMLElement; onrestore?: () => void;
+        anchor?: DropdownMenu.ContentProps["customAnchor"];
+        align?: DropdownMenu.ContentProps["align"];
         open?: boolean;
     } = $props();
 
+    let content = $state<HTMLElement | null>(null);
+    function opened(event: Event): void {
+        if (!first) return;
+        event.preventDefault();
+        void tick().then(() => content?.querySelector<HTMLElement>("[role=\"menuitem\"]:not([data-disabled])")?.focus({ preventScroll: true }));
+    }
+    function closed(event: Event): void {
+        if (onrestore) {
+            event.preventDefault(); onrestore();
+        }
+    }
     function contextKey(event: KeyboardEvent): void {
+        if (event.defaultPrevented || isComposingKey(event)) return;
         if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
         event.preventDefault();
         const target = event.currentTarget as HTMLElement;
@@ -51,7 +67,7 @@
         {:else if "items" in item}
             <DropdownMenu.Sub>
                 <DropdownMenu.SubTrigger class="ui-menu-item" disabled={item.disabled} textValue={item.label}>{@render caption(item)}</DropdownMenu.SubTrigger>
-                <DropdownMenu.Portal>
+                <DropdownMenu.Portal to={portal}>
                     <DropdownMenu.SubContent class="ui-popup ui-menu" data-context={context || undefined} sideOffset={2} collisionPadding={8} loop>
                         {@render entries(item.items)}
                     </DropdownMenu.SubContent>
@@ -67,16 +83,16 @@
 
 {#if context}
     <ContextMenu.Root bind:open>
-        <ContextMenu.Trigger tabindex={0} onkeydown={contextKey} child={trigger} />
-        <ContextMenu.Portal>
-            <ContextMenu.Content class="ui-popup ui-menu" data-context="" collisionPadding={8} loop>{@render entries(items)}</ContextMenu.Content>
+        {#if trigger}<ContextMenu.Trigger tabindex={0} onkeydown={contextKey} child={trigger} />{/if}
+        <ContextMenu.Portal to={portal}>
+            <ContextMenu.Content class="ui-popup ui-menu" data-context="" onCloseAutoFocus={closed} collisionPadding={8} loop>{@render entries(items)}</ContextMenu.Content>
         </ContextMenu.Portal>
     </ContextMenu.Root>
 {:else}
     <DropdownMenu.Root bind:open>
-        <DropdownMenu.Trigger child={trigger} />
-        <DropdownMenu.Portal>
-            <DropdownMenu.Content class="ui-popup ui-menu" sideOffset={4} collisionPadding={8} loop>{@render entries(items)}</DropdownMenu.Content>
+        {#if trigger}<DropdownMenu.Trigger child={trigger} />{/if}
+        <DropdownMenu.Portal to={portal}>
+            <DropdownMenu.Content class="ui-popup ui-menu" bind:ref={content} customAnchor={anchor} {align} onOpenAutoFocus={opened} onCloseAutoFocus={closed} sideOffset={4} collisionPadding={8} loop>{@render entries(items)}</DropdownMenu.Content>
         </DropdownMenu.Portal>
     </DropdownMenu.Root>
 {/if}

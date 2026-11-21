@@ -1,3 +1,4 @@
+import { SvelteMap } from "svelte/reactivity";
 import { type HistorySource } from "../../../shared/history/ipc";
 import { LabloomError } from "../../../shared/failure";
 import { failure } from "../../i18n.svelte";
@@ -7,7 +8,10 @@ import { knowledgeState } from "./feedback.svelte";
 import { sessionKey } from "./session-views";
 import { pendingWrites, trackWrite } from "./write-tracker";
 
-const sessions = new Map<string, PageSession>();
+const sessions = new SvelteMap<string, PageSession>();
+export function mountedSession(tabId: string, pageId: string): PageSession | undefined {
+    return sessions.get(sessionKey(tabId, pageId));
+}
 export function session(tabId: string, pageId: string, source: HistorySource): PageSession {
     const key = sessionKey(tabId, pageId);
     let value = sessions.get(key);

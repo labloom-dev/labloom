@@ -1,6 +1,6 @@
 <section class="feed" class:reading={detail !== null}>
     <header class="top">
-        <div class="heading-copy"><h1>订阅动态</h1></div>
+        <div class="heading-copy"><h1>{t("shell.feedView")}</h1>{@render belowTitle?.()}</div>
         <p class="summary-line" role="status">{summary}</p>
         <button disabled={!enabled.length || refreshing > 0} onclick={() => refresh()}><Icon name="refresh" size={15} />{refreshing ? "正在刷新…" : "刷新全部"}</button>
         <button class="primary" onclick={() => openForm()}><Icon name="add" size={15} />添加来源</button>
@@ -874,7 +874,7 @@
     import { downloadAttachment, saveSubscription } from "./operations";
     import { workspaceHistory } from "../../../shared/history/ipc";
     import { write } from "../Knowledge/page-sessions";
-    let { api = window.api.feed, attachPDF = (pageId, fileId) => window.api.papers.attachFile(pageId, "paper_files", fileId, workspaceHistory), openPaper = openPage, sourcePageId }: { api?: FeedAPI; attachPDF?: (pageId: string, fileId: string) => Promise<void>; openPaper?: (id: string) => void; sourcePageId?: string } = $props();
+    let { api = window.api.feed, attachPDF = (pageId, fileId) => window.api.papers.attachFile(pageId, "paper_files", fileId, workspaceHistory), openPaper = openPage, sourcePageId, belowTitle }: { belowTitle?: import("svelte").Snippet; api?: FeedAPI; attachPDF?: (pageId: string, fileId: string) => Promise<void>; openPaper?: (id: string) => void; sourcePageId?: string } = $props();
 
     const followedScope = "#followed";
     const readOptions = [{ value: "all", label: "全部" }, { value: "unread", label: "未读" }, { value: "read", label: "已读" }] as const;

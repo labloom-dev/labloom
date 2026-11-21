@@ -1,6 +1,6 @@
 import type { HistorySource } from "../history/ipc";
 import type { AttributeValue } from "../types/attributes";
-import { type Backlink, type CommitResult, type BlockDeletion, type ChangePreview, type ContentBlock, type EditCommit, type KnowledgeChange, type Placement, type ResolvedTarget, type PageList, type PageQuery, type PageRecord, type PageObjects, type PageSearchResult, type Target } from "../types/content";
+import { type Backlink, type CommitResult, type BlockDeletion, type ChangePreview, type ContentBlock, type EditCommit, type KnowledgeChange, type Placement, type ResolvedTarget, type PageList, type PageQuery, type PageBlockList, type PageRecord, type PageObjects, type PageSearchResult, type Target } from "../types/content";
 import type { PurgeResult } from "../types/knowledge";
 import { type Channels } from "../ipc/contract";
 import type { tags } from "typia";
@@ -10,6 +10,7 @@ export type PagesAPI = {
     search(keyword: string, offset?: number, limit?: number): Promise<{ items: PageSearchResult[]; total: number }>;
     listUpdates(query: PageQuery, unchanged: string[]): Promise<PageList & { order: string[] }>;
     get(id: string): Promise<PageRecord>;
+    blockList(id: string): Promise<PageBlockList>;
     readObjects(pageId: string, ids: string[]): Promise<PageObjects>;
     syncBlocks(workspaceId: string, ids: string[] & tags.MinItems<1>): Promise<ContentBlock[] | null>;
     create(source: HistorySource, title?: string, initial?: Record<string, AttributeValue>, parentId?: string): Promise<PageRecord>;
@@ -31,6 +32,7 @@ export const pagesChannels = {
     search: "pages:search",
     listUpdates: "pages:list-updates",
     get: "pages:get",
+    blockList: "pages:block-list",
     readObjects: "pages:read-objects",
     syncBlocks: "pages:sync-blocks",
     create: "pages:create",

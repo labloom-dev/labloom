@@ -1,0 +1,145 @@
+diff --git a/dist/bits/menu/components/menu-sub-content.svelte b/dist/bits/menu/components/menu-sub-content.svelte
+--- a/dist/bits/menu/components/menu-sub-content.svelte
++++ b/dist/bits/menu/components/menu-sub-content.svelte
+@@ -2,6 +2,7 @@
+ 	import { boxWith, mergeProps } from "svelte-toolbelt";
+ 	import type { MenuSubContentProps } from "../types.js";
+ 	import { MenuOpenEvent, MenuContentState } from "../menu.svelte.js";
++	import { isComposingKey } from "../../../internal/kbd.js";
+ 	import { SUB_CLOSE_KEYS } from "../utils.js";
+ 	import { createId } from "../../../internal/create-id.js";
+ 	import PopperLayer from "../../utilities/popper-layer/popper-layer.svelte";
+@@ -44,6 +45,7 @@
+ 	});
+ 
+ 	function onkeydown(e: KeyboardEvent) {
++		if (isComposingKey(e)) return;
+ 		const isKeyDownInside = (e.currentTarget as HTMLElement).contains(e.target as HTMLElement);
+ 		const isCloseKey = SUB_CLOSE_KEYS[
+ 			subContentState.parentMenu.root.opts.dir.current
+diff --git a/dist/bits/menu/menu.svelte.js b/dist/bits/menu/menu.svelte.js
+--- a/dist/bits/menu/menu.svelte.js
++++ b/dist/bits/menu/menu.svelte.js
+@@ -4,7 +4,7 @@
+ import { focusFirst } from "../../internal/focus.js";
+ import { CustomEventDispatcher } from "../../internal/events.js";
+ import { isElement, isElementOrSVGElement, isHTMLElement } from "../../internal/is.js";
+-import { kbd } from "../../internal/kbd.js";
++import { isComposingKey, kbd } from "../../internal/kbd.js";
+ import { createBitsAttrs, getAriaChecked, boolToStr, getDataOpenClosed, boolToEmptyStrOrUndef, getDataTransitionAttrs, } from "../../internal/attrs.js";
+ import { IsUsingKeyboard } from "../utilities/is-using-keyboard/is-using-keyboard.svelte.js";
+ import { getTabbableFrom } from "../../internal/tabbable.js";
+@@ -847,6 +847,8 @@
+         }
+     }
+     onkeydown(e) {
++        if (isComposingKey(e))
++            return;
+         if (e.defaultPrevented)
+             return;
+         if (e.key === kbd.TAB) {
+@@ -1065,6 +1067,8 @@
+         }
+     }
+     onkeydown(e) {
++        if (isComposingKey(e))
++            return;
+         const isTypingAhead = this.item.content.search !== "";
+         if (this.item.opts.disabled.current || (isTypingAhead && e.key === kbd.SPACE))
+             return;
+@@ -1170,6 +1174,8 @@
+         this.#clearOpenTimer();
+     }
+     onkeydown(e) {
++        if (isComposingKey(e))
++            return;
+         const isTypingAhead = this.content.search !== "";
+         if (this.item.opts.disabled.current || (isTypingAhead && e.key === kbd.SPACE))
+             return;
+@@ -1446,6 +1452,8 @@
+         }
+     };
+     onkeydown = (e) => {
++        if (isComposingKey(e))
++            return;
+         if (this.opts.disabled.current)
+             return;
+         if (e.key === kbd.SPACE || e.key === kbd.ENTER) {
+diff --git a/dist/bits/popover/popover.svelte.js b/dist/bits/popover/popover.svelte.js
+--- a/dist/bits/popover/popover.svelte.js
++++ b/dist/bits/popover/popover.svelte.js
+@@ -1,6 +1,6 @@
+ import { attachRef, boxWith, DOMContext, } from "svelte-toolbelt";
+ import { Context, watch } from "runed";
+-import { kbd } from "../../internal/kbd.js";
++import { isComposingKey, kbd } from "../../internal/kbd.js";
+ import { createBitsAttrs, boolToStr, getDataOpenClosed, getDataTransitionAttrs, } from "../../internal/attrs.js";
+ import { isElement, isTouch } from "../../internal/is.js";
+ import { PresenceManager } from "../../internal/presence-manager.svelte.js";
+@@ -210,6 +210,8 @@
+         this.root.toggleOpen();
+     }
+     onkeydown(e) {
++        if (isComposingKey(e))
++            return;
+         if (this.opts.disabled.current)
+             return;
+         if (!(e.key === kbd.ENTER || e.key === kbd.SPACE))
+diff --git a/dist/bits/select/select.svelte.js b/dist/bits/select/select.svelte.js
+--- a/dist/bits/select/select.svelte.js
++++ b/dist/bits/select/select.svelte.js
+@@ -3,7 +3,7 @@
+ import { on } from "svelte/events";
+ import { backward, forward, next, prev } from "../../internal/arrays.js";
+ import { boolToStr, boolToStrTrueOrUndef, boolToEmptyStrOrUndef, getDataOpenClosed, boolToTrueOrUndef, getDataTransitionAttrs, } from "../../internal/attrs.js";
+-import { kbd } from "../../internal/kbd.js";
++import { isComposingKey, kbd } from "../../internal/kbd.js";
+ import { noop } from "../../internal/noop.js";
+ import { isIOS } from "../../internal/is.js";
+ import { createBitsAttrs } from "../../internal/attrs.js";
+@@ -628,6 +628,8 @@
+         return false;
+     }
+     onkeydown(e) {
++        if (isComposingKey(e))
++            return;
+         this.root.isUsingKeyboard = true;
+         if (e.key === kbd.ARROW_UP || e.key === kbd.ARROW_DOWN)
+             e.preventDefault();
+diff --git a/dist/bits/utilities/escape-layer/use-escape-layer.svelte.js b/dist/bits/utilities/escape-layer/use-escape-layer.svelte.js
+--- a/dist/bits/utilities/escape-layer/use-escape-layer.svelte.js
++++ b/dist/bits/utilities/escape-layer/use-escape-layer.svelte.js
+@@ -1,7 +1,7 @@
+ import { DOMContext } from "svelte-toolbelt";
+ import { watch } from "runed";
+ import { on } from "svelte/events";
+-import { kbd } from "../../../internal/kbd.js";
++import { isComposingKey, kbd } from "../../../internal/kbd.js";
+ import { noop } from "../../../internal/noop.js";
+ globalThis.bitsEscapeLayers ??= new Map();
+ export class EscapeLayerState {
+@@ -29,7 +29,7 @@
+         return on(this.domContext.getDocument(), "keydown", this.#onkeydown, { passive: false });
+     };
+     #onkeydown = (e) => {
+-        if (e.key !== kbd.ESCAPE || !isResponsibleEscapeLayer(this))
++        if (e.key !== kbd.ESCAPE || isComposingKey(e) || !isResponsibleEscapeLayer(this))
+             return;
+         const clonedEvent = new KeyboardEvent(e.type, e);
+         e.preventDefault();
+diff --git a/dist/internal/kbd.d.ts b/dist/internal/kbd.d.ts
+--- a/dist/internal/kbd.d.ts
++++ b/dist/internal/kbd.d.ts
+@@ -1 +1,2 @@
+ export * as kbd from "./kbd-constants.js";
++export declare function isComposingKey(event: KeyboardEvent): boolean;
+diff --git a/dist/internal/kbd.js b/dist/internal/kbd.js
+--- a/dist/internal/kbd.js
++++ b/dist/internal/kbd.js
+@@ -1 +1,5 @@
+ export * as kbd from "./kbd-constants.js";
++
++export function isComposingKey(event) {
++    return event.isComposing || event.key === "Process" || event.keyCode === 229;
++}
+\ No newline at end of file

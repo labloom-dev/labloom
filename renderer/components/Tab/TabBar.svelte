@@ -4,10 +4,11 @@
     import { commands } from "../../../shared/content/commands";
     import { commandLabel, t } from "../../i18n.svelte";
     import IconButton from "../base/IconButton.svelte";
+    import type { HeaderActions } from "./views";
     import Menu from "../base/Menu.svelte";
 
-    let { focused, canMerge, hasTabs, onsplit, onmerge, oncloseall, oncreate, ondragover, ondrop, children }: {
-        focused: boolean; canMerge: boolean; hasTabs: boolean; onsplit: (down: boolean) => void;
+    let { header, focused, canMerge, hasTabs, onsplit, onmerge, oncloseall, oncreate, ondragover, ondrop, children }: {
+        header?: HeaderActions; focused: boolean; canMerge: boolean; hasTabs: boolean; onsplit: (down: boolean) => void;
         onmerge: () => void; oncloseall: () => void; oncreate: () => void; children: Snippet;
         ondragover?: (event: DragEvent) => void; ondrop?: (event: DragEvent) => void;
     } = $props();
@@ -25,9 +26,13 @@
     if (event.target instanceof Element && !event.target.closest(".tab,button")) oncreate();
 }}>
     <Tabs.List bind:ref={list} class="tab-list">{@render children()}</Tabs.List>
+    {#if focused && header}
+        {#each header.buttons as button (button.icon)}<IconButton {...button} onmousedown={event => event.preventDefault()} />{/each}
+    {/if}
     <IconButton icon={alt ? "split-vertical" : "split-horizontal"} label={commandLabel(splitId)} shortcut={commands[splitId].shortcut}
         onpointerenter={event => alt = event.altKey} onclick={event => onsplit(event.altKey || alt)} />
     <Menu items={[
+        ...focused && header?.menu.length ? [...header.menu, { separator: true } as const] : [],
         { label: commandLabel("splitDown"), onselect: () => onsplit(true) },
         { label: commandLabel("mergeGroup"), disabled: !canMerge, onselect: onmerge },
         { label: t("shell.closeAll"), disabled: !hasTabs, onselect: oncloseall }

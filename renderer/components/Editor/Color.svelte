@@ -1,145 +1,44 @@
-<Popover.Root bind:open={() => open, setOpen}>
-    <Popover.Trigger disabled={colorState.every(format => format.disabled)}>
-        {#snippet child({ props })}
-            <Toolbar.Button {...props} aria-label="文字与背景颜色" class={open ? "tool-button active" : "tool-button"} style={buttonStyle}>
-                <Icon name="symbol-color" size="1.125rem" />
-            </Toolbar.Button>
-        {/snippet}
-    </Popover.Trigger>
-    <Popover.Portal>
-        <Popover.Content
-            side="bottom"
-            align={attached ? "end" : "start"}
-            customAnchor={attached ? anchor : caretAnchor}
-            sideOffset={8}
-            collisionPadding={8}
-            strategy="fixed"
-            trapFocus={false}
-            onOpenAutoFocus={openColors}
-            onCloseAutoFocus={event => event.preventDefault()}
-        >
-            {#snippet child({ props, wrapperProps })}
-                <div {...wrapperProps} class="color-layer" popover="manual" bind:this={element}>
-                    <div {...props} class="color-menu">
-                        {#each colorState as format (format.name)}
-                            {@render palette(format)}
-                        {/each}
-                    </div>
+<Popover label={t("editor.colors")} bind:open={() => open, setOpen} align={attached ? "end" : "start"}
+    portal={attached ? anchor : editor?.view.dom.closest<HTMLElement>(":popover-open") ?? undefined}
+    contentProps={{ class: "editor-colors", customAnchor: attached ? anchor : caretAnchor, onOpenAutoFocus: openColors,
+        onCloseAutoFocus: event => {
+            event.preventDefault(); if (!editor?.isDestroyed) restoreFocus();
+        } }}>
+    {#snippet trigger({ props })}
+        <Toolbar.Button disabled={colorState.every(format => format.disabled)}>
+            {#snippet child({ props: button })}<IconButton {...mergeProps(button, props)} icon="symbol-color" label={t("editor.colors")} shortcut="Ctrl+R" pressed={open} style={buttonStyle} />{/snippet}
+        </Toolbar.Button>
+    {/snippet}
+    <div class="color-menu" bind:this={element}>
+        {#each colorState as format (format.name)}
+            <div class="color-section">
+                <div class="color-heading"><span>{t(`editor.${format.name}`)}</span><span>{colorLabel(format.active)}</span></div>
+                <div class="color-palette">
+                    {#each colors as value (value)}
+                        <button class="ui-control color-choice" type="button" aria-pressed={format.active === value}
+                            aria-label={t(`editor.${format.name}`) + " · " + t(`color.${value ?? "default"}`)} disabled={format.disabled}
+                            style:background-color={format.name === "bgColor" && value ? `var(--ui-editor-bg-${value})` : undefined}
+                            style:color={format.name === "fgColor" && value ? `var(--ui-editor-fg-${value})` : undefined}
+                            onclick={() => applyColor(format.name, value)}>
+                            <Icon name={format.icon} size="var(--ui-icon-normal)" />
+                            {#if format.active === value}<span class="chosen"><Icon name="check" size="var(--ui-icon-small)" /></span>{/if}
+                        </button>
+                    {/each}
                 </div>
-            {/snippet}
-        </Popover.Content>
-    </Popover.Portal>
-</Popover.Root>
-
-{#snippet palette(format: ColorFormatState)}
-    <div class="color-section">
-        <div class="color-heading">
-            <span>{format.label}</span>
-            <span class="color-current">{colorLabel(format.active)}</span>
-        </div>
-        <div class="color-palette">
-            {#each colors as color (color.value)}
-                <button
-                    class="color-choice"
-                    class:active={format.active === color.value}
-                    type="button"
-                    aria-label={`${format.label}：${color.label}`}
-                    disabled={format.disabled}
-                    onclick={() => applyColor(format.name, color.value)}
-                >
-                    <span
-                        class="color-icon"
-                        class:background={format.name === "bgColor" && color.value !== null}
-                        style:color={color.value === null ? undefined : `var(--dc-c-${format.name === "fgColor" ? "fg" : "bg"}-${color.value})`}
-                    >
-                        <Icon name={format.icon} size="1.375rem" />
-                    </span>
-                </button>
-            {/each}
-        </div>
+            </div>
+        {/each}
     </div>
-{/snippet}
-
+</Popover>
 
 <style>
-    .color-layer {
-        inset: auto;
-        margin: 0;
-        padding: 0;
-        overflow: visible;
-        border: 0;
-        color: var(--dc-c-popover-text);
-        background: transparent;
-        font-size: .8125rem;
-    }
-    .color-menu {
-        --dc-popover-available-height: var(--bits-popover-content-available-height);
-        width: 17rem;
-        max-width: calc(100vw - 16px);
-        max-height: var(--dc-popover-available-height);
-        overflow-y: auto;
-        padding: .75rem;
-        border: 1px solid var(--dc-c-popover-border);
-        border-radius: .625rem;
-        background: var(--dc-c-surface);
-        box-shadow: 3px 4px 0 var(--dc-c-popover-text);
-    }
-    .color-section + .color-section {
-        margin-top: .75rem;
-        padding-top: .75rem;
-        border-top: 1px solid var(--dc-c-divider);
-    }
-    .color-heading {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: .5rem;
-        font-size: .75rem;
-    }
-    .color-current {
-        color: var(--dc-c-secondary-text);
-    }
-    .color-palette {
-        display: grid;
-        grid-template-columns: repeat(7, minmax(0, 1fr));
-        gap: .25rem;
-    }
-    .color-choice {
-        display: grid;
-        place-items: center;
-        min-width: 0;
-        aspect-ratio: 1;
-        padding: .25rem;
-        border: 1px solid var(--dc-c-popover-border);
-        border-radius: .25rem;
-        color: inherit;
-        background: var(--dc-c-surface);
-        font: inherit;
-    }
-    .color-choice:hover:not(:disabled) {
-        background-color: var(--dc-c-surface-hover);
-    }
-    .color-choice:focus-visible {
-        outline: 2px solid var(--dc-c-accent);
-        outline-offset: 1px;
-    }
-    .color-choice:disabled {
-        opacity: .4;
-    }
-    .color-icon {
-        display: inline-flex;
-        width: 1.375rem;
-        height: 1.375rem;
-    }
-    .color-icon.background :global(.icon) {
-        color: hsl(from currentColor h s calc(l * .6));
-    }
-    .color-choice.active {
-        border-color: var(--dc-c-accent);
-        box-shadow: inset 0 0 0 1px var(--dc-c-accent);
-    }
+    :global(.editor-colors) { width: min(calc(11 * var(--ui-button-height)), calc(100vw - var(--ui-space-5))); }
+    .color-section + .color-section { margin-top: var(--ui-space-3); padding-top: var(--ui-space-3); border-top: var(--ui-stroke) solid var(--ui-divider); }
+    .color-heading { display: flex; justify-content: space-between; margin-bottom: var(--ui-space-2); color: var(--ui-text-secondary); font-size: var(--ui-font-small); }
+    .color-palette { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--ui-space-2); }
+    .color-choice { position: relative; padding: 0; border-color: var(--ui-border-input); }
+    .color-choice[aria-pressed="true"] { border-color: var(--ui-focus); }
+    .chosen { position: absolute; display: flex; right: 0; bottom: 0; border-radius: var(--ui-radius-small); color: var(--ui-text-on-accent); background: var(--ui-accent); }
 </style>
-
 
 <script module lang="ts">
     import type { Editor } from "@tiptap/core";
@@ -149,10 +48,15 @@
 </script>
 
 <script lang="ts">
+    import { located } from "./transactions";
+    import { isComposingKey } from "../../../shared/content/commands";
     import Icon, { type IconName } from "../utils/Icon.svelte";
     import { tick } from "svelte";
     import { SvelteSet } from "svelte/reactivity";
-    import { Popover, Toolbar } from "bits-ui";
+    import { mergeProps, Toolbar } from "bits-ui";
+    import { t } from "../../i18n.svelte";
+    import IconButton from "../base/IconButton.svelte";
+    import Popover from "../base/Popover.svelte";
 
     let { editor, anchor, element = $bindable(null), open = $bindable(false) }: {
         editor: Editor | null;
@@ -164,7 +68,6 @@
     type ActiveColor = string | null | undefined;
     type ColorFormatState = {
         name: ColorMark;
-        label: string;
         icon: IconName;
         keys: string[];
         active: ActiveColor;
@@ -181,36 +84,22 @@
         }
     };
 
-    const colors = [
-        { value: null, label: "默认" },
-        { value: "gray", label: "灰" },
-        { value: "light-gray", label: "淡灰" },
-        { value: "red", label: "红" },
-        { value: "yellow", label: "黄" },
-        { value: "orange", label: "橙" },
-        { value: "green", label: "绿" },
-        { value: "lime", label: "黄绿" },
-        { value: "blue", label: "蓝" },
-        { value: "purple", label: "紫" },
-        { value: "brown", label: "棕" },
-        { value: "cyan", label: "青" },
-        { value: "pink", label: "粉" },
-        { value: "magenta", label: "品红" }
-    ];
-    const colorFormats: { name: ColorMark; label: string; icon: IconName; keys: string[] }[] = [
-        { name: "fgColor", label: "前景色", icon: "text-color", keys: [..."1234567QWERTYU"] },
-        { name: "bgColor", label: "背景色", icon: "text-highlight", keys: [..."ASDFGHJZXCVBNM"] }
+    const colors = [null, "gray", "light-gray", "red", "yellow", "orange", "green", "lime", "blue", "purple", "brown", "cyan", "pink", "magenta"] as const;
+    const colorFormats: { name: ColorMark; icon: IconName; keys: string[] }[] = [
+        { name: "fgColor", icon: "text-color", keys: [..."1234567QWERTYU"] },
+        { name: "bgColor", icon: "text-highlight", keys: [..."ASDFGHJZXCVBNM"] }
     ];
     const keyColors = new Map<string, { name: ColorMark; value: string | null }>(colorFormats.flatMap(format => format.keys.map((key, index) => [
         `${/\d/.test(key) ? "Digit" : "Key"}${key}`,
-        { name: format.name, value: colors[index].value }
+        { name: format.name, value: colors[index] }
     ] as const)));
     let colorState = $state(readState(null));
     const buttonStyle = $derived(colorState.map(({ name, active }) => typeof active === "string"
-        ? `${name === "fgColor" ? "color" : "background-color"}: var(--dc-c-${name === "fgColor" ? "fg" : "bg"}-${CSS.escape(active)})`
+        ? `${name === "fgColor" ? "color" : "background-color"}: var(--ui-editor-${name === "fgColor" ? "fg" : "bg"}-${CSS.escape(active)})`
         : "").join("; "));
 
     function setOpen(value: boolean): void {
+        if (editor && !editor.isDestroyed && editor.view.composing) return;
         if (value && !open) {
             attached = anchor?.matches(":popover-open") ?? false;
             returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -222,12 +111,14 @@
         event.preventDefault();
         await tick();
         if (!open || !element) return;
-        if (!element.matches(":popover-open")) element.showPopover();
         element.querySelector<HTMLButtonElement>(".color-choice:not(:disabled)")?.focus({ preventScroll: true });
     }
 
     function closeColors(): void {
         open = false;
+        restoreFocus();
+    }
+    function restoreFocus(): void {
         if (returnFocus && anchor?.matches(":popover-open") && anchor.contains(returnFocus)) {
             returnFocus.focus({ preventScroll: true });
         }
@@ -235,8 +126,9 @@
     }
 
     function colorLabel(value: ActiveColor): string {
-        if (value === undefined) return "混合";
-        return colors.find(color => color.value === value)?.label ?? "自定义";
+        if (value === undefined) return t("editor.mixed");
+        const color = colors.find(item => item === value);
+        return color === undefined ? t("editor.custom") : t(`color.${color ?? "default"}`);
     }
 
     function readColor(instance: Editor, name: ColorMark): ActiveColor {
@@ -287,12 +179,13 @@
         }
 
         function keyDown(event: KeyboardEvent): void {
+            if (isComposingKey(event) || instance?.view.composing || instance && located(instance.state)?.node.type.name === "codeBlock") return;
             // After returning focus to the editor, key repeat must not type the selected color's key.
             if (heldKeys.has(event.code)) {
                 consume(event);
                 return;
             }
-            if (!instance || instance.isDestroyed || !instance.isEditable || event.isComposing || event.key === "Process") return;
+            if (!instance || instance.isDestroyed || !instance.isEditable) return;
             const target = event.target as Node;
             const inside = instance.view.dom.contains(target) || anchor?.contains(target) || element?.contains(target);
             if (!inside) return;
@@ -320,6 +213,13 @@
                 return;
             }
             if (!open || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+            if (element && ["ArrowLeft", "ArrowRight", "ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+                const choices = Array.from(element.querySelectorAll<HTMLButtonElement>(".color-choice:not(:disabled)"));
+                const index = choices.indexOf(document.activeElement as HTMLButtonElement);
+                const delta = event.key === "ArrowDown" ? 7 : event.key === "ArrowUp" ? -7 : event.key === "ArrowLeft" ? -1 : 1;
+                choices[event.key === "Home" ? 0 : event.key === "End" ? choices.length - 1 : Math.max(0, Math.min(choices.length - 1, index + delta))]?.focus();
+                consume(event); return;
+            }
             const color = keyColors.get(event.code);
             if (!color) return;
             consume(event);

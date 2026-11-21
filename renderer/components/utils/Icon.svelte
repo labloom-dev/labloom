@@ -22,8 +22,8 @@
     const codicons = [
         "add", "agent", "arrow-left", "arrow-right", "bell", "bell-dot", "bold", "book", "calendar",
         "check", "chevron-down", "chevron-left", "chevron-right", "chevron-up", "circle-small-filled",
-        "close", "code", "comment", "dash", "edit", "folder-opened", "gripper", "home",
-        "horizontal-rule", "info", "italic", "layout-sidebar-left", "library", "link-external",
+        "close", "code", "comment", "copy", "dash", "edit", "folder-opened", "gripper", "home",
+        "horizontal-rule", "info", "italic", "layout-sidebar-left", "layout-sidebar-right", "library", "link-external",
         "list-ordered", "list-unordered", "ellipsis", "quote", "refresh", "rss", "search",
         "settings-gear", "split-horizontal", "split-vertical", "strikethrough", "symbol-color",
         "sync", "table", "trash", "zoom-in", "zoom-out"

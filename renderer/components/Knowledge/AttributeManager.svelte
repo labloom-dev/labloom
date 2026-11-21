@@ -4,7 +4,7 @@
         {#each [true, false] as builtin (builtin)}
             <h3>{builtin ? "内置属性" : "自定义属性"}</h3>
             {#each definitions.filter(item => isBuiltin(item.id) === builtin && !item.hidden && item.id !== "deleted") as item (item.id)}
-                <button class="definition" class:active={draft?.id === item.id} onclick={() => select(item.id)}><span>{item.name || item.id}</span><small>{labels[item.type]}</small></button>
+                <button class="definition" class:active={draft?.id === item.id} onclick={() => select(item.id)}><span>{item.name || item.id}</span><small>{t(`attributeType.${item.type}`)}</small></button>
             {/each}
         {/each}
     </nav>
@@ -14,7 +14,7 @@
             <label>类型<select value={draft.type} onchange={event => {
                 const type = event.currentTarget.value as AttributeType;
                 draft = { ...draft!, type, metadata: convertMetadata(draft!.type, type, draft!.metadata) };
-            }} disabled={isBuiltin(draft.id)}>{#each attributeTypes.filter(type => type !== "recurrence" || draft?.type === "recurrence") as type (type)}<option value={type}>{labels[type]}</option>{/each}</select></label>
+            }} disabled={isBuiltin(draft.id)}>{#each attributeTypes.filter(type => type !== "recurrence" || draft?.type === "recurrence") as type (type)}<option value={type}>{t(`attributeType.${type}`)}</option>{/each}</select></label>
             {#if draft.type === "status" || draft.type === "select" || draft.type === "multiselect"}
                 <p class="muted">选项改名会保留原有选择；移除选项前会预览影响。</p>
                 <div bind:this={optionsRoot}>
@@ -48,11 +48,10 @@
 </style>
 <script lang="ts">
     import Icon from "../utils/Icon.svelte";
-    import { failure, message, type ErrorValue } from "../../i18n.svelte";
+    import { t, failure, message, type ErrorValue } from "../../i18n.svelte";
     import { tick } from "svelte";
     import { attributeTypes, type AttributeDefinition, type AttributeType } from "../../../shared/types/attributes";
     import { editableBuiltinMetadata, isBuiltin } from "../../../shared/attrs/builtins";
-    import { attributeLabels as labels } from "./attribute-labels";
     import { convertMetadata } from "../../../shared/attrs/values";
     import { define } from "./confirmation.svelte";
     import { write } from "./page-sessions";

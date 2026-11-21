@@ -7,7 +7,7 @@ type ReferenceId = string & tags.MinLength<1>;
 type AttributeRef<T extends AttributeType> = { kind: "attribute"; type: T; id: ReferenceId };
 type NoParams = Record<string, never>;
 export type ViewParams = {
-    page: { page: { kind: "page"; id: uuid } };
+    page: { page: { kind: "page"; id: uuid }; showProperties?: boolean };
     library: {
         scope: "all" | "pinned" | "trash";
         pageType?: { kind: "page-type"; type: PageKind };

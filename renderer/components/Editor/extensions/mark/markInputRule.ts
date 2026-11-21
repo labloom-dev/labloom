@@ -7,6 +7,7 @@ export function markInputRule(
     const handler = rule.handler;
 
     rule.handler = props => {
+        if (props.state.selection.$from.node(-1)?.type.name === "codeBlock" || props.state.selection.$from.node(-1)?.attrs.kind === "code") return null;
         const tr = props.state.tr;
         // Preserve the typing state before conversion can expose an inner mark.
         const marks = config.type.removeFromSet(tr.storedMarks ?? tr.selection.$from.marks());

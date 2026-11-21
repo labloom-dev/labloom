@@ -1,3 +1,4 @@
+import "./styles/global.css";
 import { mount } from "svelte";
 import App from "./components/layout/App.svelte";
 import { connectAPI } from "../shared/ipc/bridge";

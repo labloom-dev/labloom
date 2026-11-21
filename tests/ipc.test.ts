@@ -22,7 +22,7 @@ import type { FeedState } from "../shared/types/feed";
 import type { PaperResources } from "../shared/types/papers";
 import { route } from "../main/ipc";
 import { routes as pages } from "../main/pages/ipc";
-import type { CommitResult, ContentBlock, PageList, PageRecord, RichNode } from "../shared/types/content";
+import type { CommitResult, ContentBlock, PageBlockList, PageList, PageRecord, RichNode } from "../shared/types/content";
 import { appChannels, attributesChannels, feedChanged, feedChannels, historyChannels, pagesChanged, pagesChannels, papersChannels, settingsChanged, settingsChannels, startupChannels, timersChannels, workspaceChannels } from "../shared/ipc";
 
 test("every group rejects malformed IPC arguments before side effects and accepts its declared shape", async t => {
@@ -34,7 +34,7 @@ test("every group rejects malformed IPC arguments before side effects and accept
         ipc.contents.emit("destroyed"); session.close(); await settings.flush(settings.get().settingsRevision);
     });
     const malformed: [string, unknown[][]][] = [
-        [pagesChannels.get, [[42]]],
+        [pagesChannels.get, [[42]]], [pagesChannels.blockList, [[42]]],
         [pagesChannels.commitEdit, [[{ pageId: "A", batch: 0, blocks: [3] }, workspaceHistory],
             [{ batch: 0, blocks: [] }, workspaceHistory], [{ pageId: "A", batch: 0, blocks: [] }, workspaceHistory, undefined, 42],
             [{ pageId: "A", batch: 0, blocks: [] }]]],
@@ -190,6 +190,28 @@ test("registered page handlers preserve long block text and attribute values on 
     for (const block of blocks) assert.deepEqual(stored.blocks[block.id], block);
     const matches = await invoke(pagesChannels.list, { attributes: { [attr]: edited } }) as { total: number };
     assert.equal(matches.total, 1);
+});
+
+test("picker lists repeated and nested blocks in order and batches live, recycled, untitled and missing target labels", async t => {
+    session.open(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "picker-")), "create");
+    const { call } = fixture(t);
+    const owner = edits.create(workspaceHistory, "Picker"), untitled = edits.create(workspaceHistory), recycled = edits.create(workspaceHistory, "Archive");
+    const paragraph = (id: string, text: string, children: string[] = []): ContentBlock => ({ id, type: "paragraph", payload: payload("paragraph", text), children });
+    const blank = paragraph(untitled.children[0], ""), excerpt = paragraph(randomUUID(), "😀".repeat(140));
+    edits.commitEdit({ pageId: untitled.id, batch: 0, blocks: [blank, excerpt], pageChildren: [blank.id, excerpt.id] }, false);
+    const reference = (kind: "page" | "block", id: string): ContentBlock => ({
+        id: randomUUID(), type: "blocked_reference", children: [], payload: { ...payload("blocked_reference"), target: { kind, id } }
+    });
+    const child = paragraph(randomUUID(), "  Two\nlines  "), top = paragraph(owner.children[0], "", [child.id]);
+    const links = [reference("page", recycled.id), reference("page", untitled.id), reference("block", child.id), reference("block", randomUUID())];
+    edits.commitEdit({ pageId: owner.id, batch: 0, blocks: [top, child, ...links], pageChildren: [top.id, child.id, ...links.map(b => b.id)] }, false);
+    const trash = edits.trash([recycled.id], workspaceHistory);
+    if (trash.status === "confirmation") edits.trash([recycled.id], workspaceHistory, trash.preview.token);
+    const list = await call<PageBlockList>(pagesChannels.blockList, owner.id);
+    assert.equal(list.title, "Picker");
+    assert.deepEqual(list.rows.map(row => row.id), [top.id, child.id, child.id, ...links.map(b => b.id)]);
+    assert.deepEqual(list.rows.map(row => row.depth), [0, 1, 0, 0, 0, 0, 0]);
+    assert.deepEqual(list.rows.map(row => row.text), ["", "Two", "Two", "Archive", "😀".repeat(120), "  Two\nlines  ", ""]);
 });
 
 test("page titles, select options and deep JSON values round-trip through IPC", async t => {

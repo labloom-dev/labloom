@@ -6,16 +6,17 @@
     import Input from "../../components/base/Input.svelte";
     import ListRow from "../../components/base/ListRow.svelte";
     import ShellExample from "./ShellExample.svelte";
+    import EditorExample from "./EditorExample.svelte";
     import StateTable from "./StateTable.svelte";
     import OverlayExample, { overlayNames } from "./OverlayExample.svelte";
     import tokens from "../../styles/ui-tokens.css?raw";
 
-    let dark = $state(false), motion = $state(true), bold = $state(false), selected = $state(false);
+    let dark = $state(new URLSearchParams(location.search).get("theme") === "dark"), motion = $state(true), bold = $state(false), selected = $state(false);
     let search = $state("页面 A"), status = $state("");
     let values = $state<Record<string, string>>({});
     const names = [...new Set(tokens.match(/--ui-[\w-]+(?=:)/g))].filter(name => !name.startsWith("--ui-p-"));
-    const colors = names.filter(name => /^--ui-(surface-|text(?:-|$)|border(?:-|$)|divider$|hover$|pressed$|selected(?:-|$)|focus$|accent|danger|shadow-)/.test(name));
-    const metrics = names.filter(name => !colors.includes(name) && name !== "--ui-font-family");
+    const colors = names.filter(name => /^--ui-(surface-|text(?:-|$)|border(?:-|$)|divider$|hover$|pressed$|selected(?:-|$)|focus$|accent|danger|shadow-|editor-(?:fg-|bg-|block-selection$|sync-border$))/.test(name));
+    const metrics = names.filter(name => !colors.includes(name) && name !== "--ui-font-family" && name !== "--ui-font-mono");
     const groups = [
         { title: "控件与外壳", names: metrics.filter(name => /-height$|-activity-width$/.test(name)) },
         { title: "图标与间距", names: metrics.filter(name => /--ui-(icon-|space-)/.test(name)) },
@@ -80,6 +81,10 @@
         <output class="feedback" aria-live="polite">{status}</output>
     </section>
     <section><h2>外壳</h2><ShellExample /></section>
+    <section id="editor">
+        <h2>编辑器 <small><a href={"?sample=editor&theme=" + (dark ? "dark" : "light")}>单独查看</a></small></h2>
+        <EditorExample />
+    </section>
     <section><h2>控件状态</h2><StateTable /></section>
     <section>
         <h2>弹出状态</h2>

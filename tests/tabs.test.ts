@@ -161,8 +161,10 @@ test("a failed departure protects the destination while the author can return an
 
 const date = { kind: "attribute", type: "day", id: "removed-date" };
 const status = { kind: "attribute", type: "status", id: "removed-status" };
+const pageRef = { kind: "page", id: "11111111-1111-4111-8111-111111111111" };
 const savedViews = [
-    { type: "page", params: { page: { kind: "page", id: "11111111-1111-4111-8111-111111111111" } } },
+    { type: "page", params: { page: pageRef } },
+    ...[true, false].map(showProperties => ({ type: "page", params: { page: pageRef, showProperties } })),
     { type: "calendar", params: { date, start: { kind: "attribute", type: "minute", id: "start" }, status } },
     { type: "library", params: { scope: "trash", pageType: { kind: "page-type", type: "paper" }, sort: "title", tags: ["A"], filters: [{ attribute: { kind: "attribute", id: "missing" }, value: { list: [false, null] } }] } },
     { type: "overview", params: { status } },
@@ -181,6 +183,7 @@ test("unknown views and invalid parameters discard only their tab and repair the
     for (const bad of [
         { type: "future", params: {} }, { type: "calendar", params: { date: status } },
         { type: "page", params: { page: { kind: "page", id: "invalid" } } },
+        { type: "page", params: { page: pageRef, showProperties: "true" } },
         { type: "overview", params: { status: date } }, { type: "about", params: { keyword: "A" } },
         { type: "library", params: { scope: "papers" } }
     ]) {

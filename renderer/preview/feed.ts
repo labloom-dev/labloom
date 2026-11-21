@@ -1,3 +1,4 @@
+import "../styles/global.css";
 import { mount } from "svelte";
 import type { FeedAPI } from "../../shared/feed/ipc";
 import { arxivURL } from "../../shared/utils/feed";
@@ -5,11 +6,6 @@ import { saveSubscription } from "../components/Feed/operations";
 import { write } from "../components/Knowledge/page-sessions";
 import FeedView from "../components/Feed/FeedView.svelte";
 import { LabloomError } from "../../shared/failure";
-import "../styles/colors.css";
-import "../styles/layouts.css";
-import "../styles/base.css";
-import "../styles/elements.css";
-import "../styles/workspace.css";
 import "./feed.css";
 
 async function request<T>(method: keyof FeedAPI | "attachPDF" | "version", ...args: unknown[]): Promise<T> {

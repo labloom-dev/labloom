@@ -1,22 +1,23 @@
 <dialog bind:this={dialog} class="attachment-reader" onclose={onclose} {@attach element => element.showModal()}>
-    <header><strong>{file.originalName}</strong><button class="button" onclick={() => dialog?.close()}>关闭</button></header>
+    <header><strong>{file.originalName}</strong><Button onclick={() => dialog?.close()}>{t("dialog.close")}</Button></header>
     <div class="reader-body">
-        {#if error}<p class="error">{message(error)}<button onclick={load}>{t("dialog.retry")}</button></p>
+        {#if error}<p class="error">{message(error)}<Button onclick={load}>{t("dialog.retry")}</Button></p>
         {:else if source}<Reader {source} fileId={file.id} />
-        {:else}<p>正在读取…</p>{/if}
+        {:else}<p>{t("property.loadingFile")}</p>{/if}
     </div>
 </dialog>
 <style>
-    .attachment-reader { width: min(1200px, calc(100vw - 48px)); height: calc(100vh - 64px); max-width: none; max-height: none; padding: 0; border: var(--border-width) solid var(--c-line); border-radius: var(--control-radius); background: var(--c-paper); color: var(--c-ink); }
-    .attachment-reader::backdrop { background: #0005; }
-    header { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: var(--pagebar-height); padding-inline: 8px; border-bottom: var(--border-width) solid var(--c-line); font-size: var(--font-secondary); }
+    .attachment-reader { width: min(calc(2 * var(--ui-search-width)), calc(100vw - calc(2 * var(--ui-space-6)))); height: calc(100vh - calc(2 * var(--ui-toolbar-height))); max-width: none; max-height: none; padding: 0; border: var(--ui-stroke) solid var(--ui-divider); border-radius: var(--ui-radius-panel); background: var(--ui-surface-window); color: var(--ui-text); }
+    .attachment-reader::backdrop { background: var(--ui-surface-scrim); }
+    header { display: flex; align-items: center; justify-content: space-between; gap: var(--ui-space-4); height: var(--ui-toolbar-height); padding-inline: var(--ui-space-3); border-bottom: var(--ui-stroke) solid var(--ui-divider); font-size: var(--ui-font-small); }
     strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .reader-body { height: calc(100% - var(--pagebar-height)); }
-    p { padding: 12px; color: var(--c-muted); }
-    .error { color: var(--c-reader-error-text); }
+    .reader-body { height: calc(100% - var(--ui-toolbar-height)); }
+    p { padding: var(--ui-space-4); color: var(--ui-text-secondary); }
+    .error { color: var(--ui-danger); }
 </style>
 <script lang="ts">
     import { t, failure, message, type ErrorValue } from "../../i18n.svelte";
+    import Button from "../base/Button.svelte";
     import { onMount } from "svelte";
     import { type Attachment } from "../../../shared/types/papers";
     import { type ReaderSource } from "../Reader/defs";

@@ -1,14 +1,11 @@
 :root {
-    --editor-min-height: 180px;
     --annotation-min-height: 150px;
-    --pagebar-height: 28px;
     --library-toolbar-height: 32px;
     --library-row-height: 28px;
     --panel-row-height: 22px;
     --menu-row-height: 26px;
     --property-row-height: 26px;
     --button-height: 24px;
-    --property-label-width: 88px;
     --control-radius: 4px;
     --font-body: 13px;
     --font-secondary: 12px;
@@ -18,6 +15,4 @@
     --focus-offset: 2px;
 
     --dc-font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
-    --dc-p-padding-block: .1875em;
-    --dc-p-padding-inline: .25em;
 }
