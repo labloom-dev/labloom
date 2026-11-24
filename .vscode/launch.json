@@ -2,38 +2,41 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Debug All",
+            "type": "node",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "program": "${workspaceFolder}/node_modules/electron-vite/bin/electron-vite.js",
+            "args": ["dev", "--sourcemap", "--config", "configs/electron.vite.config.ts", "--remoteDebuggingPort", "15222"],
+            "outputCapture": "std",
+            "serverReadyAction": {
+                "pattern": "DevTools listening on ws://",
+                "action": "startDebugging",
+                "name": "Debug Renderer Process",
+                "killOnServerStop": true
+            },
+            "presentation": {
+                "order": 1
+            }
+        },
+        {
             "name": "Debug Main Process",
             "type": "node",
             "request": "launch",
-            "cwd": "${workspaceRoot}",
-            "runtimeExecutable": "${workspaceRoot}/node_modules/.bin/electron-vite",
-            "windows": {
-                "runtimeExecutable": "${workspaceRoot}/node_modules/.bin/electron-vite.cmd"
-            },
-            "runtimeArgs": ["--sourcemap", "--config", "configs/electron.vite.config.ts"],
-            "env": {
-                "REMOTE_DEBUGGING_PORT": "15174"
-            }
+            "cwd": "${workspaceFolder}",
+            "program": "${workspaceFolder}/node_modules/electron-vite/bin/electron-vite.js",
+            "args": ["dev", "--sourcemap", "--config", "configs/electron.vite.config.ts", "--remoteDebuggingPort", "15222"]
         },
         {
             "name": "Debug Renderer Process",
             "address": "127.0.0.1",
-            "port": 15174,
+            "port": 15222,
             "request": "attach",
             "type": "chrome",
             "webRoot": "${workspaceFolder}/renderer",
             "timeout": 60000,
             "presentation": {
                 "hidden": true
-            }
-        }
-    ],
-    "compounds": [
-        {
-            "name": "Debug All",
-            "configurations": ["Debug Main Process", "Debug Renderer Process"],
-            "presentation": {
-                "order": 1
             }
         }
     ]
