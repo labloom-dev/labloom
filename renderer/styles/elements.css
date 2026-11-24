@@ -51,7 +51,7 @@ s {
 
 kbd {
     padding: .1em .4em;
-    border: .0625em solid var(--c-kbd-border);
+    border: var(--ui-stroke) solid var(--ui-border-input);
     border-radius: .25em;
     font-size: .9em;
     font-family: inherit;

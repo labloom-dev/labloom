@@ -1,214 +1,86 @@
-<header class="titlebar">
-    <img src={icon} alt="" />
-    <span>{t("startup.brand")}</span>
-</header>
-
-<main class="onboarding">
-    <div class="welcome">
-
-        <div class="welcome-art"><Bloom /></div>
-        <h1>{t(state ? "startup.welcome" : "startup.opening")}</h1>
-        <div data-paragraph class="intro">{t("startup.intro")}</div>
-
-        {#if state?.status === "needs-workspace"}
-            {#if state.notice}
-                <div data-paragraph class="message notice" role="status">{t("startup.configBackup", { path: state.notice.path })}</div>
-            {/if}
-            {#if state.error}
-                <div class="message error" role="alert">
-                    <strong>{t("startup.failed")}</strong>
-                    <div data-paragraph>{message(state.error)}</div>
-                    {#if state.error.diagnostic}<details><summary>{t("dialog.details")}</summary><div data-paragraph>{state.error.diagnostic}</div></details>{/if}
-                    {#if state.attemptedPath || state.lastWorkspace}
-                        <div data-paragraph class="path">{state.attemptedPath ?? state.lastWorkspace?.path}</div>
-                    {/if}
-                    <button class="retry" disabled={pending} onclick={onretry}>{t("startup.retry")}</button>
-                </div>
-            {/if}
-            <div class="actions">
-                <button class="choice primary" disabled={pending || !state.canChoose} onclick={() => onchoose("create")}>
-                    <span class="symbol"><Icon name="add" size={28} /></span>
-                    <strong>{t("startup.create")}</strong>
-                    <span>{t("startup.createHint")}</span>
-                </button>
-                <button class="choice" disabled={pending || !state.canChoose} onclick={() => onchoose("open")}>
-                    <span class="symbol"><Icon name="folder-opened" size={28} /></span>
-                    <strong>{t("startup.open")}</strong>
-                    <span>{t("startup.openHint")}</span>
-                </button>
-            </div>
-        {/if}
-
-        <div data-paragraph class="status" role="status">{t(pending ? "startup.pending" : "startup.localHint")}</div>
-    </div>
-</main>
-
-
-<style>
-    .titlebar {
-        -webkit-app-region: drag;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        height: max(37px, calc(env(titlebar-area-height, 36px) + 1px));
-        flex-shrink: 0;
-        padding-left: calc(env(titlebar-area-x, 0px) + 12px);
-        padding-right: 150px;
-        color: var(--c-search-trigger-text);
-        background: var(--c-navbar-background);
-        font-size: 12px;
-    }
-    .titlebar img {
-        width: 20px;
-        height: 20px;
-        -webkit-user-drag: none;
-    }
-    .onboarding {
-        flex: 1;
-        min-height: 0;
-        overflow: auto;
-        display: flex;
-        padding: 32px 28px;
-        background-color: var(--c-cream);
-        background-image: radial-gradient(var(--c-dots, #d9cfb9) .85px, transparent .85px);
-        background-size: 18px 18px;
-        color: var(--c-popover-text);
-    }
-    .welcome {
-        width: min(100%, 730px);
-        margin: auto;
-        text-align: center;
-    }
-    .welcome-art {
-        width: 190px;
-        margin: 8px auto 0;
-        transform: rotate(-4deg);
-    }
-    h1 {
-        margin: 16px 0 12px;
-        font-size: 32px;
-        font-weight: 900;
-    }
-    :where([data-paragraph]) {
-        line-height: 1.6;
-    }
-    .intro {
-        margin: 0 0 28px;
-        color: var(--c-search-trigger-text);
-        font-size: 14px;
-    }
-    .actions {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 16px;
-    }
-    .choice {
-        box-sizing: border-box;
-        display: flex;
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 12px;
-        padding: 24px;
-        border: 1.5px solid var(--c-ink);
-        border-radius: 15px;
-        background: var(--c-paper);
-        box-shadow: var(--c-shadow);
-        transition: transform .15s;
-        text-align: left;
-        color: inherit;
-        font-family: inherit;
-    }
-    .choice.primary {
-        background: var(--c-surface-focus);
-        border-color: var(--c-ink);
-    }
-    .choice:hover:not(:disabled) {
-        transform: translateY(-3px);
-        border-color: var(--c-accent);
-        background: var(--c-surface-hover);
-    }
-    button:focus-visible {
-        outline: 2px solid var(--c-accent);
-        outline-offset: 3px;
-    }
-    button:disabled {
-        opacity: .55;
-        cursor: wait;
-    }
-    .choice strong {
-        font-size: 16px;
-        font-weight: 600;
-    }
-    .choice > span:last-child {
-        color: var(--c-search-secondary-text);
-        font-size: 13px;
-        line-height: 1.5;
-    }
-    .symbol {
-        color: var(--c-accent);
-        height: 28px;
-        font-size: 28px;
-        line-height: 28px;
-    }
-    .status {
-        margin: 24px 0 0;
-        color: var(--c-search-secondary-text);
-        font-size: 12px;
-    }
-    .message {
-        margin: 0 0 20px;
-        padding: 16px;
-        border: 1px solid var(--c-popover-border);
-        border-radius: 8px;
-        text-align: left;
-        font-size: 13px;
-        overflow-wrap: anywhere;
-        white-space: pre-wrap;
-        user-select: text;
-    }
-    .message :where([data-paragraph]) {
-        margin: 8px 0;
-    }
-    .notice {
-        background: var(--c-surface-focus);
-    }
-    .error {
-        background: var(--c-surface-hover);
-    }
-    .path {
-        color: var(--c-search-secondary-text);
-    }
-    .retry {
-        padding: 5px 12px;
-        margin-top: 4px;
-        border: 1px solid var(--c-popover-border);
-        border-radius: 5px;
-        color: var(--c-accent);
-        font-family: inherit;
-    }
-    @media (max-width: 560px) {
-        .actions {
-            grid-template-columns: 1fr;
-        }
-        .choice {
-            padding: 18px;
-        }
-    }
-</style>
-
-
 <script lang="ts">
-    import Icon from "../utils/Icon.svelte";
-    import Bloom from "../utils/Bloom.svelte";
-    import icon from "../../assets/icon.png";
     import type { StartupState, WorkspaceAction } from "../../../shared/types/startup";
     import { message, t } from "../../i18n.svelte";
-    type Props = {
+    import Button from "../base/Button.svelte";
+    import TextButton from "../base/TextButton.svelte";
+    import TitleBar from "../layout/TitleBar.svelte";
+    import icon from "../../assets/icon.png";
+
+    let { state: startup, pending, onchoose, onretry }: {
         state: StartupState | null;
         pending: boolean;
         onchoose: (action: WorkspaceAction) => void;
         onretry: () => void;
-    };
+    } = $props();
 
-    let { state, pending, onchoose, onretry }: Props = $props();
+    const detailsId = $props.id();
+    let details = $state(false);
+
+    function choose(action: WorkspaceAction): void {
+        details = false;
+        onchoose(action);
+    }
+    function retry(): void {
+        details = false;
+        onretry();
+    }
 </script>
+
+<TitleBar class="startup-titlebar">
+    <img src={icon} alt="" draggable="false" />
+    <span>{t("app.name")}</span>
+</TitleBar>
+
+<main class="onboarding">
+    <div class="content">
+        {#if startup?.status === "needs-workspace"}
+            <div class="name">{t("app.name")}</div>
+            <section>
+                <h2>{t("startup.start")}</h2>
+                <div class="actions" aria-busy={pending}>
+                    <TextButton class="workspace-link" icon="add" text={t("startup.newWorkspace")}
+                        disabled={pending || !startup.canChoose} onclick={() => choose("create")} />
+                    <TextButton class="workspace-link" icon="folder-opened" text={t("startup.openWorkspace")}
+                        disabled={pending || !startup.canChoose} onclick={() => choose("open")} />
+                </div>
+            </section>
+            {#if startup.notice}
+                <div class="message" role="status">{t("startup.configBackup")}&nbsp;<span class="path">{startup.notice.path}</span></div>
+            {/if}
+            {#if startup.error}
+                {@const path = startup.attemptedPath ?? startup.lastWorkspace?.path}
+                <div class="message" role="alert">
+                    <div class="error-heading">{t("startup.failed")}</div>
+                    <div>{message(startup.error)}</div>
+                    {#if path}<div class="path">{path}</div>{/if}
+                    {#if startup.error.diagnostic}
+                        <TextButton text={t("dialog.details")} icon={details ? "chevron-down" : "chevron-right"}
+                            aria-expanded={details} aria-controls={detailsId} onclick={() => details = !details} />
+                        <div class="diagnostic" id={detailsId} hidden={!details}>{startup.error.diagnostic}</div>
+                    {/if}
+                    <div><Button disabled={pending} onclick={retry}>{t("dialog.retry")}</Button></div>
+                </div>
+            {/if}
+        {:else}
+            <div role="status">{t("startup.opening")}</div>
+        {/if}
+    </div>
+</main>
+
+<style>
+    :global(.startup-titlebar) { display: flex; gap: var(--ui-space-3); padding-inline-end: var(--system-controls); font-size: var(--ui-font-small); }
+    img { width: var(--ui-icon-normal); height: var(--ui-icon-normal); }
+    .onboarding { flex: 1; min-height: 0; overflow: auto; background: var(--ui-surface-window); color: var(--ui-text); font-size: var(--ui-font-body); }
+    .content { max-width: var(--ui-editor-content-width); padding: clamp(var(--ui-space-6), 12vh, calc(4 * var(--ui-space-6))) clamp(var(--ui-space-6), 7vw, calc(4 * var(--ui-space-6))); }
+    .name { margin-bottom: var(--ui-space-6); font-size: var(--ui-font-title); font-weight: 600; }
+    h2 { margin: 0 0 var(--ui-space-2); font-size: var(--ui-font-body); font-weight: 600; }
+    .actions { display: grid; justify-items: start; gap: var(--ui-space-1); }
+    .actions :global(.workspace-link:enabled) { color: var(--ui-text-match); }
+    .actions :global(.workspace-link) { padding-inline: 0 var(--ui-space-3); }
+    .message { margin-top: var(--ui-space-5); }
+    .message > div + div, .message > div + :global(.ui-control) { margin-top: var(--ui-space-2); }
+    .error-heading { color: var(--ui-text-danger); font-weight: 600; }
+    .path, .diagnostic { user-select: text; overflow-wrap: anywhere; }
+    .path { color: var(--ui-text-secondary); }
+    .diagnostic { white-space: pre-wrap; font-family: var(--ui-font-mono); }
+</style>

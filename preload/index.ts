@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
-import type { AppAPI, BridgeAPI } from "../shared/ipc";
+import type { AppAPI, AppCommands, AppQueries, BridgeAPI } from "../shared/ipc";
 import type { Channels, InvokeKeys } from "../shared/ipc/contract";
-import { appChannels, beforeQuit, feedChanged, historyChanged, pagesChanged, settingsChanged, openReminderPage, pagesChannels, attributesChannels, historyChannels, papersChannels, timersChannels, workspaceChannels, settingsChannels, startupChannels, feedChannels } from "../shared/ipc";
+import { appChannels, appQueryChannels, beforeQuit, feedChanged, historyChanged, pagesChanged, settingsChanged, openReminderPage, pagesChannels, attributesChannels, historyChannels, papersChannels, timersChannels, workspaceChannels, settingsChannels, startupChannels, feedChannels } from "../shared/ipc";
 
 function methods<API>(channels: Record<keyof API, string>, call: (channel: string, ...args: unknown[]) => unknown): API {
     return Object.fromEntries(Object.entries<string>(channels).map(([key, channel]) => [key, (...args: unknown[]) => call(channel, ...args)])) as API;
@@ -18,7 +18,8 @@ function subscribe<Args extends unknown[]>(channel: string, listener: (...args: 
 const { beforeQuitResult, ...commands } = appChannels;
 const api: BridgeAPI<AppAPI> = {
     app: {
-        ...methods<Omit<AppAPI["app"], "beforeQuit">>(commands, (channel, ...args) => ipcRenderer.send(channel, ...args)),
+        ...invokes<AppQueries>(appQueryChannels),
+        ...methods<Omit<AppCommands, "beforeQuit">>(commands, (channel, ...args) => ipcRenderer.send(channel, ...args)),
         beforeQuit(check) {
             const listener = (_event: unknown, id: string): void => {
                 Promise.resolve().then(check).then(block => ipcRenderer.send(beforeQuitResult, id, block !== false))

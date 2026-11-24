@@ -1,5 +1,3 @@
-@import "./colors.css";
 @import "./layouts.css";
 @import "./base.css" layer(base);
 @import "./elements.css";
-@import "./workspace.css";

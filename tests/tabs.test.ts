@@ -174,6 +174,7 @@ const savedViews = [
     { type: "overview", params: { status, date } },
     { type: "feed", params: { scope: pageRef.id, read: "unread", order: "oldest", sourcesWidth: 200, listWidth: 340 } },
     { type: "feed", params: { scope: "followed" } },
+    { type: "attributes", params: { listWidth: 275 } },
     ...["feed", "attributes", "settings", "about"].map(type => ({ type, params: {} }))
 ];
 function layout(views: unknown[]): { groups: { id: string; tabs: { id: string; view: unknown }[]; activeTabId: string | null }[]; focusedGroupId: string; layout: { type: "group"; groupId: string } } {
@@ -185,12 +186,11 @@ test("all view parameters round-trip independently of whether referenced objects
     assert.deepEqual(restoreTabState(saved), saved);
     assert.deepEqual(restoreTabState(layout([])), layout([]));
 });
-test("unknown views and invalid parameters discard only their tab and repair the active selection", () => {
+test("unknown views and invalid page locations discard only their tab and repair the active selection", () => {
     for (const bad of [
         { type: "future", params: {} },
         { type: "page", params: { page: { kind: "page", id: "invalid" } } },
-        { type: "page", params: { page: pageRef, unexpected: "true" } },
-        { type: "about", params: { keyword: "A" } }
+        { type: "page", params: { page: pageRef, unexpected: "true" } }
     ]) {
         const saved = layout([bad, ...savedViews]);
         const restored = restoreTabState(saved);
@@ -214,6 +214,17 @@ test("invalid overview and feed parameters keep the active tab and use defaults"
     ]);
     const invalidScope = layout([{ type: "feed", params: { scope: "not-a-source" } }]);
     assert.deepEqual(restoreTabState(invalidScope)?.groups[0].tabs[0].view, { type: "feed", params: {} });
+});
+test("invalid attribute, settings and about parameters keep the tab and use defaults", () => {
+    const cases = [
+        { type: "attributes", params: { listWidth: 0 } },
+        { type: "attributes", params: { listWidth: "wide" } },
+        { type: "settings", params: null },
+        { type: "about", params: { keyword: "A" } }
+    ];
+    for (const { type, params } of cases) {
+        assert.deepEqual(restoreTabState(layout([{ type, params }])), layout([{ type, params: {} }]));
+    }
 });
 test("invalid reader sidebar settings keep the page and its selected PDF", () => {
     const location = { page: pageRef, fileId: pageRef.id };

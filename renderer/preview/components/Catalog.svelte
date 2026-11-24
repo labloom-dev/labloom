@@ -6,6 +6,7 @@
     import Input from "../../components/base/Input.svelte";
     import ListRow from "../../components/base/ListRow.svelte";
     import ShellExample from "./ShellExample.svelte";
+    import ComboboxExamples from "./ComboboxExamples.svelte";
     import DatePickerExamples from "./DatePickerExamples.svelte";
     import EditorExample from "./EditorExample.svelte";
     import StateTable from "./StateTable.svelte";
@@ -80,6 +81,7 @@
         </div>
         <output class="feedback" aria-live="polite">{status}</output>
     </section>
+    <ComboboxExamples />
     <DatePickerExamples />
     <section><h2>外壳</h2><ShellExample /></section>
     <section id="editor">

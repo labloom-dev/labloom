@@ -45,7 +45,7 @@ function fixture(t: TestContext, platform: NodeJS.Platform = "win32", options: s
         }
     };
     Object.assign(contents, {
-        mainFrame: frame, ipc, isDestroyed: () => state.contentsDestroyed, isLoadingMainFrame: () => state.loading,
+        mainFrame: frame, ipc: Object.assign(ipc, { handle: () => { } }), isDestroyed: () => state.contentsDestroyed, isLoadingMainFrame: () => state.loading,
         send: (channel: string, id: string) => sent.push({ channel, id }), focus: () => state.focused++
     });
     Object.assign(window, {

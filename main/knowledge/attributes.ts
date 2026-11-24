@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { builtinAttrs, builtinAttrsByPageKind, editableBuiltinMetadata, isBuiltin } from "../../shared/attrs/builtins";
 import { convertValue } from "../../shared/attrs/convert";
 import { resolveAttributeDefinition } from "../../shared/attrs/definitions";
-import { attributeTargetKind, attributeTargets, convertMetadata, decodeValue, defaultValue, encodeValue, validUUID, validateDefinition } from "../../shared/attrs/values";
+import { attributeTargetKind, attributeTargets, decodeValue, defaultValue, encodeValue, record, validUUID, validateDefinition } from "../../shared/attrs/values";
 import { resolveTimeZone } from "../../shared/content/time";
 import { recurrenceMinutes } from "../../shared/content/timers";
 import { LabloomError } from "../../shared/failure";
@@ -117,15 +117,15 @@ export function initializePage(pageId: string): void {
 
 function prepareDefinition(id: string, input: AttributeDefinition | null, before: AttributeDefinition | undefined): AttributeDefinition | null {
     if (input) {
-        if (before && before.type !== input.type) {
-            let metadata = convertMetadata(before.type, input.type, before.metadata);
-            if (input.type === "status" && input.metadata.options) {
-                metadata = { options: input.metadata.options.map(option => ({ ...option, group: option.group ?? "incomplete" })) };
-            }
-            else if (before.type === "status" && input.type === "select" && input.metadata.options) {
-                metadata = { options: input.metadata.options.map(({ id, name }) => ({ id, name })) };
-            }
-            input = { ...input, metadata };
+        const options = input.metadata?.options, grouped = input.type === "status";
+        if (before && before.type !== input.type && (grouped || before.type === "status") && record(input.metadata) && Array.isArray(options)) {
+            const normalized = options.map(option => {
+                if (!record(option)) return option;
+                if (grouped) return option.group === undefined ? { ...option, group: "incomplete" as const } : option;
+                const { group: _group, ...rest } = option;
+                return rest;
+            });
+            input = { ...input, metadata: { ...input.metadata, options: normalized } };
         }
         validateDefinition(input);
         if (id !== input.id) throw new LabloomError({ kind: "attribute-id-immutable" });
@@ -144,18 +144,40 @@ function prepareDefinition(id: string, input: AttributeDefinition | null, before
     return input;
 }
 
-export function previewDefinition(id: string, input: AttributeDefinition | null): AttributeImpact {
+// Prepare and persist within the same transaction so the confirmation describes the rows being written.
+export function prepareDefinitionChange(id: string, input: AttributeDefinition | null): {
+    impact: AttributeImpact;
+    before: AttributeDefinition | undefined;
+    owners: string[];
+    persist: () => void;
+} {
     workspace.requireWorkspace();
     const row = byId(id), before = row ? resolveAttributeDefinition(row) : undefined;
-    input = prepareDefinition(id, input, before);
+    const next = prepareDefinition(id, input, before);
     const rows = workspace.database().select().from(pageAttrs).where(eq(pageAttrs.attrId, id)).all();
     const zone = resolveTimeZone(workspace.timeZone());
-    const affected = rows.filter(row => !input || before?.type !== input.type || encodeValue(input, convertStored(before!, input, row.value, zone)) !== row.value);
+    const affected = rows.filter(row => !next || before?.type !== next.type || encodeValue(next, convertStored(before!, next, row.value, zone)) !== row.value);
     const titles = new Map((affected.length ? workspace.database().select({ id: pages.id, title: blocks.content }).from(pages).innerJoin(blocks, eq(pages.titleBlockId, blocks.id)).where(inArray(pages.id, affected.map(row => row.pageId))).all() : []).map(row => {
         const title = row.title ? JSON.parse(row.title).inline?.map((node: { text?: string }) => node.text ?? "").join("") : "";
-        return [row.id, title || "未命名"];
+        return [row.id, title];
     }));
-    return { token: fingerprint({ id, input, before: row ?? null, rows, zone }), pages: affected.map(row => ({ id: row.pageId, title: titles.get(row.pageId) ?? "未命名" })) };
+    const impact: AttributeImpact = { token: fingerprint({ id, input: next, before: row ?? null, rows, zone }),
+        pages: affected.map(row => ({ id: row.pageId, title: titles.get(row.pageId) ?? "" })) };
+    function persist(): void {
+        if (!next) {
+            workspace.database().delete(pageAttrs).where(eq(pageAttrs.attrId, id)).run();
+            workspace.database().delete(attrsMeta).where(eq(attrsMeta.id, id)).run();
+        }
+        else {
+            if (before && attributeTargetKind(before.type) && !attributeTargetKind(next.type)) workspace.database().$client.prepare("DELETE FROM link_refs WHERE source_kind='page' AND source_field=?").run(id);
+            const name = isBuiltin(id) ? null : next.name;
+            const metadata = isBuiltin(id) && !editableBuiltinMetadata(id) ? {} : next.metadata;
+            workspace.database().insert(attrsMeta).values({ id, type: next.type, name, metadata }).onConflictDoUpdate({ target: attrsMeta.id, set: { type: next.type, name, metadata } }).run();
+            for (const row of rows) persistValues(row.pageId, prepareValues(row.pageId, { [id]: convertStored(before!, next, row.value, zone) }, [], true));
+        }
+        for (const page of impact.pages) persistValues(page.id, prepareValues(page.id, { modified_at: workspace.seconds() }, [], true));
+    }
+    return { impact, before, owners: rows.map(row => row.pageId), persist };
 }
 
 function convertStored(before: AttributeDefinition, target: AttributeDefinition, stored: unknown, zone: string): AttributeValue {
@@ -170,24 +192,9 @@ function convertStored(before: AttributeDefinition, target: AttributeDefinition,
 export function persistDefinition(id: string, input: AttributeDefinition | null, token?: string): AttributeImpact | null {
     workspace.requireWorkspace();
     return workspace.database().$client.transaction(() => {
-        const impact = previewDefinition(id, input);
-        if (impact.pages.length && token !== impact.token) return impact;
-        const row = byId(id), before = row ? resolveAttributeDefinition(row) : undefined;
-        const next = prepareDefinition(id, input, before);
-        const rows = workspace.database().select().from(pageAttrs).where(eq(pageAttrs.attrId, id)).all();
-        if (!next) {
-            workspace.database().delete(pageAttrs).where(eq(pageAttrs.attrId, id)).run();
-            workspace.database().delete(attrsMeta).where(eq(attrsMeta.id, id)).run();
-        }
-        else {
-            if (before && attributeTargetKind(before.type) && !attributeTargetKind(next.type)) workspace.database().$client.prepare("DELETE FROM link_refs WHERE source_kind='page' AND source_field=?").run(id);
-            const name = isBuiltin(id) ? null : next.name;
-            const metadata = isBuiltin(id) && !editableBuiltinMetadata(id) ? {} : next.metadata;
-            workspace.database().insert(attrsMeta).values({ id, type: next.type, name, metadata }).onConflictDoUpdate({ target: attrsMeta.id, set: { type: next.type, name, metadata } }).run();
-            const zone = resolveTimeZone(workspace.timeZone());
-            for (const row of rows) persistValues(row.pageId, prepareValues(row.pageId, { [id]: convertStored(before!, next, row.value, zone) }, [], true));
-        }
-        for (const page of impact.pages) persistValues(page.id, prepareValues(page.id, { modified_at: workspace.seconds() }, [], true));
+        const change = prepareDefinitionChange(id, input);
+        if (change.impact.pages.length && token !== change.impact.token) return change.impact;
+        change.persist();
         return null;
     })();
 }

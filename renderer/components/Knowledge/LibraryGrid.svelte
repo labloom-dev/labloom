@@ -39,9 +39,11 @@
         untrack(() => onrange(from, to));
     });
     let queued: number | undefined;
-    function scrollWindow(): void {
+    function scrollWindow(event: Event & { currentTarget: HTMLElement }): void {
+        const viewport = event.currentTarget;
+        if (viewport !== grid) return;
         hideTip();
-        const at = grid.scrollTop, row = Math.floor(at / rowHeight);
+        const at = viewport.scrollTop, row = Math.floor(at / rowHeight);
         if (row < start || Math.min(index.ids.length, row + count) > end) {
             scroll = at;
         }
@@ -49,7 +51,7 @@
             // Chromium can finish the current wheel frame before we replenish the buffer.
             queued = requestIdleCallback(() => {
                 queued = undefined;
-                scroll = grid.scrollTop;
+                if (viewport === grid) scroll = viewport.scrollTop;
             }, { timeout: 24 });
         }
     }

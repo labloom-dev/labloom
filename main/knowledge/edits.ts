@@ -330,18 +330,16 @@ export function setDefinition(id: string, definition: AttributeDefinition | null
     workspace.requireWorkspace();
     try {
         commit.run({ history: false, confirmation: token }, context => {
-            const impact = attributes.previewDefinition(id, definition);
+            const change = attributes.prepareDefinitionChange(id, definition);
+            const { impact, before: previous, owners } = change;
             for (const page of impact.pages) data.writable(page.id);
-            const owners = data.statement("SELECT page_id AS pageId FROM page_attrs WHERE attr_id=?").all(id) as { pageId: string }[];
             const plan = new EditChanges();
-            const old = data.statement("SELECT type FROM attrs_meta WHERE id=?").get(id) as { type: string } | undefined;
-            const previous = old ? attributes.definition(id) : undefined;
-            const previousValues = new Map(owners.map(({ pageId }) => [pageId, data.valuesFor([pageId]).get(pageId)?.[id]]));
-            const previousLinks = new Map(owners.map(({ pageId }) => [pageId, data.outgoing({ kind: "page", id: pageId })]));
-            attributes.persistDefinition(id, definition, impact.token);
+            const previousValues = new Map(owners.map(pageId => [pageId, data.valuesFor([pageId]).get(pageId)?.[id]]));
+            const previousLinks = new Map(owners.map(pageId => [pageId, data.outgoing({ kind: "page", id: pageId })]));
+            change.persist();
             const next = definition ? attributes.definition(id) : undefined;
-            if ([old?.type, definition?.type].some(type => ["page-link", "page-links", "file", "files"].includes(type ?? ""))) {
-                for (const { pageId } of owners) {
+            if ([previous?.type, next?.type].some(type => ["page-link", "page-links", "file", "files"].includes(type ?? ""))) {
+                for (const pageId of owners) {
                     const value = plan.readValue(pageId, id)?.value;
                     const targets = next && value !== undefined ? attributeTargets(next.type, decodeValue(next, value)) : [];
                     plan.setLinks({ kind: "page", id: pageId }, id, targets, previousLinks.get(pageId), false);
@@ -350,10 +348,10 @@ export function setDefinition(id: string, definition: AttributeDefinition | null
             let ids: string[] = [];
             context.persist(plan, undefined, undefined, projected => {
                 ids = projected?.changes.filter(row => !row.deleted && row.reason !== null).map(row => row.id) ?? [];
-                const combined: AttributeImpact = { ...impact, token: fingerprint({ impact: impact.token, ids }), recycled: ids.map(id => ({ id, title: data.title(id) })) };
+                const combined: AttributeImpact = { ...impact, token: fingerprint({ impact: impact.token, ids }), recycled: ids.map(id => ({ id, title: data.title(id, "") })) };
                 if ((impact.pages.length || ids.length) && token !== combined.token) throw new DefinitionRollback(combined);
             });
-            for (const { pageId } of owners) {
+            for (const pageId of owners) {
                 const before = previousValues.get(pageId), after = data.valuesFor([pageId]).get(pageId)?.[id];
                 if (completedOption(previous, before) !== completedOption(next, after)) timerState.recalculate(pageId);
                 else if (previous?.type !== next?.type || JSON.stringify(before) !== JSON.stringify(after)) timerState.recalculate(pageId, [id, "modified_at"]);
@@ -361,7 +359,7 @@ export function setDefinition(id: string, definition: AttributeDefinition | null
             const removedOptions = previous?.metadata.options?.some(option => !next?.metadata.options?.some(value => value.id === option.id));
             commit.invalidate([...new Set([...impact.pages.map(p => p.id), ...ids])].map(id => "page:" + id)
                 .concat(!next || previous?.type !== next.type || removedOptions ? ["attribute:" + id] : []));
-            context.change({ definition: id, pages: [...new Set([...owners.map(p => p.pageId), ...ids])] });
+            context.change({ definition: id, pages: [...new Set([...owners, ...ids])] });
         });
     }
     catch (error) {

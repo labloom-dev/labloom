@@ -50,7 +50,6 @@
         "attribute-readonly": "This attribute is managed by its corresponding operation.",
         "import-regular-file": "Choose a regular file.",
         "import-pdf-only": "Only PDF files can create paper pages.",
-
         "import-failed": "Some files could not be imported.",
         "attachment-missing": "The attachment was not found.",
         "attachment-owned": "An attachment can belong to only one file attribute on one page.",
@@ -200,27 +199,66 @@
         "settings-invalid-update": "The settings update is invalid.",
         "workspace-in-use": "This workspace is already open in another Labloom window."
     },
+    "app": {
+        "name": "知织 Labloom"
+    },
+    "about": {
+        "version": "Version",
+        "electron": "Electron",
+        "chromium": "Chromium",
+        "node": "Node.js",
+        "v8": "V8",
+        "os": "OS",
+        "license": "License",
+        "copied": "Copied"
+    },
     "startup": {
-        "brand": "Labloom",
-        "welcome": "Let knowledge grow from here.",
-        "opening": "Opening workspace",
-        "intro": "Welcome to Labloom. Choose a space for your ideas.",
-        "failed": "Unable to open workspace",
-        "retry": "Retry",
-        "create": "Create workspace",
-        "createHint": "Choose an empty folder to begin.",
+        "start": "Start",
+        "opening": "Opening workspace…",
+        "failed": "Failed to open workspace",
+        "newWorkspace": "New Workspace…",
+        "openWorkspace": "Open Workspace…",
+        "configBackup": "The configuration was damaged. A backup was saved to",
         "open": "Open existing workspace",
-        "openHint": "Choose a workspace folder you used before.",
-        "pending": "Working, please wait…",
-        "localHint": "Workspaces are stored locally. Choose a lasting location.",
         "createTitle": "Choose an empty folder for the workspace",
         "openTitle": "Choose an existing workspace",
-        "createHere": "Create here",
-        "configBackup": "The configuration could not be read. A backup was saved to {{path}}. Select your workspace again."
+        "createHere": "Create here"
     },
     "language": {
-        "label": "Interface language",
-        "hint": "Used for startup, errors and confirmations."
+        "label": "Language",
+        "hint": "Controls the language of the interface."
+    },
+    "settings": {
+        "appearance": "Appearance",
+        "theme": "Theme",
+        "themeHint": "Controls the interface colors.",
+        "light": "Light",
+        "dark": "Dark",
+        "system": "Follow system",
+        "readingSize": "Body font size",
+        "readingSizeHint": "Applies to the page editor and feed articles.",
+        "motion": "Motion",
+        "motionHint": "Controls interface animations and transitions.",
+        "time": "Time",
+        "timeZone": "Time zone",
+        "timeZoneHint": "Used for displaying, entering, and searching dates and times, and for grouping calendar entries.",
+        "undo": "Undo",
+        "historyLimit": "Undo history limit",
+        "historyLimitHint": "Total undo entries kept across the workspace. The oldest entries are discarded first when the limit is exceeded.",
+        "unlimited": "Unlimited",
+        "invalidHistoryLimit": "Enter a positive integer or leave the field empty for unlimited history.",
+        "workspace": "Workspace",
+        "workspaceLoading": "Reading workspace information…"
+    },
+    "combobox": {
+        "title": "Combobox",
+        "filter": "Filter",
+        "empty": "No matches",
+        "sampleFew": "A few options",
+        "sampleMany": "500 options",
+        "sampleEmpty": "No matches",
+        "sampleDisabled": "Disabled",
+        "sampleOption": "Option {{number}}"
     },
     "feed": {
         "sources": "Sources",
@@ -321,14 +359,14 @@
         "attributeImpact": "Attribute values on the following pages will be cleared, removed or adjusted.",
         "attributeRecycle": "{{count}} pages will also lose their retaining references and move to the recycle bin.",
         "purge": "Permanently delete pages",
-        "purgeImpact": "Permanently delete {{count}} pages: {{titles}}. This cannot be undone.",
+        "purgeImpact": "Permanently delete {{count}} pages. This cannot be undone.",
         "deletedLinks": "{{count}} link references will display “Deleted”.",
         "deleteExcerpt": "Delete {{excerpt}}.",
         "positions": "will disappear from {{count}} positions",
         "pagePositions": "will disappear from {{count}} positions across {{pages}} pages",
         "deleteImpact": "After deleting {{excerpt}}, {{impact}}.",
         "excerptImpact": "{{excerpt}} {{impact}}.",
-        "recycle": "Move to the recycle bin: {{titles}}.",
+        "recycle": "Move {{count}} pages to the recycle bin.",
         "join": ", ",
         "listJoin": ", ",
         "closeTimeout": "The window did not confirm that saving finished.",
@@ -348,13 +386,16 @@
         "markRead": "Mark {{count}} unread items from “{{source}}” as read?",
         "allSources": "All sources",
         "confirmMarkRead": "Mark all as read",
-        "retry": "Retry"
+        "retry": "Retry",
+        "recycleOne": "Move one page to the recycle bin.",
+        "purgeOne": "Permanently delete one page. This cannot be undone.",
+        "affectedPages": "Affected pages"
     },
     "command": {
         "newPage": "New Page",
         "importPDF": "Import PDF",
         "closeTab": "Close Editor",
-        "settings": "Preferences",
+        "settings": "Settings",
         "undo": "Undo",
         "redo": "Redo",
         "cut": "Cut",
@@ -554,7 +595,6 @@
         "empty": "No pages",
         "count": "{{count}} pages",
         "selected": "{{count}} items selected",
-
         "type": "Type",
         "paper": "Paper",
         "editable": "Note",
@@ -570,7 +610,6 @@
         "property": "Add a property condition",
         "add": "Add condition",
         "openFile": "Open in System Application",
-
         "yes": "Yes",
         "no": "No"
     },
@@ -753,6 +792,22 @@
         "cancelled": "Cancelled",
         "manualDelete": "Manually deleted",
         "unreachable": "No remaining references"
+    },
+    "attributes": {
+        "create": "New Attribute",
+        "newName": "New Attribute",
+        "builtins": "Built-in Attributes",
+        "custom": "Custom Attributes",
+        "listWidth": "Attribute list width",
+        "name": "Name",
+        "type": "Type",
+        "options": "Options",
+        "optionName": "Option name",
+        "complete": "Complete",
+        "removeOption": "Remove option",
+        "addOption": "Add option",
+        "save": "Save",
+        "delete": "Delete Attribute"
     },
     "attributeType": {
         "string": "Text",

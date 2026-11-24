@@ -1,126 +1,163 @@
-<section class="workspace-page">
-    <header class="page-heading"><div><h1>偏好设置</h1><div data-paragraph>让这个小小的知识花园，更合你的心意。</div></div><span class="badge">保存在本机，所有工作区通用</span></header>
-    <section class="paper-card settings-card">
-        <h2><Icon name="settings-gear" size={20} />外观与阅读</h2>
-        <div class="setting-row"><div><label for="language">{t("language.label")}</label><div data-paragraph>{t("language.hint")}</div></div><select id="language" disabled={!appearance.loaded || appearance.saving} bind:value={appearance.language} onchange={saveAppearance}><option value="zh-CN">简体中文</option><option value="en">English</option></select></div>
-        <div class="setting-row"><div><strong>暖纸主题</strong><div data-paragraph>奶油色纸张、柔和配色与手绘小植物。</div></div><select aria-label="主题" disabled={!appearance.loaded || appearance.saving} bind:value={appearance.theme} onchange={saveAppearance}><option value="light">暖纸浅色</option><option value="dark">夜间花园</option><option value="system">跟随系统</option></select></div>
-        <div class="setting-row"><div><label for="reading-size">正文字号</label><div data-paragraph>应用于订阅摘要与页面编辑器。</div></div><select id="reading-size" disabled={!appearance.loaded || appearance.saving} bind:value={appearance.readingSize} onchange={saveAppearance}><option value={14}>小，14 px</option><option value={16}>标准</option><option value={18}>大，18 px</option></select></div>
-        <div class="setting-row"><div><label for="motion">轻量动效</label><div data-paragraph>按钮悬停的轻微位移。也会遵循系统的减少动态效果设置。</div></div><input id="motion" type="checkbox" disabled={!appearance.loaded || appearance.saving} bind:checked={appearance.motion} onchange={saveAppearance} /></div>
-        <div class="setting-row">
-            <div><label for="time-zone">时区</label><div data-paragraph>用于日期时间的显示、输入、搜索和日历分组。</div></div>
-            <div class="zone-picker">
-                <input type="search" aria-label="筛选时区" placeholder="筛选时区" bind:value={zoneFilter} />
-                <select id="time-zone" disabled={!appearance.loaded || appearance.saving} bind:value={appearance.timeZone} onchange={changeZone}>
-                    <option value="system">跟随系统</option>
-                    {#each zones as name (name)}<option value={name}>{name}</option>{/each}
-                </select>
-            </div>
-        </div>
-        <div class="reading-preview"><div data-paragraph>一个好问题，是知识开始生长的地方。</div></div>
-        {#if appearance.saving}<div data-paragraph role="status">正在保存偏好设置…</div>{/if}
-        {#if appearance.error}<div class="notice error" role="alert">{message(appearance.error)} <button class="button" disabled={appearance.saving} onclick={() => appearance.loaded ? saveAppearance() : loadAppearance()}>{t("dialog.retry")}</button></div>{/if}
-    </section>
-    <section class="paper-card settings-card">
-        <h2><Icon name="library" size={20} />当前工作区</h2>
-        {#if workspace}<div class="setting-row"><div><strong>{workspace.name}</strong><div data-paragraph class="path">{workspace.path}</div></div><span class="badge">本地文件夹</span></div>{:else}<div data-paragraph class="notice" role="status">{workspaceError ? message(workspaceError) : "正在读取工作区信息…"}</div>{/if}
-    </section>
-</section>
-
-
-<style>
-    .settings-card {
-        padding: 24px;
-        margin-bottom: 25px;
-    }
-    h2 {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin: 0 0 10px;
-        font-size: 16px;
-    }
-    .setting-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        flex-wrap: wrap;
-        gap: 20px;
-        padding: 22px 0;
-        border-bottom: 1px dashed var(--c-line);
-    }
-    .setting-row > div:first-child {
-        min-width: 0;
-        flex: 1;
-    }
-    strong, label {
-        font-size: 13px;
-        font-weight: 800;
-    }
-    :where([data-paragraph]) {
-        margin: 7px 0 0;
-        color: var(--c-muted);
-        font-size: 12px;
-        line-height: 1.7;
-    }
-    select, .zone-picker input {
-        padding: 9px 12px;
-        border: 1px solid var(--c-tab-header-border);
-        border-radius: 8px;
-        background: var(--c-paper);
-        font-size: 12px;
-    }
-    input[type="checkbox"] {
-        width: 20px;
-        height: 20px;
-        accent-color: var(--c-accent);
-    }
-    .zone-picker { display: flex; flex-wrap: wrap; gap: 8px; }
-    .zone-picker input { width: 10em; }
-    .zone-picker select { width: 20em; max-width: 100%; }
-    .reading-preview {
-        padding: 22px;
-        margin-top: 20px;
-        border: 1px solid var(--c-line);
-        border-radius: 10px;
-        background: var(--c-cream);
-    }
-    .reading-preview :where([data-paragraph]) {
-        color: var(--c-ink);
-        font-size: var(--reading-font-size, 16px);
-    }
-    .path {
-        overflow-wrap: anywhere;
-        user-select: text;
-    }
-</style>
-
-
 <script lang="ts">
-    import { onMount } from "svelte";
+    import { onMount, type Snippet } from "svelte";
+    import { isComposingKey, settingsShortcuts } from "../../../shared/content/commands";
+    import { resolveTimeZone } from "../../../shared/content/time";
     import { type Workspace } from "../../../shared/types/startup";
-    import Icon from "../utils/Icon.svelte";
-    import { appearance, loadAppearance, saveAppearance } from "../layout/preferences.svelte";
+    import { readingSizes, type Appearance } from "../../../shared/types/appearance";
+    import { appearance, loadAppearance, preferences, savePreferences } from "../layout/preferences.svelte";
     import { message, t, failure, type ErrorValue } from "../../i18n.svelte";
+    import Button from "../base/Button.svelte";
+    import Checkbox from "../base/Checkbox.svelte";
+    import Combobox from "../base/Combobox.svelte";
+    import Input from "../base/Input.svelte";
+    import Select from "../base/Select.svelte";
 
-    const commonZones = ["UTC", "Asia/Shanghai", "Asia/Hong_Kong", "Asia/Taipei", "Asia/Singapore", "Asia/Tokyo", "Europe/London", "Europe/Paris", "America/New_York", "America/Los_Angeles", "Australia/Sydney"];
-    const availableZones = [...new Set([...commonZones, ...Intl.supportedValuesOf("timeZone")])];
-    let zoneFilter = $state("");
-    const zones = $derived([...new Set([...availableZones, appearance.timeZone])].filter(name =>
-        name !== "system" && (name === appearance.timeZone || name.toLowerCase().includes(zoneFilter.trim().toLowerCase()))));
+    const languages = [{ value: "zh-CN", label: "简体中文" }, { value: "en", label: "English" }] as const;
+    const themes = ["light", "dark", "system"] as const;
+    const sizeOptions = readingSizes.map(size => ({ value: String(size), label: size + " px" }));
+    const supportedZones = Intl.supportedValuesOf("timeZone");
+    let systemZone = $state(resolveTimeZone("system"));
+    const zones = $derived([
+        { value: "system", label: t("settings.system"), detail: systemZone },
+        ...[...new Set(["UTC", ...supportedZones, appearance.timeZone])].filter(name => name !== "system").sort()
+            .map(name => ({ value: name, label: name }))
+    ]);
 
-    function changeZone(): void {
-        zoneFilter = "";
-        void saveAppearance();
-    }
-
+    const limitErrorId = $props.id();
+    let limitText = $state<string | null>(null), invalidLimit = $state(false);
     let workspace = $state<Workspace | null>(null);
     let workspaceError = $state<ErrorValue>("");
+
     onMount(() => {
+        const refreshZone = (): void => {
+            systemZone = resolveTimeZone("system");
+        };
+        window.addEventListener("focus", refreshZone);
         void window.api.startup.getState().then(state => {
             if (state.status === "ready") workspace = state.workspace;
             else workspaceError = { kind: "workspace-not-ready" };
         }).catch(error => {
             workspaceError = failure(error);
         });
+        return () => window.removeEventListener("focus", refreshZone);
     });
+
+    function change<K extends keyof Appearance>(key: K, value: Appearance[K]): void {
+        void savePreferences({ appearance: { [key]: value } });
+    }
+
+    function applyLimit(): void {
+        if (limitText === null) return;
+        const text = limitText.trim(), limit = text ? Number(text) : null;
+        invalidLimit = limit !== null && (!/^\d+$/.test(text) || !Number.isSafeInteger(limit) || limit <= 0);
+        if (invalidLimit) return;
+        limitText = null;
+        if (limit !== preferences.historyLimit) void savePreferences({ history: { limit } });
+    }
+
+    function limitKeys(event: KeyboardEvent): void {
+        if (isComposingKey(event) || event.key !== settingsShortcuts.apply) return;
+        event.preventDefault();
+        event.stopPropagation();
+        applyLimit();
+    }
 </script>
+
+<div class="settings">
+    <div class="content">
+        {#if preferences.error}
+            <div class="save-error" role="alert">
+                <div>{message(preferences.error)}</div>
+                <Button disabled={preferences.saving} onclick={() => preferences.loaded ? savePreferences() : loadAppearance()}>{t("dialog.retry")}</Button>
+            </div>
+        {/if}
+
+        <section>
+            <h2>{t("settings.appearance")}</h2>
+            {#snippet language()}
+                <Select label={t("language.label")} value={appearance.language} options={[...languages]} disabled={!preferences.loaded}
+                    onchange={value => change("language", value === "en" ? "en" : "zh-CN")} />
+            {/snippet}
+            {@render field(t("language.label"), t("language.hint"), language)}
+            {#snippet theme()}
+                <Select label={t("settings.theme")} value={appearance.theme} disabled={!preferences.loaded}
+                    options={themes.map(value => ({ value, label: t(`settings.${value}`) }))} onchange={value => change("theme", value as Appearance["theme"])} />
+            {/snippet}
+            {@render field(t("settings.theme"), t("settings.themeHint"), theme)}
+            {#snippet readingSize()}
+                <Select label={t("settings.readingSize")} value={String(appearance.readingSize)} disabled={!preferences.loaded}
+                    options={sizeOptions}
+                    onchange={value => change("readingSize", Number(value) as Appearance["readingSize"])} />
+            {/snippet}
+            {@render field(t("settings.readingSize"), t("settings.readingSizeHint"), readingSize)}
+            {#snippet motion()}
+                <Checkbox label={t("settings.motion")} hideLabel checked={appearance.motion} disabled={!preferences.loaded} onchange={value => change("motion", value)} />
+            {/snippet}
+            {@render field(t("settings.motion"), t("settings.motionHint"), motion)}
+        </section>
+
+        <section>
+            <h2>{t("settings.time")}</h2>
+            {#snippet timeZone()}
+                <div class="zone"><Combobox label={t("settings.timeZone")} options={zones} value={appearance.timeZone} disabled={!preferences.loaded}
+                    onchange={value => change("timeZone", value)} /></div>
+            {/snippet}
+            {@render field(t("settings.timeZone"), t("settings.timeZoneHint"), timeZone)}
+        </section>
+
+        <section>
+            <h2>{t("settings.undo")}</h2>
+            {#snippet historyLimit()}
+                <div class="limit">
+                    <Input label={t("settings.historyLimit")} placeholder={t("settings.unlimited")} invalid={invalidLimit} disabled={!preferences.loaded}
+                        value={limitText ?? String(preferences.historyLimit ?? "")}
+                        oninput={value => {
+                            limitText = value; invalidLimit = false;
+                        }}
+                        inputProps={{ inputmode: "numeric", onblur: applyLimit, onkeydown: limitKeys,
+                            "aria-describedby": invalidLimit ? limitErrorId : undefined }} />
+                </div>
+                {#if invalidLimit}<div class="error" id={limitErrorId} role="alert">{t("settings.invalidHistoryLimit")}</div>{/if}
+            {/snippet}
+            {@render field(t("settings.historyLimit"), t("settings.historyLimitHint"), historyLimit)}
+        </section>
+
+        <section>
+            <h2>{t("settings.workspace")}</h2>
+            {#if workspace}
+                <div class="name">{workspace.name}</div>
+                <div class="path">{workspace.path}</div>
+            {:else}
+                <div class={workspaceError ? "error" : "hint"} role="status">{workspaceError ? message(workspaceError) : t("settings.workspaceLoading")}</div>
+            {/if}
+        </section>
+    </div>
+</div>
+
+{#snippet field(name: string, hint: string, control: Snippet)}
+    <div class="field">
+        <div class="name">{name}</div>
+        <div class="hint">{hint}</div>
+        <div class="control">{@render control()}</div>
+    </div>
+{/snippet}
+
+<style>
+    .settings { height: 100%; overflow: auto; background: var(--ui-surface-window); color: var(--ui-text); font-size: var(--ui-font-body); }
+    .content { max-width: var(--ui-editor-content-width); padding: var(--ui-space-6); }
+    section + section { margin-top: var(--ui-space-6); }
+    h2 { margin: 0 0 var(--ui-space-3); font-size: var(--ui-font-body); font-weight: 600; }
+    .field + .field { margin-top: var(--ui-space-4); }
+    .name { font-weight: 600; }
+    .hint, .path { color: var(--ui-text-secondary); }
+    .hint, .path, .error, .save-error { font-size: var(--ui-font-small); }
+    .hint, .path { margin-top: var(--ui-space-1); }
+    .path { overflow-wrap: anywhere; user-select: text; }
+    .control { margin-top: var(--ui-space-2); }
+    .zone { width: min(17em, 100%); }
+    .zone :global(.ui-select) { width: 100%; }
+    .limit { width: min(10em, 100%); }
+    .error, .save-error { color: var(--ui-text-danger); }
+    .error { margin-top: var(--ui-space-2); }
+    .save-error { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-space-3); margin-bottom: var(--ui-space-5); }
+</style>

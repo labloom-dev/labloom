@@ -34,7 +34,7 @@ export async function readerWorkflow(paperId: string, fileId: string, dropNames:
     const openMenu = (text: string): HTMLElement | undefined => [...document.querySelectorAll<HTMLElement>("[role^=menuitem]")]
         .find(item => item.textContent?.trim().startsWith(text));
     const confirm = async (): Promise<void> => {
-        (await until(() => find(".confirmation footer button:last-child"), "confirmation")).click();
+        (await until(() => find(":popover-open [role=alertdialog] .ui-dialog-actions button:last-child"), "confirmation")).click();
     };
     const sidebar = (): HTMLElement | null => find(root + ".paper-sidebar");
 
@@ -158,8 +158,8 @@ export async function readerWorkflow(paperId: string, fileId: string, dropNames:
     }
     drop.dispatchEvent(new DragEvent("drop", { dataTransfer: transfer, bubbles: true, cancelable: true }));
     await until(async () => ((await paper()).attributes.paper_files as string[]).length === 3, "two attachments in one drop");
-    await until(() => find(".notice.error")?.textContent?.includes("Broken.pdf"), "failed file reported");
-    find(".notice.error button")?.click();
+    await until(() => find(":popover-open .toast.error")?.textContent?.includes("Broken.pdf"), "failed file reported");
+    find(":popover-open .toast.error button")?.click();
     const select = await until(() => find(root + ".toolbar [aria-label='PDF file']"), "PDF selector in toolbar");
     select.focus();
     key(select, "ArrowDown");
@@ -200,7 +200,7 @@ export async function readerWorkflow(paperId: string, fileId: string, dropNames:
     const lockedRow = await until(() => list()?.querySelector<HTMLElement>("[data-annotation-id=\"" + firstFixture + "\"]"), "kept annotation row");
     lockedRow.click();
     key(list(), "Delete");
-    if (find(".confirmation")) throw Error("Deletion prompt opened in trash");
+    if (find(":popover-open [role=alertdialog]")) throw Error("Deletion prompt opened in trash");
     key(list(), "Enter");
     const readonly = await until(() => find<HTMLElement>(".annotation-popover .tiptap[contenteditable=false] [data-body]"), "read-only popup");
     const range = document.createRange();

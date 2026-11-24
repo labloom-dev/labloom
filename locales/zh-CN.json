@@ -50,7 +50,6 @@
         "attribute-readonly": "此属性由相应业务操作维护。",
         "import-regular-file": "请选择普通文件。",
         "import-pdf-only": "只能用 PDF 文件新建文献。",
-
         "import-failed": "部分文件导入失败。",
         "attachment-missing": "附件不存在。",
         "attachment-owned": "附件只能属于一个页面的一个文件属性。",
@@ -200,27 +199,66 @@
         "settings-invalid-update": "设置内容无效。",
         "workspace-in-use": "这个工作区已在另一个 Labloom 窗口中打开。"
     },
+    "app": {
+        "name": "知织 Labloom"
+    },
+    "about": {
+        "version": "版本",
+        "electron": "Electron",
+        "chromium": "Chromium",
+        "node": "Node.js",
+        "v8": "V8",
+        "os": "操作系统",
+        "license": "许可证",
+        "copied": "已复制"
+    },
     "startup": {
-        "brand": "知织",
-        "welcome": "让知识，从这里生长。",
-        "opening": "正在打开工作区",
-        "intro": "欢迎来到知织。选一块属于你的空间，种下第一颗灵感。",
-        "failed": "暂时无法进入工作区",
-        "retry": "重试",
-        "create": "创建工作区",
-        "createHint": "选择一个空文件夹，开始新的研究。",
+        "start": "开始",
+        "opening": "正在打开工作区…",
+        "failed": "打开工作区失败",
+        "newWorkspace": "新建工作区…",
+        "openWorkspace": "打开工作区…",
+        "configBackup": "配置文件损坏，备份已保存到",
         "open": "打开已有工作区",
-        "openHint": "选择之前使用的工作文件夹。",
-        "pending": "正在处理，请稍候…",
-        "localHint": "工作区保存在本机，请选择一个便于长期保存的位置。",
         "createTitle": "选择一个空文件夹来创建工作区",
         "openTitle": "选择已有的工作区",
-        "createHere": "在此创建",
-        "configBackup": "无法读取配置，备份已保存到{{path}}。请重新选择工作区。"
+        "createHere": "在此创建"
     },
     "language": {
-        "label": "界面语言",
-        "hint": "用于启动页、错误提示和确认框。"
+        "label": "语言",
+        "hint": "控制界面使用的语言。"
+    },
+    "settings": {
+        "appearance": "外观",
+        "theme": "主题",
+        "themeHint": "控制界面的配色。",
+        "light": "浅色",
+        "dark": "深色",
+        "system": "跟随系统",
+        "readingSize": "正文字号",
+        "readingSizeHint": "用于页面编辑器和订阅正文。",
+        "motion": "动效",
+        "motionHint": "控制界面动画和过渡效果。",
+        "time": "时间",
+        "timeZone": "时区",
+        "timeZoneHint": "用于日期和时间的显示、输入、搜索和日历分组。",
+        "undo": "撤销",
+        "historyLimit": "撤销记录上限",
+        "historyLimitHint": "整个工作区可保留的撤销记录总数。超出上限时，先丢掉最早的记录。",
+        "unlimited": "不限",
+        "invalidHistoryLimit": "请输入正整数，或留空表示不限。",
+        "workspace": "工作区",
+        "workspaceLoading": "正在读取工作区信息…"
+    },
+    "combobox": {
+        "title": "可筛选下拉框",
+        "filter": "筛选",
+        "empty": "没有匹配项",
+        "sampleFew": "少量选项",
+        "sampleMany": "500个选项",
+        "sampleEmpty": "无匹配项",
+        "sampleDisabled": "禁用",
+        "sampleOption": "选项 {{number}}"
     },
     "feed": {
         "sources": "订阅来源",
@@ -321,14 +359,14 @@
         "attributeImpact": "以下页面的属性值会被清空、移除或调整。",
         "attributeRecycle": "同时有{{count}}个页面失去保留关系，将进入回收站。",
         "purge": "永久删除页面",
-        "purgeImpact": "将永久删除{{count}}个页面：{{titles}}。此操作无法撤销。",
+        "purgeImpact": "将永久删除{{count}}个页面，无法撤销。",
         "deletedLinks": "{{count}}个链接引用将显示“已删除”。",
         "deleteExcerpt": "将删除{{excerpt}}。",
         "positions": "将从{{count}}个位置消失",
         "pagePositions": "将从{{pages}}个页面的{{count}}个位置消失",
         "deleteImpact": "删除{{excerpt}}后，{{impact}}。",
         "excerptImpact": "{{excerpt}}{{impact}}。",
-        "recycle": "将移入回收站：{{titles}}。",
+        "recycle": "将把{{count}}个页面移入回收站。",
         "join": "，",
         "listJoin": "、",
         "closeTimeout": "界面未能确认保存完成。",
@@ -348,13 +386,16 @@
         "markRead": "将“{{source}}”的{{count}}条未读内容标为已读？",
         "allSources": "全部来源",
         "confirmMarkRead": "全部标为已读",
-        "retry": "重试"
+        "retry": "重试",
+        "recycleOne": "将把1个页面移入回收站。",
+        "purgeOne": "将永久删除1个页面，无法撤销。",
+        "affectedPages": "受影响的页面"
     },
     "command": {
         "newPage": "新建页面",
         "importPDF": "导入 PDF",
         "closeTab": "关闭标签",
-        "settings": "偏好设置",
+        "settings": "设置",
         "undo": "撤销",
         "redo": "重做",
         "cut": "剪切",
@@ -554,7 +595,6 @@
         "empty": "没有页面",
         "count": "{{count}} 个页面",
         "selected": "已选择 {{count}} 项",
-
         "type": "类型",
         "paper": "文献",
         "editable": "笔记",
@@ -570,7 +610,6 @@
         "property": "按属性添加条件",
         "add": "添加条件",
         "openFile": "用系统程序打开",
-
         "yes": "是",
         "no": "否"
     },
@@ -753,6 +792,22 @@
         "cancelled": "已取消",
         "manualDelete": "手动删除",
         "unreachable": "失去保留关系"
+    },
+    "attributes": {
+        "create": "新建属性",
+        "newName": "新属性",
+        "builtins": "内置属性",
+        "custom": "自定义属性",
+        "listWidth": "属性列表宽度",
+        "name": "名称",
+        "type": "类型",
+        "options": "选项",
+        "optionName": "选项名称",
+        "complete": "已完成",
+        "removeOption": "移除选项",
+        "addOption": "添加选项",
+        "save": "保存",
+        "delete": "删除属性"
     },
     "attributeType": {
         "string": "文本",

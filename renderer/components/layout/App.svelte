@@ -33,7 +33,7 @@
     import Sidebar from "./Sidebar.svelte";
     import Main from "./Main.svelte";
     import Onboarding from "../startup/Onboarding.svelte";
-    import { initializeAppearance } from "./preferences.svelte";
+    import { finishPreferences, initializeAppearance } from "./preferences.svelte";
     import Dialogs from "../Knowledge/Dialogs.svelte";
     import { syncInspected, closeSession, saveAll } from "../Knowledge/page-sessions";
     import { knowledgeState } from "../Knowledge/feedback.svelte";
@@ -141,6 +141,7 @@
         window.addEventListener("focus", focus);
         const stopClose = window.api.app.beforeQuit(async () => {
             if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+            await finishPreferences();
             if (!await saveAll()) {
                 knowledgeState.error = { kind: "workspace-close-unsaved" }; return true;
             }
