@@ -28,7 +28,7 @@ export type ViewParams = {
         tags: string[];
         filters: { attribute: { kind: "attribute"; id: ReferenceId }; value: AttributeValue }[];
     };
-    calendar: { date: AttributeRef<"day">; start?: AttributeRef<"minute">; status?: AttributeRef<"status"> };
+    calendar: { date: AttributeRef<"day">; start?: AttributeRef<"minute">; status?: AttributeRef<"status">; agendaWidth?: number & tags.Minimum<1> };
     overview: { status?: AttributeRef<"status">; date?: AttributeRef<"day"> };
     attributes: NoParams;
     feed: FeedParams;

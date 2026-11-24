@@ -15,6 +15,7 @@ import { write } from "../Knowledge/page-sessions";
 
 import { defaultLibrary } from "../../../shared/workspace/library";
 import { defaultOverviewDate, defaultOverviewStatus as status } from "../../../shared/workspace/overview";
+import { defaultCalendar } from "../../../shared/workspace/calendar";
 
 export type { Destination } from "./destinations";
 
@@ -22,7 +23,7 @@ export const destinationViews: Record<Destination, View> = {
     overview: { type: "overview", params: { status, date: defaultOverviewDate } },
     library: { type: "library", params: defaultLibrary() },
     papers: { type: "library", params: defaultLibrary(true) },
-    calendar: { type: "calendar", params: { date: { kind: "attribute", type: "day", id: "schedule_date" }, start: { kind: "attribute", type: "minute", id: "schedule_start" }, status } },
+    calendar: { type: "calendar", params: defaultCalendar },
     feed: { type: "feed", params: {} },
     settings: { type: "settings", params: {} },
     attributes: { type: "attributes", params: {} },
@@ -49,7 +50,7 @@ function openView(view: View): Tab {
     return tab;
 }
 export function openDestination(type: Destination): Tab {
-    if (type === "feed" || type === "overview") {
+    if (type === "feed" || type === "overview" || type === "calendar") {
         const focused = tabState.groups.find(group => group.id === tabState.focusedGroupId);
         const existing = focused?.tabs.find(tab => tab.view.type === type)
             ?? tabState.groups.flatMap(group => group.tabs).find(tab => tab.view.type === type);

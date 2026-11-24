@@ -40,7 +40,7 @@ const standalone = (screen: Component): Component<{ tabId: string }> => (anchor,
 const views: { [K in keyof ViewParams]: Definition<K> } = {
     page: { component: PageView, header: pageHeader, title: p => pageTitle(p.page.id), history: p => ({ kind: "page", id: p.page.id }), keepMounted: true },
     library: { component: Library, header: libraryHeader, title: p => toStore(() => t(p.scope === "trash" ? "shell.trashView" : p.scope === "pinned" ? "shell.pinnedView" : p.paperOnly ? "command.papers" : "command.library")), history: workspace, keepMounted: true },
-    calendar: { component: Calendar, title: named("shell.calendarView"), history: workspace, keepMounted: true },
+    calendar: { component: Calendar, title: named("command.calendar"), history: workspace, keepMounted: true, header: id => ({ buttons: [], menu: viewMenu(id) }) },
     overview: { component: Overview, title: named("command.overview"), history: workspace, keepMounted: false, header: id => ({ buttons: [], menu: viewMenu(id) }) },
     attributes: { component: AttributeManagement, title: named("command.attributes"), history: workspace, keepMounted: false },
     feed: { component: FeedView, title: named("shell.feedView"), history: workspace, keepMounted: true, header: id => ({ buttons: [], menu: viewMenu(id) }) },

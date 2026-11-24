@@ -1,7 +1,7 @@
 import { defaultSettings } from "../../../shared/settings/defaults";
 import { type Settings } from "../../../shared/settings/Settings";
 
-export const shell = $state({ ...defaultSettings.layout, search: false, query: "", commandStart: false });
+export const shell = $state({ ...defaultSettings.layout, search: false, query: "", commandStart: false, noticesOpen: false });
 let pending = 0, sequence = 0, revision = -1;
 let saved: Settings["layout"] = defaultSettings.layout;
 export function applyPanel(value: Settings["layout"], nextRevision: number): void {

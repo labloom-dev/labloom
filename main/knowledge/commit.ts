@@ -92,7 +92,8 @@ export function run<T>(options: Options, action: (context: Context) => T): T {
                             AND page_id IN (SELECT value FROM json_each(?)) LIMIT 1`).get(workspace.seconds(), JSON.stringify(status.restored))) events.feedDue();
                     });
                 }
-                for (const [id, fields] of schedules) timers.recalculate(id, fields);
+                for (const [id, fields] of schedules) if (timers.recalculate(id, fields)) context.change({ notices: true });
+                if (plan.removesNotice) context.change({ notices: true });
                 if (options.history && pageId) captures.push({ source: options.history, page: pageId, rows, dependencies: plan.dependencies, replay: options.replay });
                 context.change(result);
                 return result;

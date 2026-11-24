@@ -37,8 +37,11 @@
     {:else}
         <input {...inputProps} class="ui-field-input" type={search ? "search" : type} aria-label={label} aria-invalid={invalid}
             {placeholder} {disabled} {value} bind:this={input} data-pointer={pointer || undefined}
-            onfocus={() => pointer = fromPointer()} onblur={() => pointer = false}
-            onchange={event => {
+            onfocus={event => {
+                pointer = fromPointer(); inputProps?.onfocus?.(event);
+            }} onblur={event => {
+                pointer = false; inputProps?.onblur?.(event);
+            }} onchange={event => {
                 inputProps?.onchange?.(event);
                 onchange?.(event.currentTarget.value);
             }}

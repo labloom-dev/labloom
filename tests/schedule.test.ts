@@ -10,6 +10,7 @@ import { createWorkspace, openWorkspace } from "./support/session";
 import { dayToSeconds, monthToSeconds, yearToSeconds, wallToSeconds } from "../shared/content/time";
 import { type Notice } from "../shared/types/knowledge";
 import { type AttributeValue } from "../shared/types/attributes";
+import { denseCalendarDay, seedCalendar } from "./perf/calendar-fixture";
 
 function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { clock: { now: number; zone: string }; knowledge: Knowledge; history: History; delivered: Notice[]; bodies: string[]; check: () => Promise<void>; edit: (pageId: string, attributes: Record<string, AttributeValue>) => void } {
     const ws = createWorkspace(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "timers-")), { timeZone: () => clock.zone, clock: () => clock.now }), clock = { now: Date.UTC(2026, 10, 13), zone: "Asia/Shanghai" };
@@ -26,6 +27,25 @@ function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { clock: 
     return { ...ws, clock, knowledge, history, delivered, bodies, check, edit };
 }
 
+test("calendar benchmark data covers ten years, a dense month and both notification states", t => {
+    const { database, knowledge } = fixture(t);
+    seedCalendar(database);
+    const dates = database.prepare("SELECT count(*) FROM page_attrs WHERE attr_id='schedule_date' AND value>=? AND value<?").pluck();
+    const day = 86400;
+    assert.equal(dates.get(dayToSeconds("2021-11-24"), dayToSeconds("2031-11-25")), 10000);
+    assert.equal(dates.get(dayToSeconds("2026-11-01"), dayToSeconds("2026-12-01")), 600);
+    assert.equal(dates.get(denseCalendarDay, denseCalendarDay + day), 200);
+    assert.ok(Number(dates.get(dayToSeconds("2021-11-24"), dayToSeconds("2022-11-24"))) > 0);
+    assert.ok(Number(dates.get(dayToSeconds("2030-11-24"), dayToSeconds("2031-11-25"))) > 0);
+    const count = database.prepare("SELECT count(*) FROM page_attrs WHERE attr_id=? AND value IS NOT NULL").pluck();
+    assert.equal(count.get("schedule_start"), 6666);
+    assert.equal(count.get("task_status"), 8000);
+    assert.ok(database.prepare("SELECT 1 FROM page_attrs WHERE attr_id='task_status' AND value='done'").get());
+    const notices = knowledge.timers.notices();
+    assert.equal(notices.length, 400);
+    assert.equal(notices.filter(notice => !notice.seen).length, 200);
+});
+
 test("two leads on the same time attribute fire once, and adding a reminder does not erase another notification", async t => {
     const f = fixture(t), due = Math.floor(f.clock.now / 1000) + 3600, page = f.knowledge.create("editable", "组会", { schedule_start: due });
     f.knowledge.timers.set(page.id, "schedule_start", 600, true); f.knowledge.timers.set(page.id, "schedule_start", 0, true);
@@ -37,6 +57,34 @@ test("two leads on the same time attribute fire once, and adding a reminder does
     f.clock.now = due * 1000; await f.check(); assert.equal(f.delivered.length, 3);
     await f.check(); assert.equal(f.delivered.length, 3);
     assert.deepEqual(f.knowledge.timers.settings(page.id), { schedule_start: [0, 300, 600] });
+});
+
+test("read and clear operate on fired reminders and preserve pending timers and settings", async t => {
+    const f = fixture(t), due = Math.floor(f.clock.now / 1000) + 600;
+    const page = f.knowledge.create("editable", "A", { schedule_start: due });
+    const timers = f.knowledge.timers;
+    timers.set(page.id, "schedule_start", 300, true);
+    timers.set(page.id, "schedule_start", 0, true);
+    f.clock.now = (due - 300) * 1000;
+    await f.check();
+    const [notice] = timers.notices();
+    assert.equal(notice.attrType, "minute");
+    assert.equal(notice.attrValue, due);
+    assert.equal(timers.unreadCount(), 1);
+    timers.readAll();
+    assert.equal(timers.unreadCount(), 0);
+    timers.unread(notice);
+    assert.equal(timers.unreadCount(), 1);
+    timers.clear({ ...notice, firedAt: notice.firedAt - 1 });
+    assert.equal(timers.notices().length, 1);
+    timers.clear(notice);
+    assert.deepEqual(timers.notices(), []);
+    f.clock.now = due * 1000;
+    await f.check();
+    assert.equal(timers.notices()[0].leadSeconds, 0);
+    timers.clearAll();
+    assert.deepEqual(timers.notices(), []);
+    assert.deepEqual(timers.settings(page.id), { schedule_start: [0, 300] });
 });
 
 test("an hour reminder uses the fixed hour format in its system notification body", async t => {

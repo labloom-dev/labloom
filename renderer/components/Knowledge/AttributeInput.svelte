@@ -1,6 +1,9 @@
 <div class="attribute-input">
     {#if definition.type === "file" || definition.type === "files"}
         <FileInput {definition} {value} {session} disabled={disabled || !!definition.readonly} {onchange} />
+    {:else if isTimeType(definition.type)}
+        <DatePicker {label} precision={definition.type} value={typeof value === "number" ? value : null} {zone}
+            readonly={disabled || !!definition.readonly} {onchange} />
     {:else if definition.readonly || disabled}
         {#if (definition.type === "page-link" || definition.type === "page-links") && !empty}
             {#each (Array.isArray(value) ? value : [value]) as id (id)}
@@ -42,30 +45,11 @@
                 onchange(definition.type === "page-link" ? target.id : [...new Set([...(Array.isArray(value) ? value : []), target.id])]); picker = false;
             }} />
         {/if}
-    {:else if definition.type === "minute"}
-        <Input {label} type="datetime-local" value={empty ? "" : secondsToWall(value as number, zone)} onchange={raw => change(() => raw ? wallToSeconds(raw, zone) : emptyValue(definition.type))} />
-        <small>{zone}</small>
     {:else if definition.type === "json"}
         <Input {label} multiline={2} value={empty ? "" : JSON.stringify(value, null, 2)} placeholder={t("property.json")}
             onchange={raw => change(() => raw ? JSON.parse(raw) : emptyValue(definition.type))} />
     {:else if definition.type === "number"}
         <Input {label} type="number" value={empty ? "" : String(value)} onchange={raw => onchange(raw ? Number(raw) : emptyValue(definition.type))} />
-    {:else if definition.type === "hour"}
-        <div class="inline hour">
-            <Input label={t("attributeType.day")} type="date" value={hourDay} onchange={raw => {
-                hourDay = raw; changeHour();
-            }} />
-            <Select label={t("property.hour")} value={hour} options={hours} onchange={raw => {
-                hour = raw; changeHour();
-            }} />
-        </div><small>{zone}</small>
-    {:else if definition.type === "day" || definition.type === "month" || definition.type === "year"}
-        {@const type = definition.type}
-        <Input label={type === "year" ? t("property.year") : label} type={type === "day" ? "date" : type === "month" ? "month" : "text"}
-            inputProps={type === "year" ? { inputmode: "numeric", pattern: "[0-9]{4}", maxlength: 4 } : undefined}
-            placeholder={type === "year" ? t("property.yearHint") : undefined} value={empty ? "" : { day: secondsToDay, month: secondsToMonth, year: secondsToYear }[type](value as number)}
-            onchange={raw => change(() => raw ? { day: dayToSeconds, month: monthToSeconds, year: yearToSeconds }[type](raw) : emptyValue(type))} />
-        {#if empty}<small>{t("property.empty")}</small>{/if}
     {:else}
         <Input {label} multiline={definition.type === "string" ? (definition.id === "paper_abstract" ? 4 : 1) : undefined} value={String(value ?? "")} {onchange} />
     {/if}
@@ -74,20 +58,19 @@
 
 <style>
     .attribute-input { position: relative; min-width: 0; flex: 1; font-size: var(--ui-font-small); }
-    .attribute-input :global(:is(.ui-field, .ui-select)) { width: 100%; }
+    .attribute-input > :global(:is(.ui-field, .ui-select, .date-picker-trigger)) { width: 100%; }
+    .attribute-input :global(.inline .ui-field) { width: 100%; }
+    .attribute-input :global(.date-picker-trigger) { justify-content: flex-start; }
     .readonly { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ui-text-secondary); }
     .inline, .options { display: flex; align-items: center; gap: var(--ui-space-2); min-width: 0; }
     .options { flex-wrap: wrap; }
-    .hour :global(.ui-select) { flex: 0 0 auto; width: auto; }
-    small { display: none; }
-    .attribute-input:focus-within small, small[role="alert"] { display: block; position: absolute; top: 100%; z-index: 1; background: var(--ui-surface-popup); padding: var(--ui-space-1); color: var(--ui-text-secondary); font-size: var(--ui-font-small); }
-    small[role="alert"] { color: var(--ui-danger); }
+    small[role="alert"] { display: block; position: absolute; top: 100%; z-index: 1; background: var(--ui-surface-popup); padding: var(--ui-space-1); color: var(--ui-text-danger); font-size: var(--ui-font-small); }
 </style>
 <script lang="ts">
     import { t, failure, message, type ErrorValue } from "../../i18n.svelte";
     import { recurrenceMinutes } from "../../../shared/content/timers";
     import { type AttributeDefinition, type AttributeValue } from "../../../shared/types/attributes";
-    import { dayToSeconds, monthToSeconds, secondsToDay, secondsToMonth, secondsToYear, wallToSeconds, secondsToWall, yearToSeconds } from "../../../shared/content/time";
+    import { isTimeType } from "../../../shared/content/time";
     import { emptyValue, isEmpty } from "../../../shared/attrs/values";
     import { currentTimeZone } from "../layout/preferences.svelte";
     import { propertyControls } from "./property-controls";
@@ -96,6 +79,7 @@
     import TextButton from "../base/TextButton.svelte";
     import Checkbox from "../base/Checkbox.svelte";
     import Input from "../base/Input.svelte";
+    import DatePicker from "../base/DatePicker.svelte";
     import Select from "../base/Select.svelte";
     import IconButton from "../base/IconButton.svelte";
     import FileInput from "./FileInput.svelte";
@@ -107,19 +91,6 @@
     const zone = $derived(currentTimeZone());
     const empty = $derived(isEmpty(definition.type, value));
     let picker = $state(false), error = $state<ErrorValue>("");
-    let hourDay = $state(""), hour = $state("00");
-    $effect(() => {
-        const wall = definition.type === "hour" && !empty ? secondsToWall(value as number, zone) : "";
-        hourDay = wall.slice(0, 10);
-        hour = wall.slice(11, 13) || "00";
-    });
-    const hours = Array.from({ length: 24 }, (_, i) => {
-        const value = String(i).padStart(2, "0");
-        return { value, label: value + ":00" };
-    });
-    function changeHour(): void {
-        change(() => hourDay ? wallToSeconds(`${hourDay}T${hour}:00`, zone) : emptyValue(definition.type));
-    }
     function change(read: () => AttributeValue): void {
         try {
             onchange(read());

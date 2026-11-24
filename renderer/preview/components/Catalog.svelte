@@ -6,6 +6,7 @@
     import Input from "../../components/base/Input.svelte";
     import ListRow from "../../components/base/ListRow.svelte";
     import ShellExample from "./ShellExample.svelte";
+    import DatePickerExamples from "./DatePickerExamples.svelte";
     import EditorExample from "./EditorExample.svelte";
     import StateTable from "./StateTable.svelte";
     import OverlayExample, { overlayNames } from "./OverlayExample.svelte";
@@ -79,6 +80,7 @@
         </div>
         <output class="feedback" aria-live="polite">{status}</output>
     </section>
+    <DatePickerExamples />
     <section><h2>外壳</h2><ShellExample /></section>
     <section id="editor">
         <h2>编辑器 <small><a href={"?sample=editor&theme=" + (dark ? "dark" : "light")}>单独查看</a></small></h2>

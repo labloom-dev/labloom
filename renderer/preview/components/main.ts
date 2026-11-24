@@ -4,9 +4,11 @@ import "./catalog.css";
 import Catalog from "./Catalog.svelte";
 import EditorExample from "./EditorExample.svelte";
 import OverlayExample, { overlayNames } from "./OverlayExample.svelte";
+import { setLocale } from "../../i18n.svelte";
 
 const target = document.querySelector<HTMLElement>("#catalog")!;
 const params = new URLSearchParams(location.search);
+if (params.get("lang") === "en") setLocale("en");
 const sample = overlayNames.find(name => name === params.get("sample"));
 if (sample || params.get("sample") === "editor") {
     document.documentElement.dataset.theme = params.get("theme") === "dark" ? "dark" : "light";

@@ -19,6 +19,7 @@ export const routes = {
     blockList: route(typia.createAssert<Args<"blockList">>(invalid), picker.blockList),
     overviewIndex: route(typia.createAssert<Args<"overviewIndex">>(invalid), records.overviewIndex),
     overviewRows: route(typia.createAssert<Args<"overviewRows">>(invalid), records.overviewRows),
+    calendarRows: route(typia.createAssert<Args<"calendarRows">>(invalid), records.calendarRows),
     get: route(typia.createAssert<Args<"get">>(invalid), papers.get),
     readObjects: route(typia.createAssert<Args<"readObjects">>(invalid), records.readObjects),
     syncBlocks: route(typia.createAssert<Args<"syncBlocks">>(invalid), edits.syncBlocks),

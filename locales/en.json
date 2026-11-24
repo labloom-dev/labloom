@@ -380,6 +380,7 @@
         "group3": "Focus Third Editor Group",
         "about": "About Labloom",
         "devtools": "Developer Tools",
+        "showNotices": "Show notifications",
         "blockMenu": "Block menu",
         "toggleProperties": "Toggle properties panel"
     },
@@ -501,7 +502,6 @@
         "resizeGroup": "Resize Editor Group",
         "trashView": "Recycle Bin",
         "pinnedView": "Pinned Pages",
-        "calendarView": "Research Calendar",
         "feedView": "Feed Activity",
         "targetDeleted": "Target has been deleted"
     },
@@ -630,7 +630,55 @@
         "feed_last_modified": "Last-Modified"
     },
     "notice": {
-        "reminderTitle": "Labloom reminder"
+        "reminderTitle": "Labloom reminder",
+        "title": "Notifications",
+        "unreadCount": "Show notifications ({{count}} unread)",
+        "readAll": "Mark all as read",
+        "clearAll": "Clear all",
+        "markRead": "Mark as read",
+        "markUnread": "Mark as unread",
+        "clear": "Clear",
+        "empty": "No notifications"
+    },
+    "datePicker": {
+        "previous": "Previous page",
+        "next": "Next page",
+        "now": "Now",
+        "empty": "Empty",
+        "clock": "Time of day",
+        "clear": "Clear",
+        "format": "Use the format {{format}}.",
+        "weekdays": {
+            "monday": "Mon",
+            "tuesday": "Tue",
+            "wednesday": "Wed",
+            "thursday": "Thu",
+            "friday": "Fri",
+            "saturday": "Sat",
+            "sunday": "Sun"
+        },
+        "examples": {
+            "title": "Date picker",
+            "precision": "Precision",
+            "filled": "With value",
+            "readonly": "Read-only",
+            "clock": "Time options",
+            "invalid": "Invalid input"
+        }
+    },
+    "calendar": {
+        "previousMonth": "Previous month",
+        "nextMonth": "Next month",
+        "today": "Today",
+        "chooseDate": "Choose date property",
+        "chooseStart": "Choose start time property",
+        "chooseStatus": "Choose status property",
+        "missingDate": "Date property not found",
+        "agendaWidth": "Day list width",
+        "remaining": "{{count}} more",
+        "noPages": "No pages",
+        "complete": "Mark complete",
+        "reopen": "Reopen"
     },
     "block": {
         "title": "Page title",
@@ -683,8 +731,6 @@
         "openPage": "Open page",
         "removeItem": "Remove {{name}}",
         "json": "JSON value",
-        "hour": "Hour",
-        "year": "Four-digit year",
         "addTag": "Add tag…",
         "createTag": "Create tag {{name}}",
         "files": "Files for {{name}}",
@@ -701,7 +747,6 @@
         "weekBefore": "1 week before",
         "morning": "At 9:00 that day",
         "loadingFile": "Loading file…",
-        "yearHint": "YYYY",
         "repeatPeriod": "Every {{period}}",
         "enabled": "Enabled",
         "paused": "Paused",

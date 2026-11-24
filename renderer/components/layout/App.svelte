@@ -24,6 +24,7 @@
     import { copyData } from "../copy-data";
     import { commandDisabled, globalShortcut, prepareCommands, runCommand } from "./commands";
     import { shell } from "./shell.svelte";
+    import { openPage } from "./navigation";
     import GSLauncher from "../globalSearch/GSLauncher.svelte";
     import { onMount, untrack } from "svelte";
     import type { StartupState, WorkspaceAction } from "../../../shared/types/startup";
@@ -44,6 +45,13 @@
     import { failure } from "../../i18n.svelte";
 
     let startup = $state<StartupState | null>(null);
+    let reminderPage = $state<string>();
+    $effect(() => {
+        if (startup?.status !== "ready" || !reminderPage) return;
+        const id = reminderPage;
+        reminderPage = undefined;
+        untrack(() => openPage(id));
+    });
     let pending = $state(true);
     let windowFocused = $state(document.hasFocus());
     const focusedTab = $derived(tabState.groups.find(group => group.id === tabState.focusedGroupId)?.activeTabId ?? null);
@@ -118,6 +126,7 @@
             syncInspected(change.pages);
             knowledgeState.change = { ...change, seq: knowledgeState.change.seq + 1 };
         });
+        const stopReminders = window.api.timers.onOpenNotice(id => reminderPage = id);
         function blur(): void {
             if (document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement) document.activeElement.blur();
             window.dispatchEvent(new Event("workspace-flush"));
@@ -145,7 +154,7 @@
         void run(() => window.api.startup.getState());
         return () => {
             window.removeEventListener("keydown", keyboard);
-            stopAppearance(); stopChanges(); stopClose(); tabLifecycle.close = undefined;
+            stopAppearance(); stopChanges(); stopReminders(); stopClose(); tabLifecycle.close = undefined;
             window.removeEventListener("blur", blur);
             window.removeEventListener("focus", focus);
         };
