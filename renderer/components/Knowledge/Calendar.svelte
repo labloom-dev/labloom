@@ -81,7 +81,7 @@
         {#each notices as notice (`${notice.pageId}:${notice.attrId}:${notice.leadSeconds}`)}
             <button class:unread={!notice.seen} onclick={() => read(notice)}>
                 <span>{notice.title} · {notice.attrName}</span>
-                <small>{displayMilliseconds(notice.firedAt * 1000)}</small>
+                <small>{secondsToSecond(notice.firedAt, zone)}</small>
                 <span>{notice.seen ? "已读" : "未读"}</span>
             </button>
         {:else}
@@ -126,10 +126,10 @@
     import { type Notice } from "../../../shared/types/knowledge";
     import ListHistory from "./ListHistory.svelte";
     import { scheduleDay } from "./calendar-day";
-    import { dayToSeconds, nowSeconds, secondsToWall } from "../../../shared/content/time";
+    import { dayToSeconds, nowSeconds, secondsToDay, secondsToMinute, secondsToSecond } from "../../../shared/content/time";
     import type { AttributeDefinition, AttributeValue } from "../../../shared/types/attributes";
     import { createPage, openPage } from "../layout/navigation";
-    import { currentTimeZone, displayMilliseconds } from "../layout/preferences.svelte";
+    import { currentTimeZone } from "../layout/preferences.svelte";
     import { confirmed } from "./confirmation.svelte";
     import { perform } from "./feedback.svelte";
     import { registerList } from "./page-visits";
@@ -138,7 +138,7 @@
     let { tabId, params, onparams, source }: ViewProps<"calendar"> = $props();
     const zone = $derived(currentTimeZone());
     let now = $state(nowSeconds()), viewedMonth = $state<Date>(), selectedDay = $state<string>();
-    const today = $derived(secondsToWall(now, zone).slice(0, 10));
+    const today = $derived(secondsToDay(now, zone));
     const month = $derived(viewedMonth ?? new Date(today + "T00:00:00Z")), selected = $derived(selectedDay ?? today);
     let scheduled = $state<PageSummary[]>([]), notices = $state<Notice[]>([]), pending = $state(false), error = $state<ErrorValue>("");
     const byDay = $derived(Object.groupBy(scheduled, page => scheduleDay(page.attributes, params.date.id)));
@@ -154,7 +154,7 @@
     }
     function timeLabel(page: PageSummary): string {
         const time = start && page.attributes[start.id];
-        return typeof time === "number" ? secondsToWall(time, zone).slice(11) : "全天";
+        return typeof time === "number" ? secondsToMinute(time, zone) : "全天";
     }
     let definitions = $state.raw<AttributeDefinition[]>([]);
     const dates = $derived(definitions.filter(def => def.type === "day"));

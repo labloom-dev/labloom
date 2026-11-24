@@ -170,7 +170,9 @@ const savedViews = [
     { type: "calendar", params: { date, start: { kind: "attribute", type: "minute", id: "start" }, status } },
     { type: "library", params: { scope: "trash", pageType: { kind: "page-type", type: "paper" }, sort: { column: "title", direction: "asc" }, tags: ["A"], filters: [{ attribute: { kind: "attribute", id: "missing" }, value: { list: [false, null] } }] } },
     { type: "library", params: { scope: "all", paperOnly: true, sort: { column: "paper_year", direction: "desc" }, tags: [], filters: [], columns: [{ id: "paper_year", width: 92 }, { id: "title" }], showProperties: false, infoWidth: 332 } },
-    { type: "overview", params: { status } },
+    { type: "overview", params: { status, date } },
+    { type: "feed", params: { scope: pageRef.id, read: "unread", order: "oldest", sourcesWidth: 200, listWidth: 340 } },
+    { type: "feed", params: { scope: "followed" } },
     ...["feed", "attributes", "settings", "about"].map(type => ({ type, params: {} }))
 ];
 function layout(views: unknown[]): { groups: { id: string; tabs: { id: string; view: unknown }[]; activeTabId: string | null }[]; focusedGroupId: string; layout: { type: "group"; groupId: string } } {
@@ -187,13 +189,24 @@ test("unknown views and invalid parameters discard only their tab and repair the
         { type: "future", params: {} }, { type: "calendar", params: { date: status } },
         { type: "page", params: { page: { kind: "page", id: "invalid" } } },
         { type: "page", params: { page: pageRef, unexpected: "true" } },
-        { type: "overview", params: { status: date } }, { type: "about", params: { keyword: "A" } }
+        { type: "about", params: { keyword: "A" } }
     ]) {
         const saved = layout([bad, ...savedViews]);
         const restored = restoreTabState(saved);
         assert.deepEqual(restored?.groups[0].tabs, saved.groups[0].tabs.slice(1));
         assert.equal(restored?.groups[0].activeTabId, "1");
     }
+});
+test("invalid overview and feed parameters keep the active tab and use defaults", () => {
+    const saved = layout([{ type: "overview", params: { date: status } }, { type: "feed", params: { scope: "not-a-source", read: "unread" } }]);
+    const restored = restoreTabState(saved);
+    assert.equal(restored?.groups[0].activeTabId, "0");
+    assert.deepEqual(restored?.groups[0].tabs.map(tab => tab.view), [
+        { type: "overview", params: { status: { kind: "attribute", id: "task_status", type: "status" }, date: { kind: "attribute", id: "schedule_date", type: "day" } } },
+        { type: "feed", params: {} }
+    ]);
+    const invalidScope = layout([{ type: "feed", params: { scope: "not-a-source" } }]);
+    assert.deepEqual(restoreTabState(invalidScope)?.groups[0].tabs[0].view, { type: "feed", params: {} });
 });
 test("invalid reader sidebar settings keep the page and its selected PDF", () => {
     const location = { page: pageRef, fileId: pageRef.id };

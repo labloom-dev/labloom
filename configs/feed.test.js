@@ -412,7 +412,7 @@ test("entries and read state survive refreshes and reopening the workspace; canc
     assert.equal(service.getState({ read: "unread" }).total, 1);
     assert.equal(service.getState({ keyword: "LANGUAGE" }).total, 2);
     assert.equal(service.itemURL(item.id), item.url);
-    assert.throws(() => service.getState({ offset: -1 }));
+    assert.throws(() => service.getState({ order: "unknown" }));
     assert.throws(() => service.getState({ read: "some" }));
     session.close();
     const reopened = openWorkspace(folder, undefined, { loadFeed: request => loaderOf(entries)(request) });
@@ -629,13 +629,13 @@ test("a result that arrives after its source was paused, cancelled or readdresse
     }
 });
 
-test("concurrent refreshes share a request and results are paginated", async t => {
+test("concurrent refreshes share a request and results are available in batches", async t => {
     const { entries: [template] } = await parseFeed(rss, "https://example.org/feed");
     let calls = 0;
     const { service } = fixture(t, async request => {
         calls++;
         await new Promise(resolve => setTimeout(resolve, 10));
-        return fetched(Array.from({ length: 55 }, (_, i) => ({ ...template, externalId: `paper-${i}`, url: `https://example.org/papers/${i}` })), { url: request.url });
+        return fetched(Array.from({ length: 135 }, (_, i) => ({ ...template, externalId: `paper-${i}`, url: `https://example.org/papers/${i}` })), { url: request.url });
     });
     let notices = 0;
     t.after(watchFeed(() => notices++));
@@ -644,9 +644,12 @@ test("concurrent refreshes share a request and results are paginated", async t =
     await Promise.all([service.refresh(id), service.refresh(id)]);
     assert.equal(calls, 2);
     assert.ok(notices >= 2, "views are told when a refresh starts and when it ends");
-    assert.equal(service.getState({}).items.length, 50);
-    assert.equal(service.getState({ offset: 50 }).items.length, 5);
-    assert.equal(service.getState({}).total, 55);
+    const result = service.getState({});
+    assert.equal(result.total, 135);
+    assert.equal(result.ids.length, 135);
+    assert.ok(result.items.length < result.ids.length);
+    const tail = result.ids.slice(result.items.length);
+    assert.deepEqual(service.getRows(tail).map(row => row.id), tail);
 });
 
 test("a few sources are fetched at a time, and those waiting their turn already count as refreshing", async t => {
@@ -759,9 +762,9 @@ test("items are filtered by read state and followed keywords, ordered either way
     // Undated items stay at the end in both directions.
     assert.deepEqual(titles({ order: "oldest" }), ["Diffusion models", "Retrieval", "Agents", "A long abstract", "Undated note"]);
     assert.deepEqual(titles({ sourceId: b, order: "oldest" }), ["Retrieval", "A long abstract"]);
-    // Lists carry an excerpt; the reader gets the whole text.
+    // Only the reader gets the full text.
     const long = service.getState({}).items[0];
-    assert.equal(long.summary.length, 400);
+    assert.equal(Object.hasOwn(long, "summary"), false);
     assert.equal(service.getItem(long.id).summary.length, 1000);
 
     assert.deepEqual(titles({ followed: true }), [], "nothing is followed yet");

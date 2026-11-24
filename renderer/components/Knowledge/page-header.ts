@@ -5,6 +5,7 @@ import * as tabs from "../Tab/api";
 import * as activity from "../Tab/activity.svelte";
 import type { TabID } from "../Tab/defs";
 import type { HeaderActions } from "../Tab/views";
+import { viewMenu } from "../Tab/view-menu";
 import * as feedback from "./feedback.svelte";
 import * as sessions from "./page-sessions";
 import type { PageSession } from "./page-session.svelte";
@@ -31,12 +32,15 @@ export function pageActions(shown: boolean, deleted: boolean | undefined, busy: 
 export function pageHeader(id: TabID, params: ViewParams["page"]): HeaderActions {
     const session = sessions.mountedSession(id, params.page.id), page = session?.state.page;
     const shown = params.showProperties ?? page?.kind === "paper", toggle = (): void => toggleProperties(id, params);
-    return pageActions(
+    const actions = pageActions(
         shown, page ? !!page.attributes.deleted : undefined, activity.readingTabs.has(id), toggle,
         () => {
             if (session) toggleTrash(session);
         }
     );
+    const subscription = page?.kind === "feed" ? viewMenu(id) : [];
+    if (subscription.length) actions.menu.push({ separator: true }, ...subscription);
+    return actions;
 }
 
 export function toggleLibraryProperties(id: TabID, params: ViewParams["library"]): void {

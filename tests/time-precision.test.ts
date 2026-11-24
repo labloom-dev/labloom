@@ -8,10 +8,12 @@ import { test, type TestContext } from "node:test";
 import { createWorkspace, openWorkspace } from "./support/session";
 import { builtinAttrs } from "../shared/attrs/builtins";
 import { convertValue } from "../shared/attrs/convert";
-import { display, search } from "../shared/attrs/format";
+import { display, libraryText, search } from "../shared/attrs/format";
+import { createI18n } from "../shared/i18n";
+import { languages } from "../shared/locale";
 import { defaultValue, encodeValue, validateDefinition, validateValue } from "../shared/attrs/values";
 import { scheduleDay } from "../renderer/components/Knowledge/calendar-day";
-import { dayToSeconds, monthToSeconds, secondsToDay, secondsToMonth, secondsToWall, secondsToYear, timeToSeconds, timeTypes, wallToSeconds, yearToSeconds } from "../shared/content/time";
+import { dayToSeconds, monthToSeconds, secondsToDay, secondsToHour, secondsToMinute, secondsToMonth, secondsToSecond, secondsToWall, secondsToYear, timeToSeconds, timeTypes, wallToSeconds, yearToSeconds } from "../shared/content/time";
 import { type AttributeDefinition, type AttributeType, type AttributeValue } from "../shared/types/attributes";
 
 const definition = (type: AttributeType, id = "custom:" + randomUUID()): AttributeDefinition => ({ name: "属性", id, type, metadata: {} });
@@ -56,6 +58,33 @@ test("UTC calendar parsers reject rollover and round-trip leap days and four-dig
     for (const wall of ["2026-02-29T14:30", "2026-11-11T24:00", "2026-11-11T14:60"]) assert.throws(() => wallToSeconds(wall, zone));
 });
 
+test("fixed timestamps show seconds, minutes and hours in the selected time zone", () => {
+    const timestamp = Date.UTC(2026, 10, 24, 6, 20, 5) / 1000;
+    assert.equal(secondsToSecond(timestamp, "Asia/Singapore"), "2026-11-24 14:20:05");
+    assert.equal(secondsToSecond(timestamp, "America/Los_Angeles"), "2026-11-23 22:20:05");
+    assert.equal(secondsToMinute(timestamp, "Asia/Singapore"), "2026-11-24 14:20");
+    assert.equal(secondsToHour(timestamp, "Asia/Singapore"), "2026-11-24 14:00");
+    assert.equal(secondsToDay(timestamp, "America/Los_Angeles"), "2026-11-23");
+    assert.equal(secondsToSecond(dayToSeconds("0001-01-02"), "UTC"), "0001-01-02 00:00:00");
+    assert.equal(secondsToSecond(dayToSeconds("0000-01-02"), "UTC"), "0000-01-02 00:00:00");
+});
+
+test("library cell text for every time precision is the same in Chinese and English", () => {
+    const cases = [
+        ["minute", instant, "2026-11-08 01:12"],
+        ["hour", instant, "2026-11-08 01:00"],
+        ["day", dayToSeconds("2026-11-08"), "2026-11-08"],
+        ["month", monthToSeconds("2026-11"), "2026-11"],
+        ["year", yearToSeconds("2026"), "2026"]
+    ] as const;
+    for (const language of languages) {
+        const locale = createI18n(language);
+        for (const [type, value, expected] of cases) {
+            assert.equal(libraryText(definition(type), value, language, zone, (key, options) => locale.t(key, options), {}), expected);
+        }
+    }
+});
+
 test("display and search use UTC for calendar precision and the selected zone for instants", () => {
     for (const timeZone of [zone, "UTC", "America/New_York", "invalid-zone"]) {
         for (const [type, value, expected] of [["day", dayToSeconds("2026-11-11"), "2026-11-11"], ["month", monthToSeconds("2026-11"), "2026-11"], ["year", yearToSeconds("2026"), "2026"]] as const) {
@@ -65,10 +94,14 @@ test("display and search use UTC for calendar precision and the selected zone fo
     }
     assert.equal(display(definition("minute"), instant, { zone }), "2026-11-08 01:12");
     assert.equal(display(definition("minute"), instant, { zone: "UTC" }), "2026-11-07 17:12");
-    const hour = timeToSeconds("hour", "2026-11-11 14时", "Asia/Kolkata");
-    assert.equal(hour, Date.UTC(2026, 10, 11, 8, 30) / 1000);
-    assert.equal(display(definition("hour"), hour, { zone: "Asia/Kolkata" }), "2026-11-11 14时");
-    assert.equal(search(definition("hour"), hour, { zone: "Asia/Kolkata" }), "2026-11-11 14时");
+    const hourZone = "Asia/Singapore", text = "2026-11-24 14:00";
+    const hour = timeToSeconds("hour", text, hourZone);
+    assert.equal(hour, Date.UTC(2026, 10, 24, 6) / 1000);
+    assert.equal(timeToSeconds("hour", "2026-11-24 14时", hourZone), hour);
+    assert.equal(timeToSeconds("hour", "2026-11-24 14", hourZone), hour);
+    assert.throws(() => timeToSeconds("hour", "2026-11-24 14:20", hourZone));
+    assert.equal(display(definition("hour"), hour, { zone: hourZone }), text);
+    assert.equal(search(definition("hour"), hour, { zone: hourZone }), text);
 });
 
 test("retyping truncates or expands calendar precision and preserves seconds between instant precisions", () => {
@@ -86,12 +119,12 @@ test("retyping truncates or expands calendar precision and preserves seconds bet
         ["year", yearToSeconds("2026"), "minute", Date.UTC(2025, 11, 31, 16) / 1000],
         ["minute", instant, "hour", instant], ["hour", instant, "minute", instant],
         ["string", "2026-11-11 14:30", "minute", wallToSeconds("2026-11-11T14:30", zone)],
-        ["string", "2026-11-11 14时", "hour", wallToSeconds("2026-11-11T14:00", zone)],
+        ["string", "2026-11-11 14:00", "hour", wallToSeconds("2026-11-11T14:00", zone)],
         ["string", "2026-11-11", "day", dayToSeconds("2026-11-11")],
         ["string", "2026-11", "month", monthToSeconds("2026-11")],
         ["string", "2026", "year", yearToSeconds("2026")],
         ["day", dayToSeconds("2026-11-11"), "string", "2026-11-11"],
-        ["hour", instant, "string", "2026-11-08 01时"],
+        ["hour", instant, "string", "2026-11-08 01:00"],
         ["number", dayToSeconds("2026-11-11"), "day", dayToSeconds("2026-11-11")],
         ["number", instant, "day", null], ["minute", instant, "number", instant],
         ["string", "2026-11-11", "month", null], ["day", null, "boolean", false]

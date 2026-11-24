@@ -7,7 +7,7 @@ import { perform } from "./feedback.svelte";
 import { write } from "./page-sessions";
 import { purgePages } from "./purge";
 
-export function pageMenu(page: PageSummary, source: HistorySource, ids = [page.id], currentGroup = false): { id: string; label: string; shortcut?: string; run: () => void }[] {
+export function pageMenu(page: Pick<PageSummary, "id" | "attributes">, source: HistorySource, ids = [page.id], currentGroup = false): { id: string; label: string; shortcut?: string; run: () => void }[] {
     const run = (action: () => Promise<unknown>): void => {
         void perform(async () => {
             await write(action);

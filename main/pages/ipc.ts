@@ -17,6 +17,8 @@ export const routes = {
     libraryIndex: route(typia.createAssert<Args<"libraryIndex">>(invalid), records.libraryIndex),
     listUpdates: route(typia.createAssert<Args<"listUpdates">>(invalid), records.listUpdates),
     blockList: route(typia.createAssert<Args<"blockList">>(invalid), picker.blockList),
+    overviewIndex: route(typia.createAssert<Args<"overviewIndex">>(invalid), records.overviewIndex),
+    overviewRows: route(typia.createAssert<Args<"overviewRows">>(invalid), records.overviewRows),
     get: route(typia.createAssert<Args<"get">>(invalid), papers.get),
     readObjects: route(typia.createAssert<Args<"readObjects">>(invalid), records.readObjects),
     syncBlocks: route(typia.createAssert<Args<"syncBlocks">>(invalid), edits.syncBlocks),

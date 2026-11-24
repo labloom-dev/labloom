@@ -5,6 +5,8 @@ import type { PurgeResult } from "../types/knowledge";
 import { type Channels } from "../ipc/contract";
 import type { tags } from "typia";
 
+import type { OverviewIndex, OverviewPage, OverviewQuery } from "../workspace/overview";
+import type { uuid } from "../types/uuid";
 import type { LibraryIndex, LibraryQuery } from "../workspace/library";
 
 export type PagesAPI = {
@@ -12,6 +14,8 @@ export type PagesAPI = {
     search(keyword: string, offset?: number, limit?: number): Promise<{ items: PageSearchResult[]; total: number }>;
     libraryIndex(query: LibraryQuery, initialColumns?: string[]): Promise<LibraryIndex & { initial?: PageSummary[] }>;
     listUpdates(query: PageQuery, unchanged: string[], labelColumns?: string[]): Promise<PageList & { order: string[]; names?: Record<string, string> }>;
+    overviewIndex(query: OverviewQuery): Promise<OverviewIndex>;
+    overviewRows(ids: uuid[], date?: string): Promise<OverviewPage[]>;
     get(id: string): Promise<PageRecord>;
     blockList(id: string): Promise<PageBlockList>;
     readObjects(pageId: string, ids: string[]): Promise<PageObjects>;
@@ -34,6 +38,8 @@ export const pagesChannels = {
     search: "pages:search",
     libraryIndex: "pages:library-index",
     listUpdates: "pages:list-updates",
+    overviewIndex: "pages:overview-index",
+    overviewRows: "pages:overview-rows",
     get: "pages:get",
     blockList: "pages:block-list",
     readObjects: "pages:read-objects",

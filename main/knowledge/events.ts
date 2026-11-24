@@ -40,9 +40,16 @@ export function expand(input: KnowledgeChange): KnowledgeChange {
             const titles = rows.filter(row => blocks.has(row.titleId)).map(row => row.id);
             if (titles.length) change.titlePages = titles;
         }
-        change.kinds = Object.fromEntries(rows.map(row => [row.id, row.kind]));
+        const kinds = change.kinds = { ...change.kinds, ...Object.fromEntries(rows.map(row => [row.id, row.kind])) };
         const highlights = new Set(change.highlightPages);
-        for (const id of change.recycledPages ?? []) if (change.kinds[id] === "paper") highlights.add(id);
+        const changedPapers = change.recycledPages?.filter(id => kinds[id] === "paper");
+        if (changedPapers?.length) {
+            const states = data.statement(`SELECT d.page_id AS id,d.value AS deleted
+                FROM json_each(?) j CROSS JOIN page_attrs d ON d.page_id=j.value AND d.attr_id='deleted'`)
+                .all(JSON.stringify(changedPapers)) as { id: string; deleted: number }[];
+            change.paperStates = Object.fromEntries(states.map(({ id, deleted }) => [id, deleted ? "recycled" : "saved"]));
+            changedPapers.forEach(id => highlights.add(id));
+        }
         const annotations = rows.filter(row => row.kind === "annotation").map(row => row.id);
         if (annotations.length) {
             const papers = data.statement(`SELECT DISTINCT l.source_id
@@ -59,7 +66,7 @@ export function historyChanged(sources: HistorySource[]): void {
 }
 export function publish(change: KnowledgeChange, feed: boolean): void {
     emit({ type: "knowledge", change });
-    if (feed || Object.values(change.kinds ?? {}).includes("feed") || change.purged?.length) emit({ type: "feed" });
+    if (feed || Object.values(change.kinds ?? {}).includes("feed")) emit({ type: "feed" });
 }
 export function feedChanged(): void {
     workspace.requireWorkspace();

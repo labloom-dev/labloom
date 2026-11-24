@@ -9,19 +9,21 @@
     import TopLayer from "./TopLayer.svelte";
     import "./controls.css";
 
-    let { label, options, value = $bindable(""), open = $bindable(false), placeholder, disabled = false, onchange }: {
+    let { label, options, groups = [], value = $bindable(""), open = $bindable(false), placeholder, disabled = false, onchange }: {
         label: string;
         options: SelectOption[];
+        groups?: { label: string; options: SelectOption[] }[];
         value?: string;
         open?: boolean;
         placeholder?: string;
         disabled?: boolean;
         onchange?: (value: string) => void;
     } = $props();
-    const selected = $derived(options.find(option => option.value === value));
+    const items = $derived([...options, ...groups.flatMap(group => group.options)]);
+    const selected = $derived(items.find(option => option.value === value));
 </script>
 
-<Select.Root type="single" bind:value bind:open items={options} {disabled} onValueChange={onchange}>
+<Select.Root type="single" bind:value bind:open items={items} {disabled} onValueChange={onchange}>
     <Select.Trigger class="ui-control ui-select" aria-label={label}>
         {#if selected?.icon}<Icon name={selected.icon} size="var(--ui-icon-normal)" />{/if}
         <span class="ui-select-label">{selected?.label ?? placeholder ?? ""}</span>
@@ -32,12 +34,12 @@
             <TopLayer props={wrapperProps}>
                 <div {...props}>
                     <Select.Viewport>
-                        {#each options as option (option.value)}
-                            <Select.Item class="ui-menu-item" value={option.value} label={option.label} disabled={option.disabled}>
-                                {#if option.icon}<Icon name={option.icon} size="var(--ui-icon-normal)" />{/if}
-                                <span class="ui-menu-label">{option.label}</span>
-                                {#if value === option.value}<Icon name="check" size="var(--ui-icon-normal)" />{/if}
-                            </Select.Item>
+                        {#each options as option (option.value)}{@render entry(option)}{/each}
+                        {#each groups as group (group.label)}
+                            <Select.Group>
+                                <Select.GroupHeading class="group-heading">{group.label}</Select.GroupHeading>
+                                {#each group.options as option (option.value)}{@render entry(option)}{/each}
+                            </Select.Group>
                         {/each}
                     </Select.Viewport>
                 </div>
@@ -45,3 +47,15 @@
         {/snippet}
     </Select.Content>
 </Select.Root>
+
+{#snippet entry(option: SelectOption)}
+    <Select.Item class="ui-menu-item" value={option.value} label={option.label} disabled={option.disabled}>
+        {#if option.icon}<Icon name={option.icon} size="var(--ui-icon-normal)" />{/if}
+        <span class="ui-menu-label">{option.label}</span>
+        {#if value === option.value}<Icon name="check" size="var(--ui-icon-normal)" />{/if}
+    </Select.Item>
+{/snippet}
+
+<style>
+    .group-heading { padding: var(--ui-space-1) var(--ui-space-3); color: var(--ui-text-secondary); font-size: var(--ui-font-small); }
+</style>

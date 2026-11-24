@@ -1,5 +1,5 @@
 <script module lang="ts">
-    export const overlayNames = ["选择", "下拉菜单", "右键菜单", "子菜单", "悬浮提示", "确认对话框", "危险确认", "浮层"] as const;
+    export const overlayNames = ["选择", "下拉菜单", "右键菜单", "子菜单", "悬浮提示", "确认对话框", "危险确认", "对话框", "浮层"] as const;
     type Example = typeof overlayNames[number];
 </script>
 
@@ -10,6 +10,8 @@
     import Select from "../../components/base/Select.svelte";
     import Tooltip from "../../components/base/Tooltip.svelte";
     import ConfirmDialog from "../../components/base/ConfirmDialog.svelte";
+    import Dialog from "../../components/base/Dialog.svelte";
+    import { t } from "../../i18n.svelte";
     import Popover from "../../components/base/Popover.svelte";
     import Input from "../../components/base/Input.svelte";
 
@@ -65,6 +67,14 @@
     <Tooltip text="拆分编辑器" shortcut="Ctrl+\" bind:open>
         {#snippet trigger({ props })}<Button {...props} icon="split-horizontal">拆分</Button>{/snippet}
     </Tooltip>
+{:else if sample === "对话框"}
+    <Dialog title={t("feed.addSource")} bind:open>
+        {#snippet trigger({ props })}<Button {...props}>{t("feed.addSource")}</Button>{/snippet}
+        <div class="popover-example">
+            <Input label={t("feed.sourceName")} placeholder={t("feed.sourceName")} />
+            <Button onclick={() => open = false}>{t("dialog.close")}</Button>
+        </div>
+    </Dialog>
 {:else if sample === "浮层"}
     <Popover label="批注" bind:open>
         {#snippet trigger({ props })}<Button {...props} icon="comment">添加批注</Button>{/snippet}

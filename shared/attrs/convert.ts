@@ -1,4 +1,4 @@
-import { isTimeType, secondsToDay, secondsToWall, timeToSeconds } from "../content/time";
+import { isTimeType, secondsToDay, timeToSeconds } from "../content/time";
 import { type AttributeDefinition, type AttributeValue } from "../types/attributes";
 import { display } from "./format";
 import { defaultValue, isEmpty, validateValue } from "./values";
@@ -21,7 +21,7 @@ export function convertValue(before: AttributeDefinition, target: AttributeDefin
                 if (fromInstant && toInstant) result = value;
                 else if (toInstant) result = timeToSeconds("minute", secondsToDay(value as number) + "T00:00", zone);
                 else {
-                    const day = fromInstant ? secondsToWall(value as number, zone).slice(0, 10) : secondsToDay(value as number);
+                    const day = secondsToDay(value as number, fromInstant ? zone : undefined);
                     result = timeToSeconds(target.type, target.type === "day" ? day : target.type === "month" ? day.slice(0, 7) : day.slice(0, 4), zone);
                 }
             }

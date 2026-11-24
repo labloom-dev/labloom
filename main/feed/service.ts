@@ -5,8 +5,8 @@ import { recurrenceMinutes } from "../../shared/content/timers";
 import { LabloomError, toFailureInfo, type FailureInfo } from "../../shared/failure";
 import { type AttributeValue } from "../../shared/types/attributes";
 import {
-    feedIntervals, feedPageSize,
-    type FeedDownload, type FeedImport, type FeedEntry, type FeedItemDetail, type FeedPaperState, type FeedQuery, type FeedSource, type FeedSourceAction, type FeedSourceInput, type FeedState
+    feedIntervals, feedBatchSize,
+    type FeedDownload, type FeedImport, type FeedEntry, type FeedItem, type FeedItemDetail, type FeedPaperState, type FeedQuery, type FeedSource, type FeedSourceAction, type FeedSourceInput, type FeedState
 } from "../../shared/types/feed";
 import { feedURL, normalizeURL } from "../../shared/utils/feed";
 import * as commit from "../knowledge/commit";
@@ -53,7 +53,7 @@ function sources(): SourceRow[] {
         const a = values.get(id)!, at = (key: string): number | null => typeof a[key] === "number" ? a[key] * 1000 : null;
         const localNext = knowledge.statement("SELECT due_at FROM timers WHERE page_id=? AND attr_id='feed_refresh' AND lead_seconds=0").pluck().get(id) as number | null | undefined;
         return {
-            id, name: knowledge.title(id), url: String(a.feed_url), status: ["enabled", "paused", "cancelled"].includes(String(a.feed_status)) ? a.feed_status as SourceRow["status"] : "paused",
+            id, name: knowledge.title(id, ""), url: String(a.feed_url), pinned: !!a.pinned, status: ["enabled", "paused", "cancelled"].includes(String(a.feed_status)) ? a.feed_status as SourceRow["status"] : "paused",
             autoRefresh: a.feed_refresh !== null, intervalMinutes: recurrenceMinutes(a.feed_refresh) ?? feedIntervals.default,
             lastRefreshed: at("feed_last_refreshed"), lastChecked: at("feed_last_checked"), nextRefresh: localNext == null ? null : localNext * 1000,
             lastAdded: Number(a.feed_last_added ?? 0), error: savedFailure(a.feed_error), failures: Number(a.feed_failures ?? 0),
@@ -62,41 +62,66 @@ function sources(): SourceRow[] {
     });
 }
 
-export function getState(query: FeedQuery): FeedState {
+export function getState(query: FeedQuery, around?: string): FeedState {
     workspace.requireWorkspace();
-    if (!query || typeof query !== "object" || query.sourceId !== undefined && typeof query.sourceId !== "string" || query.keyword !== undefined && typeof query.keyword !== "string"
+    if (!query || typeof query !== "object" || Array.isArray(query)
+        || [query.sourceId, query.keyword, query.keep, around].some(value => value !== undefined && typeof value !== "string")
         || query.read !== undefined && !["all", "unread", "read"].includes(query.read) || query.order !== undefined && !["newest", "oldest"].includes(query.order)
-        || query.followed !== undefined && typeof query.followed !== "boolean" || query.offset !== undefined && (!Number.isSafeInteger(query.offset) || query.offset < 0)) throw new LabloomError({ kind: "feed-invalid-query" });
+        || query.followed !== undefined && typeof query.followed !== "boolean") throw new LabloomError({ kind: "feed-invalid-query" });
+    const unread = knowledge.statement("SELECT source_id AS id,count(*) AS total FROM feed_items WHERE is_read=0 GROUP BY source_id").all() as { id: string; total: number }[];
+    const counts = new Map(unread.map(({ id, total }) => [id, total]));
     const order = { enabled: 0, paused: 1, cancelled: 2 };
     const localSources: FeedSource[] = sources().sort((a, b) => order[a.status] - order[b.status] || a.name.localeCompare(b.name) || a.id.localeCompare(b.id)).map(({ failures: _failures, etag: _etag, lastModified: _modified, deleted: _deleted, ...row }) => ({
-        ...row, unreadCount: knowledge.statement("SELECT count(*) FROM feed_items WHERE source_id=? AND is_read=0").pluck().get(row.id) as number, refreshing: state.pending.has(row.id)
+        ...row, unreadCount: counts.get(row.id) ?? 0, refreshing: state.pending.has(row.id)
     }));
-    const localKeywords = keywords(), where = ["d.value=0"], args: (string | number)[] = [];
-    if (query.sourceId) {
-        where.push("i.source_id=?"); args.push(query.sourceId);
-    }
-    else where.push("s.value IS NOT 'cancelled'");
-    if (query.read && query.read !== "all") {
-        where.push("i.is_read=?"); args.push(Number(query.read === "read"));
-    }
-    const match = "instr(lower(i.title || ' ' || i.summary),lower(?))>0";
-    if (query.keyword?.trim()) {
-        where.push(match); args.push(query.keyword.trim());
-    }
-    if (query.followed) {
-        where.push("EXISTS (SELECT 1 FROM json_each(?) k WHERE instr(lower(i.title || ' ' || i.summary),lower(k.value))>0)");
-        args.push(JSON.stringify(localKeywords));
-    }
-    const from = ` FROM feed_items i JOIN pages p ON p.id=i.source_id JOIN blocks b ON b.id=p.title_block_id
-        JOIN page_attrs s ON s.page_id=p.id AND s.attr_id='feed_status' JOIN page_attrs d ON d.page_id=p.id AND d.attr_id='deleted' WHERE ` + where.join(" AND ");
-    const rows = knowledge.statement(`SELECT i.id,i.source_id AS sourceId,knowledge_text(b.type,b.content) AS sourceName,i.title,i.url,i.authors,
-        substr(i.summary,1,400) AS summary,i.published_at AS publishedAt,i.is_read AS isRead,i.paper_id AS paperId` + from +
-        ` ORDER BY i.published_at IS NULL,i.published_at ${query.order === "oldest" ? "ASC" : "DESC"},i.id LIMIT ? OFFSET ?`).all(...args, feedPageSize, query.offset ?? 0) as FeedState["items"];
-    const items = rows.map(row => ({ ...row, isRead: !!row.isRead }));
+    const localKeywords = keywords();
+    const included = localSources.filter(source => query.sourceId ? source.id === query.sourceId : source.status !== "cancelled").map(source => source.id);
+    const ids = itemIndex(query, included, localKeywords);
+    const anchor = around ? ids.indexOf(around) : -1;
+    const start = Math.max(0, anchor - Math.floor(feedBatchSize / 3));
     return {
-        sources: localSources, items, total: knowledge.statement("SELECT count(*)" + from).pluck().get(...args) as number,
+        sources: localSources, ids, items: getRows(ids.slice(start, start + feedBatchSize)), total: ids.length,
         unreadCount: localSources.reduce((sum, source) => sum + (source.status === "cancelled" ? 0 : source.unreadCount), 0), keywords: localKeywords
     };
+}
+
+function itemIndex(query: FeedQuery, included: string[], words: string[]): string[] {
+    if (!included.length) return [];
+    const filters: string[] = [], args: (string | number)[] = [JSON.stringify(included)];
+    if (query.read && query.read !== "all") {
+        filters.push("i.is_read=?");
+        args.push(Number(query.read === "read"));
+    }
+    if (query.keyword?.trim()) {
+        filters.push("instr(lower(i.title || ' ' || i.summary),lower(?))>0");
+        args.push(query.keyword.trim());
+    }
+    if (query.followed) {
+        filters.push(words.length ? "EXISTS (SELECT 1 FROM json_each(?) k WHERE instr(lower(i.title || ' ' || i.summary),lower(k.value))>0)" : "0");
+        if (words.length) args.push(JSON.stringify(words));
+    }
+    let where = "i.source_id IN (SELECT value FROM json_each(?))";
+    if (filters.length) {
+        where += " AND ((" + filters.join(" AND ") + ")" + (query.keep ? " OR i.id=?" : "") + ")";
+        if (query.keep) args.push(query.keep);
+    }
+    return knowledge.statement(`SELECT i.id FROM feed_items i WHERE ${where}
+        ORDER BY i.published_at IS NULL,i.published_at ${query.order === "oldest" ? "ASC" : "DESC"},i.id`).pluck().all(...args) as string[];
+}
+
+export function getRows(ids: string[]): FeedItem[] {
+    workspace.requireWorkspace();
+    if (!Array.isArray(ids) || ids.some(id => typeof id !== "string")) throw new LabloomError({ kind: "feed-invalid-query" });
+    if (!ids.length) return [];
+    // Read from the requested IDs so SQLite does primary-key lookups for the batch.
+    const rows = knowledge.statement(`SELECT i.id,i.source_id AS sourceId,knowledge_text(b.type,b.content) AS sourceName,i.title,i.url,i.authors,
+        i.published_at AS publishedAt,i.is_read AS isRead,i.paper_id AS paperId,
+        CASE WHEN i.paper_id IS NULL THEN 'none' WHEN paper.id IS NULL THEN 'missing' WHEN deleted.value=1 THEN 'recycled' ELSE 'saved' END AS paperState
+        FROM json_each(?) j CROSS JOIN feed_items i ON i.id=j.value CROSS JOIN pages p ON p.id=i.source_id CROSS JOIN blocks b ON b.id=p.title_block_id
+        CROSS JOIN page_attrs d ON d.page_id=p.id AND d.attr_id='deleted' AND d.value=0
+        LEFT JOIN pages paper ON paper.id=i.paper_id AND paper.kind='paper'
+        LEFT JOIN page_attrs deleted ON deleted.page_id=paper.id AND deleted.attr_id='deleted' ORDER BY j.key`).all(JSON.stringify(ids)) as FeedItem[];
+    return rows.map(row => ({ ...row, isRead: !!row.isRead }));
 }
 
 export function getItem(id: string): FeedItemDetail {

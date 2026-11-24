@@ -158,6 +158,7 @@
     --ui-focus: var(--ui-p-blue);
     --ui-accent: var(--ui-p-blue);
     --ui-accent-hover: var(--ui-p-blue-hover);
+    --ui-warning: var(--ui-p-ink-orange);
     --ui-danger: var(--ui-p-red);
     --ui-danger-hover: var(--ui-p-red-hover);
     --ui-shadow-popup: 0 2px 8px var(--ui-p-shadow);

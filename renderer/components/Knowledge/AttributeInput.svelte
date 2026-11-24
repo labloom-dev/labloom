@@ -113,9 +113,10 @@
         hourDay = wall.slice(0, 10);
         hour = wall.slice(11, 13) || "00";
     });
-    const hours = $derived(Array.from({ length: 24 }, (_, i) => {
-        const value = String(i).padStart(2, "0"); return { value, label: t("property.hourValue", { hour: value }) };
-    }));
+    const hours = Array.from({ length: 24 }, (_, i) => {
+        const value = String(i).padStart(2, "0");
+        return { value, label: value + ":00" };
+    });
     function changeHour(): void {
         change(() => hourDay ? wallToSeconds(`${hourDay}T${hour}:00`, zone) : emptyValue(definition.type));
     }

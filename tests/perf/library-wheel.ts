@@ -7,8 +7,8 @@ const p95 = (values: number[]): number => +values.sort((a, b) => a - b)[Math.cei
 
 // The input goes through Chromium's native wheel path. The passive listener lets tracing
 // associate actual renderer input dispatch with the end of its main-thread render frame.
-async function scrollGrid(): Promise<{ intervals: number[]; wheels: number; distance: number }> {
-    const grid = document.querySelector<HTMLElement>("[data-tabs-content]:not([hidden]) .library-grid")!;
+async function scrollGrid(selector: string): Promise<{ intervals: number[]; wheels: number; distance: number }> {
+    const grid = document.querySelector<HTMLElement>(selector)!;
     const box = grid.getBoundingClientRect(), before = grid.scrollTop;
     const frame = (): Promise<number> => new Promise(resolve => requestAnimationFrame(resolve));
     let wheels = 0;
@@ -37,7 +37,7 @@ async function scrollGrid(): Promise<{ intervals: number[]; wheels: number; dist
     return { intervals, wheels, distance: (grid.scrollTop - before) / grid.clientHeight };
 }
 
-export async function measureWheel(wc: WebContents, view: string): Promise<{ scroll: number; wheelWork: number }> {
+export async function measureWheel(wc: WebContents, view: string, selector = "[data-tabs-content]:not([hidden]) .library-grid"): Promise<{ scroll: number; wheelWork: number; wheelHandlerMax: number }> {
     const events: TraceEvent[] = [];
     let complete!: () => void, timer: ReturnType<typeof setInterval> | undefined;
     const done = new Promise<void>(resolve => complete = resolve);
@@ -57,14 +57,15 @@ export async function measureWheel(wc: WebContents, view: string): Promise<{ scr
     wc.on("console-message", input);
     try {
         await wc.debugger.sendCommand("Tracing.start", { categories: "cc,devtools.timeline,blink.user_timing", transferMode: "ReportEvents" });
-        const result: Awaited<ReturnType<typeof scrollGrid>> = await wc.executeJavaScript(`(${scrollGrid.toString()})()`);
+        const result: Awaited<ReturnType<typeof scrollGrid>> = await wc.executeJavaScript(`(${scrollGrid.toString()})(${JSON.stringify(selector)})`);
         await wc.debugger.sendCommand("Tracing.end");
         await done;
         if (result.wheels < 50 || result.distance < 1) throw Error("Too few native wheel events or too little scroll travel");
         const before = events.find(e => e.name === "library-wheel-start")!, after = events.find(e => e.name === "library-wheel-end")!;
         const main = events.filter(e => e.pid === before.pid && e.tid === before.tid && e.ph === "X" && e.ts >= before.ts);
         const ends = main.filter(e => e.name === "ProxyMain::BeginMainFrame").map(e => e.ts + e.dur!).sort((a, b) => a - b);
-        const work = main.filter(e => e.name === "EventDispatch" && e.args?.data?.type === "wheel" && e.ts <= after.ts).map(e => {
+        const inputEvents = main.filter(e => e.name === "EventDispatch" && e.args?.data?.type === "wheel" && e.ts <= after.ts);
+        const work = inputEvents.map(e => {
             const end = ends.find(time => time >= e.ts + e.dur!);
             if (end === undefined) throw Error("Missing frame after wheel dispatch");
             return (end - e.ts) / 1000;
@@ -72,7 +73,7 @@ export async function measureWheel(wc: WebContents, view: string): Promise<{ scr
         if (work.length !== result.wheels) throw Error("Incomplete renderer wheel trace: " + work.length + "/" + result.wheels);
         const path = process.env.LABLOOM_LIBRARY_TRACE;
         if (path) writeFileSync(join(path, view + ".json"), JSON.stringify({ traceEvents: events }));
-        return { scroll: p95(result.intervals), wheelWork: p95(work) };
+        return { scroll: p95(result.intervals), wheelWork: p95(work), wheelHandlerMax: +Math.max(...inputEvents.map(event => event.dur! / 1000)).toFixed(2) };
     }
     finally {
         clearInterval(timer);

@@ -12,6 +12,7 @@ import { pageKinds, type Backlink, type ContentBlock, type LinkTarget, type Page
 import { type blocks, type pages } from "../storage/tables";
 import * as workspace from "../workspace-state";
 
+import { overviewBatchSize, type OverviewIndex, type OverviewPage, type OverviewQuery } from "../../shared/workspace/overview";
 import { libraryBatchSize, type LibraryIndex, type LibraryQuery } from "../../shared/workspace/library";
 import { createI18n, type Translate } from "../../shared/i18n";
 
@@ -483,6 +484,40 @@ export function libraryIndex(query: LibraryQuery, initialColumns?: string[]): Li
 function summaryNames(items: PageSummary[], columns?: string[]): Record<string, string> | undefined {
     const links = columns?.map(definition).filter(def => def && attributeTargetKind(def.type)) as AttributeDefinition[] | undefined;
     return links?.length ? targetNames(items.flatMap(row => links.map((def): [AttributeDefinition, AttributeValue] => [def, row.attributes[def.id]]))) : undefined;
+}
+
+export function overviewIndex(query: OverviewQuery): OverviewIndex {
+    workspace.requireWorkspace();
+    const status = definition(query.status), date = definition(query.date);
+    const options = status?.type === "status" ? status.metadata.options?.filter(option => option.group === "incomplete").map(option => option.id) ?? [] : [];
+    const hasDate = date?.type === "day";
+    const order = hasDate ? { join: "LEFT JOIN page_attrs sort ON sort.page_id=s.page_id AND sort.attr_id=@date", sql: "sort.value ASC NULLS LAST" }
+        : { join: "JOIN page_attrs sort ON sort.page_id=s.page_id AND sort.attr_id='modified_at'", sql: "sort.value DESC" };
+    const taskIds = options.length ? statement(`SELECT s.page_id FROM page_attrs s
+        JOIN page_attrs d ON d.page_id=s.page_id AND d.attr_id='deleted' AND d.value=0
+        ${order.join}
+        WHERE s.attr_id=@status AND s.value IN (SELECT value FROM json_each(@options))
+        ORDER BY ${order.sql},s.page_id`).pluck().all({
+        status: query.status, ...(hasDate ? { date: query.date } : {}), options: JSON.stringify(options)
+    }) as string[] : [];
+    const anchor = query.around ? taskIds.indexOf(query.around) : -1;
+    const from = Math.max(0, anchor - Math.floor(overviewBatchSize / 3));
+    return {
+        taskIds, tasks: overviewRows(taskIds.slice(from, from + overviewBatchSize), hasDate ? query.date : undefined),
+        recent: overviewRows(query.recent), missingStatus: status?.type !== "status"
+    };
+}
+
+export function overviewRows(ids: string[], date?: string): OverviewPage[] {
+    workspace.requireWorkspace();
+    if (!ids.length) return [];
+    const day = date && definition(date)?.type === "day" ? date : null;
+    const rows = statement(`SELECT p.id,p.kind,knowledge_text(b.type,b.content) AS title,f.value AS pinned,day.value AS date
+        FROM json_each(?) j CROSS JOIN pages p ON p.id=j.value CROSS JOIN blocks b ON p.title_block_id=b.id
+        CROSS JOIN page_attrs d ON d.page_id=p.id AND d.attr_id='deleted' AND d.value=0
+        LEFT JOIN page_attrs f ON f.page_id=p.id AND f.attr_id='pinned'
+        LEFT JOIN page_attrs day ON day.page_id=p.id AND day.attr_id=? ORDER BY j.key`).all(JSON.stringify(ids), day) as OverviewPage[];
+    return rows.map(row => ({ ...row, pinned: !!row.pinned }));
 }
 
 export function listUpdates(query: PageQuery, unchanged: string[], labelColumns?: string[]): PageList & { order: string[]; names?: Record<string, string> } {

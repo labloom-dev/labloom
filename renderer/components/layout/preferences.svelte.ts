@@ -8,14 +8,8 @@ export const appearance = $state<Appearance & { loaded: boolean; saving: boolean
 let savedZone = $state(defaultAppearance.timeZone);
 let latest: SettingsSnapshot | undefined, pending = 0, sequence = 0;
 const zone = $derived(resolveTimeZone(savedZone));
-const dateTime = $derived(new Intl.DateTimeFormat(undefined, {
-    timeZone: zone, year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit"
-}));
 export function currentTimeZone(): string {
     return zone;
-}
-export function displayMilliseconds(ms: number): string {
-    return dateTime.format(ms);
 }
 function values(): Appearance {
     return { theme: appearance.theme, readingSize: appearance.readingSize, motion: appearance.motion, timeZone: appearance.timeZone, language: appearance.language };

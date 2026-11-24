@@ -37,7 +37,7 @@
         { label: commandLabel("mergeGroup"), disabled: !canMerge, onselect: onmerge },
         { label: t("shell.closeAll"), disabled: !hasTabs, onselect: oncloseall }
     ]}>
-        {#snippet trigger({ props })}<IconButton {...props} icon="ellipsis" label={t("shell.groupActions")} />{/snippet}
+        {#snippet trigger({ props })}<IconButton {...props} data-tab-actions icon="ellipsis" label={t("shell.groupActions")} />{/snippet}
     </Menu>
 </div>
 
