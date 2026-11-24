@@ -21,13 +21,32 @@ export function validTimeZone(preference: unknown): preference is string {
 
 const formatters = new Map<string | undefined, Intl.DateTimeFormat>();
 
-export function secondsToWall(seconds: number, zone?: string): string {
+export function secondsToSecond(seconds: number, zone?: string): string {
     let formatter = formatters.get(zone);
     if (!formatter) {
-        formatter = new Intl.DateTimeFormat("sv-SE", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+        formatter = new Intl.DateTimeFormat("en-GB", {
+            timeZone: zone, calendar: "iso8601", numberingSystem: "latn", era: "short",
+            year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23"
+        });
         formatters.set(zone, formatter);
     }
-    return formatter.format(seconds * 1000).replace(" ", "T");
+    const { year, month, day, hour, minute, second, era } = Object.fromEntries(formatter.formatToParts(seconds * 1000).map(({ type, value }) => [type, value]));
+    const isoYear = era === "BC" ? 1 - Number(year) : Number(year);
+    const yyyy = isoYear >= 0 && isoYear <= 9999 ? String(isoYear).padStart(4, "0")
+        : (isoYear < 0 ? "-" : "+") + String(Math.abs(isoYear)).padStart(6, "0");
+    return yyyy + "-" + month + "-" + day + " " + hour + ":" + minute + ":" + second;
+}
+
+export function secondsToMinute(seconds: number, zone?: string): string {
+    return secondsToSecond(seconds, zone).slice(0, -3);
+}
+
+export function secondsToHour(seconds: number, zone?: string): string {
+    return secondsToSecond(seconds, zone).slice(0, -6) + ":00";
+}
+
+export function secondsToWall(seconds: number, zone?: string): string {
+    return secondsToMinute(seconds, zone).replace(" ", "T");
 }
 
 export function wallToSeconds(wall: string, zone: string): number {
@@ -68,7 +87,8 @@ export function validTimeSeconds(type: TimePrecision, value: unknown): value is 
     return type === "month" || date.getUTCMonth() === 0;
 }
 
-export function secondsToDay(seconds: number): string {
+export function secondsToDay(seconds: number, zone = "UTC"): string {
+    if (zone !== "UTC") return secondsToSecond(seconds, zone).slice(0, -9);
     return new Date(seconds * 1000).toISOString().split("T")[0];
 }
 
@@ -104,8 +124,8 @@ export function timeToSeconds(type: TimePrecision, text: string, zone: string): 
         case "year": return yearToSeconds(text);
         case "minute": return wallToSeconds(text.replace(" ", "T"), zone);
         case "hour": {
-            if (!/^\d{4}-\d{2}-\d{2}[ T]\d{2}时?$/.test(text)) throw new LabloomError({ kind: "time-incomplete-hour" });
-            return wallToSeconds(text.replace(" ", "T").replace(/时$/, "") + ":00", zone);
+            if (!/^\d{4}-\d{2}-\d{2}[ T]\d{2}(?:时|:00)?$/.test(text)) throw new LabloomError({ kind: "time-incomplete-hour" });
+            return wallToSeconds(text.slice(0, 13).replace(" ", "T") + ":00", zone);
         }
     }
 }

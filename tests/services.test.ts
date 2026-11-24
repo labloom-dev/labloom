@@ -197,11 +197,11 @@ test("all write paths publish after committing, including direct paper and subsc
         assert.equal(session.getNative().inTransaction, false);
         observed.push(event);
     }));
-    const check = async (name: string, action: () => unknown, feedChange = false): Promise<void> => {
+    const check = async (name: string, action: () => unknown, feedChange?: boolean): Promise<void> => {
         const start = observed.length;
         await action();
         assert.ok(observed.slice(start).some(event => event.type === "knowledge"), name);
-        if (feedChange) assert.ok(observed.slice(start).some(event => event.type === "feed"), name + " feed event");
+        if (feedChange !== undefined) assert.equal(observed.slice(start).some(event => event.type === "feed"), feedChange, name + " feed event");
     };
     const page = edits.create(workspaceHistory, "A", { schedule_start: now / 1000 + 60 });
     await check("create", () => edits.create(workspaceHistory, "B"));
@@ -238,10 +238,10 @@ test("all write paths publish after committing, including direct paper and subsc
     await check("read notice", () => timers.read(page.id, "schedule_start", 0));
     await check("time-zone recalculation", () => timers.recalculateAll());
     confirm(token => edits.trash([page.id], workspaceHistory, token));
-    await check("purge", () => erase([page.id]), true);
+    await check("purge unrelated page", () => erase([page.id]), false);
     const recycled = edits.create(workspaceHistory);
     confirm(token => edits.trash([recycled.id], workspaceHistory, token));
-    await check("empty recycle bin", () => erase(null), true);
+    await check("empty recycle bin without sources", () => erase(null), false);
     let source = "";
     await check("save source", async () => {
         source = await saveFeed({ name: "A", url: "https://example.org/feed" });
@@ -269,6 +269,8 @@ test("all write paths publish after committing, including direct paper and subsc
     assert.ok(file);
     await check("attach downloaded PDF", () => papers.attachFile(file.pageId, "paper_files", file.fileId, workspaceHistory));
     assert.equal(papers.hasPDF(imported), true);
+    await check("trash source", () => confirm(token => edits.trash([source], workspaceHistory, token)), true);
+    await check("purge source", () => erase([source]), true);
 });
 
 test("one shared-block change expands summaries for both pages and reaches every subscriber", t => {
@@ -400,4 +402,27 @@ test("annotation parsing returning after close leaves B unchanged and reports no
     assert.equal(await pending, "");
     assert.equal(records.list().total, 0);
     assert.deepEqual(papers.files(), []);
+});
+
+test("overview lists unfinished pages by date and falls back to modification time", t => {
+    const workspace = session.open(folder(), "create");
+    t.after(() => session.close());
+    const a = edits.createPage("editable", "A", { task_status: "todo" });
+    const b = edits.createPage("paper", "B", { task_status: "doing", schedule_date: 86400 });
+    const c = edits.createPage("editable", "C", { task_status: "todo", schedule_date: 0 });
+    const d = edits.createPage("editable", "D", { task_status: "done", schedule_date: 0 });
+    const e = edits.createPage("editable", "E", { task_status: "todo", schedule_date: 0 });
+    const value = workspace.database.prepare("UPDATE page_attrs SET value=? WHERE attr_id=? AND page_id=?");
+    value.run(1n, "deleted", e.id);
+    value.run(3n, "modified_at", a.id);
+    value.run(2n, "modified_at", b.id);
+    value.run(1n, "modified_at", c.id);
+    const query = { status: "task_status", date: "schedule_date", recent: [d.id, d.titleBlockId, e.id, a.id] };
+    const result = records.overviewIndex(query);
+    assert.deepEqual(result.taskIds, [c.id, b.id, a.id]);
+    assert.deepEqual(result.tasks.map(row => row.date), [0, 86400, null]);
+    assert.deepEqual(result.recent.map(row => row.id), [d.id, a.id]);
+    assert.deepEqual(records.overviewRows([b.id, e.id, c.id], query.date).map(row => row.id), [b.id, c.id]);
+    assert.deepEqual(records.overviewIndex({ ...query, date: "task_status" }).taskIds, [a.id, b.id, c.id]);
+    assert.equal(records.overviewIndex({ ...query, status: "schedule_date" }).missingStatus, true);
 });

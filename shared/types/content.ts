@@ -55,7 +55,11 @@ type Position = { pageId: string; containerId: string; index: number; blockId: s
 export type Placement = { position: Position; action: "insert" | "remove" | "clone" | "duplicate" | "move-up" | "move-down"; blockId?: string };
 export type BlockDeletion = { pageId: string } & ({ blockId: string } | { blockIds: string[] });
 export type Changed = { pages: string[]; blocks: string[]; backlinks?: string[]; highlightPages?: string[] };
-export type KnowledgeChange = Changed & { writeId?: string; titlePages?: string[]; kinds?: Record<string, PageKind>; summaryPages?: string[]; definition?: string; notices?: boolean; purged?: string[]; recycledPages?: string[] };
+export type KnowledgeChange = Changed & {
+    writeId?: string; titlePages?: string[]; kinds?: Record<string, PageKind>; summaryPages?: string[]; definition?: string;
+    notices?: boolean; purged?: string[]; recycledPages?: string[];
+    paperStates?: Record<string, "saved" | "recycled">;
+};
 type NamedPage = { id: string; title: string };
 export type ChangePreview = {
     token: string; recycled: NamedPage[]; direct: NamedPage[];

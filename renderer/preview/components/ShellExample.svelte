@@ -1,6 +1,7 @@
 <script lang="ts">
     import { Tabs } from "bits-ui";
     import { type Command } from "../../../shared/content/commands";
+    import { secondsToMinute } from "../../../shared/content/time";
     import { type PageSearchResult } from "../../../shared/types/content";
     import { commandLabel, t } from "../../i18n.svelte";
     import Button from "../../components/base/Button.svelte";
@@ -32,7 +33,6 @@
     let collapsed = $state(false), filter = $state(""), expanded = $state(true), overlay = $state(false), query = $state("材料");
     let activeDestination = $state<Destination>("library");
     const group = $derived(groups.find(item => item.id === focused)!);
-    const format = new Intl.DateTimeFormat("zh-CN", { dateStyle: "short", timeStyle: "short" });
     function add(tab: ExampleTab): void {
         if (!group.tabs.some(item => item.id === tab.id)) group.tabs.push(tab);
         group.active = tab.id;
@@ -92,7 +92,7 @@
 
 {#snippet palette()}
     <GSPopover bind:query {search} recent={async () => pages.map((page, i) => ({ ...page, openedAt: Date.UTC(2026, 10, 20, 6 - i) }))}
-        {disabled} formatTime={ms => format.format(ms)} onchoose={choose} />
+        {disabled} formatTime={ms => secondsToMinute(ms / 1000)} onchoose={choose} />
 {/snippet}
 
 <div class="spec-shell">

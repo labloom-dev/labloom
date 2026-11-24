@@ -27,6 +27,7 @@ export type FeedSource = {
     error: FailureInfo | null;
     unreadCount: number;
     refreshing: boolean;
+    pinned: boolean;
 };
 
 /** What a source returned for one entry, before it is merged into saved items. */
@@ -57,34 +58,39 @@ export type FeedItem = {
     title: string;
     url: string | null;
     authors: string;
-    summary: string;
     publishedAt: number | null;
     isRead: boolean;
     paperId: string | null;
+    paperState: FeedPaperState;
 };
 
 export type FeedItemDetail = FeedItem & {
+    summary: string;
     content: string;
     fullContent: boolean;
     readingPosition: FeedPosition | null;
-    paperState: FeedPaperState;
     pdfURL: string | null;
     pdfStatus: "idle" | "downloading" | "failed" | "saved";
     pdfFailure?: FailureInfo | null;
 };
 
+export type FeedRead = "all" | "unread" | "read";
+export type FeedOrder = "newest" | "oldest";
+
 export type FeedQuery = {
     sourceId?: string;
     keyword?: string;
-    read?: "all" | "unread" | "read";
-    order?: "newest" | "oldest";
+    read?: FeedRead;
+    order?: FeedOrder;
     /** Only items matching at least one followed keyword. */
     followed?: boolean;
-    offset?: number;
+    /** Preserve the open item when it no longer matches the same filters. */
+    keep?: string;
 };
 
 export type FeedState = {
     sources: FeedSource[];
+    ids: string[];
     items: FeedItem[];
     total: number;
     /** Unread items of every subscription that is not cancelled. */
@@ -92,5 +98,5 @@ export type FeedState = {
     keywords: string[];
 };
 
-export const feedPageSize = 50;
+export const feedBatchSize = 96;
 export const feedIntervals = { min: 15, max: 1440, default: 60 } as const;

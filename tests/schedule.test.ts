@@ -30,13 +30,24 @@ test("two leads on the same time attribute fire once, and adding a reminder does
     const f = fixture(t), due = Math.floor(f.clock.now / 1000) + 3600, page = f.knowledge.create("editable", "组会", { schedule_start: due });
     f.knowledge.timers.set(page.id, "schedule_start", 600, true); f.knowledge.timers.set(page.id, "schedule_start", 0, true);
     f.clock.now = (due - 600) * 1000;
-    await f.check(); assert.equal(f.delivered.length, 1); assert.match(f.bodies[0], /组会 · 开始时间/);
+    await f.check(); assert.equal(f.delivered.length, 1); assert.equal(f.bodies[0], "组会 · 开始时间 2026-11-13 09:00");
     f.knowledge.timers.set(page.id, "schedule_start", 300, true);
     assert.equal(f.knowledge.timers.notices().length, 1);
     await f.check(); assert.equal(f.delivered.length, 1);
     f.clock.now = due * 1000; await f.check(); assert.equal(f.delivered.length, 3);
     await f.check(); assert.equal(f.delivered.length, 3);
     assert.deepEqual(f.knowledge.timers.settings(page.id), { schedule_start: [0, 300, 600] });
+});
+
+test("an hour reminder uses the fixed hour format in its system notification body", async t => {
+    const f = fixture(t), due = Math.floor(f.clock.now / 1000) + 6 * 3600 + 1205;
+    const id = "custom:" + randomUUID();
+    f.knowledge.setDefinition(id, { id, name: "讨论时间", type: "hour", metadata: {} });
+    const page = f.knowledge.create("editable", "组会", { [id]: due });
+    f.knowledge.timers.set(page.id, id, 0, true);
+    f.clock.now = due * 1000;
+    await f.check();
+    assert.deepEqual(f.bodies, ["组会 · 讨论时间 2026-11-13 14:00"]);
 });
 
 test("day, month and year reminders use local 09:00, and changing zones recalculates them", async t => {

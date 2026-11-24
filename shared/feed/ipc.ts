@@ -1,8 +1,9 @@
-import type { FeedQuery, FeedSourceInput, FeedSourceAction, FeedState, FeedItemDetail, FeedImport, FeedDownload } from "../types/feed";
+import type { FeedQuery, FeedSourceInput, FeedSourceAction, FeedState, FeedItem, FeedItemDetail, FeedImport, FeedDownload } from "../types/feed";
 import type { Channels } from "../ipc/contract";
 
 export type FeedAPI = {
-    getState(query: FeedQuery): Promise<FeedState>;
+    getState(query: FeedQuery, around?: string): Promise<FeedState>;
+    getRows(ids: string[]): Promise<FeedItem[]>;
     getItem(id: string): Promise<FeedItemDetail>;
     resolveSource(input: FeedSourceInput): Promise<string | null>;
     saveSource(resolution: string): Promise<string>;
@@ -21,6 +22,7 @@ export type FeedAPI = {
 
 export const feedChannels = {
     getState: "feed:get-state",
+    getRows: "feed:get-rows",
     getItem: "feed:get-item",
     resolveSource: "feed:resolve-source",
     saveSource: "feed:save-source",

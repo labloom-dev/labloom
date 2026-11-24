@@ -1,6 +1,6 @@
-import type { Language } from "../locale";
-import type { Translate } from "../i18n";
-import { secondsToDay, secondsToMonth, secondsToWall, secondsToYear } from "../content/time";
+import { type Language } from "../locale";
+import { type Translate } from "../i18n";
+import { secondsToDay, secondsToHour, secondsToMinute, secondsToMonth, secondsToYear } from "../content/time";
 import { type AttributeDefinition, type AttributeFormat, type AttributeType, type AttributeValue } from "../types/attributes";
 import { builtinValueFormats, isBuiltin } from "./builtins";
 import { isEmpty } from "./values";
@@ -20,8 +20,8 @@ const defaults: Record<AttributeType, { display: AttributeFormat; search?: Attri
         return `每 ${item.every} ${{ minute: "分钟", hour: "小时", day: "天", week: "周", month: "个月" }[item.unit]}`;
     } },
     string: { display: plain }, url: { display: plain }, number: { display: plain },
-    minute: { display: (_, value, { zone }) => secondsToWall(value as number, zone).replace("T", " ") },
-    hour: { display: (_, value, { zone }) => secondsToWall(value as number, zone).slice(0, 13).replace("T", " ") + "时" },
+    minute: { display: (_, value, { zone }) => secondsToMinute(value as number, zone) },
+    hour: { display: (_, value, { zone }) => secondsToHour(value as number, zone) },
     day: { display: (_, value) => secondsToDay(value as number) },
     month: { display: (_, value) => secondsToMonth(value as number) },
     year: { display: (_, value) => secondsToYear(value as number) },
@@ -61,10 +61,6 @@ export function libraryText(def: AttributeDefinition, value: AttributeValue | un
     if (def.type === "recurrence") {
         const period = value as { every: number; unit: string };
         return t("property.repeatPeriod", { period: new Intl.NumberFormat(language, { style: "unit", unit: period.unit, unitDisplay: "long" }).format(period.every) });
-    }
-    if (def.type === "hour") {
-        const wall = secondsToWall(Number(value), zone);
-        return wall.slice(0, 10) + " " + t("property.hourValue", { hour: wall.slice(11, 13) });
     }
     return display(def, value, { zone });
 }

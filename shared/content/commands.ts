@@ -39,6 +39,9 @@ export const libraryShortcuts = {
     selectAll: commands.selectAll.shortcut, extendUp: "Shift+ArrowUp", extendDown: "Shift+ArrowDown",
     previous: "ArrowUp", next: "ArrowDown", first: "Home", last: "End", screenUp: "PageUp", screenDown: "PageDown", menu: "Shift+F10"
 } as const;
+export const feedShortcuts = {
+    previous: "ArrowUp", next: "ArrowDown", first: "Home", last: "End", screenUp: "PageUp", screenDown: "PageDown", menu: "F10"
+} as const;
 export const annotationShortcuts = {
     next: "ArrowDown", previous: "ArrowUp", edit: "Enter", openTab: "Ctrl+Enter", remove: "Delete", menu: "Shift+F10"
 } as const;

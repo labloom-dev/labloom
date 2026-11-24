@@ -1,19 +1,19 @@
 <script lang="ts">
     import { Popover } from "bits-ui";
     import { tick } from "svelte";
+    import { secondsToMinute } from "../../../shared/content/time";
     import TopLayer from "../base/TopLayer.svelte";
     import { recent, search } from "./page-search";
     import { t } from "../../i18n.svelte";
     import { commandDisabled, prepareCommands, rememberFocus, runCommand } from "../layout/commands";
     import { openPage } from "../layout/navigation";
-    import { appearance, currentTimeZone } from "../layout/preferences.svelte";
+    import { currentTimeZone } from "../layout/preferences.svelte";
     import { shell, restoreSearchFocus, showSearch } from "../layout/shell.svelte";
     import GSPopover, { type SearchChoice } from "./GSPopover.svelte";
     import SearchTrigger from "./SearchTrigger.svelte";
 
     let input = $state<HTMLInputElement>(), trigger = $state<HTMLButtonElement | null>(null);
     let choice: SearchChoice | undefined;
-    const clock = $derived(new Intl.DateTimeFormat(appearance.language, { dateStyle: "short", timeStyle: "short", timeZone: currentTimeZone() }));
 
     function setOpen(value: boolean): void {
         if (value) {
@@ -57,7 +57,7 @@
                 <div {...props}>
                     {#if shell.search}
                         <GSPopover bind:input bind:query={shell.query} {search}
-                            {recent} formatTime={ms => clock.format(ms)} disabled={commandDisabled}
+                            {recent} formatTime={ms => secondsToMinute(ms / 1000, currentTimeZone())} disabled={commandDisabled}
                             onchoose={selected => {
                                 if (shell.search) {
                                     choice = selected; shell.search = false;

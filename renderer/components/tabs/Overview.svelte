@@ -1,517 +1,264 @@
-<section class="workspace-page overview">
-    <header class="page-heading">
-        <div><h1>我的花园</h1><div data-paragraph>收集好奇，连接想法。今天也让知识长大一点。</div></div>
-        <span class="date"><Icon name="calendar" size={16} />{date}</span>
-    </header>
+<script module lang="ts">
+    import { tabState } from "../Tab/state.svelte";
+    import type { Tab } from "../Tab/defs";
+    import type { ListPosition } from "../base/VirtualList.svelte";
 
-    <div class="welcome-card paper-card">
-        <div class="welcome-copy">
-            <span class="welcome-label">给好奇心留一块地方</span>
-            <h2>每个想法，都值得<span>生根发芽。</span></h2>
-            <div data-paragraph>从一篇论文、一段阅读或一个小小的灵感开始，<br />慢慢编织属于你的知识世界。</div>
-            <div class="welcome-actions"><button class="button primary" onclick={() => openDestination("papers")}><Icon name="book" size={15} />开始阅读</button><button class="text-button" onclick={() => createPage()}>记下一个想法 <Icon name="arrow-right" size={16} /></button></div>
-        </div>
-        <div class="hero-art"><span class="art-label">a little idea, a little bloom</span><Bloom /><span class="art-caption">GROW AT YOUR OWN PACE</span></div>
-    </div>
-
-    {#if error}<div class="notice error" role="alert">{message(error)} <button class="text-button" onclick={load}>{t("dialog.retry")}</button></div>{/if}
-    {#if missingStatus}<div data-paragraph class="notice">找不到用于统计待办的状态属性。</div>{/if}
-    <div class="stats" aria-busy={pending}>
-        {#each stats as stat (stat.label)}
-            <button class="stat-card" onclick={() => openDestination(stat.destination)}>
-                <span class="stat-icon {stat.tone}"><Icon name={stat.icon} size={23} /></span>
-                <span class="stat-copy"><span>{stat.label}</span><strong>{pending || error || stat.value === undefined ? "—" : stat.value}<small> {stat.unit}</small></strong></span>
-                <span class="stat-caption">{stat.caption} <Icon name="arrow-right" size={13} /></span>
-            </button>
-        {/each}
-    </div>
-
-    <div class="dashboard-grid">
-        <section class="paper-card feed-card">
-            <header class="card-heading"><h2><span class="heading-icon"><Icon name="rss" size={18} /></span>新知来信</h2><button class="text-button" onclick={() => openDestination("feed")}>全部动态 <Icon name="arrow-right" size={14} /></button></header>
-            {#if pending}
-                <div class="empty-state" role="status"><strong>正在整理你的来信…</strong><div data-paragraph>读取已保存在工作区的订阅内容。</div></div>
-            {:else if error}
-                <div class="empty-state"><Icon name="rss" size={30} /><strong>暂时没能读到订阅</strong><div data-paragraph>已有内容仍保留在工作区，可以重试加载。</div><button class="button" onclick={load}>{t("dialog.retry")}</button></div>
-            {:else if feedState?.items.length}
-                <div class="latest-list">
-                    {#each feedState.items.slice(0, 3) as item (item.id)}
-                        <button class="latest-item" onclick={() => openFeedItem(item)}>
-                            <span class="item-top"><span class="source-label">{item.sourceName}</span><span>{item.isRead ? "已读" : "未读"}</span></span>
-                            <strong>{item.title}</strong><span class="item-summary">{item.summary || "打开订阅，查看这条内容。"}</span>
-                        </button>
-                    {/each}
-                </div>
-            {:else}
-                <div class="empty-state letters"><span class="letter-icon"><Icon name="rss" size={30} /></span><strong>第一封新知来信，还在路上</strong><div data-paragraph>订阅你喜欢的论文方向或实验室博客，<br />让值得阅读的内容在这里相遇。</div><button class="button" onclick={() => openDestination("feed")}><Icon name="add" size={14} />添加我的第一个订阅</button></div>
-            {/if}
-        </section>
-        <section class="paper-card start-card">
-            <header class="card-heading"><h2><span class="heading-icon sage"><Icon name="book" size={18} /></span>从这里开始</h2><span class="badge">一步一步来</span></header>
-            <div class="steps">
-                <button onclick={() => openDestination("feed")}><span class="step-number">01</span><span><strong>发现值得读的内容</strong><small>连接 RSS、arXiv 与研究博客</small></span><Icon name="arrow-right" size={15} /></button>
-                <button onclick={() => openDestination("papers")}><span class="step-number sage">02</span><span><strong>给阅读留一点时间</strong><small>打开 PDF，专心读一篇论文</small></span><Icon name="arrow-right" size={15} /></button>
-                <button onclick={() => openDestination("settings")}><span class="step-number lilac">03</span><span><strong>让阅读更合心意</strong><small>调整主题、字号与动效</small></span><Icon name="arrow-right" size={15} /></button>
-            </div>
-            <div class="little-note"><div data-paragraph>知识不必一次成林。<br /><strong>今天种下一颗种子就很好。</strong></div></div>
-        </section>
-    </div>
-    <section class="paper-card recent-pages"><header class="card-heading"><h2>最近整理</h2><button class="text-button" onclick={() => openDestination("library")}>全部页面 <Icon name="arrow-right" size={14} /></button></header>{#each recent as page (page.id)}<button class="recent-page" onclick={() => openPage(page.id)}><strong>{page.title || "未命名"}</strong><span>{page.excerpt || "还没有正文"}</span></button>{:else}<div data-paragraph>从一篇笔记开始，让想法慢慢生长。</div>{/each}</section>
-    <footer class="page-footer"><span>知织，你的知识，慢慢生长</span><span>Where ideas take root.</span></footer>
-</section>
-
-
-<style>
-    .recent-pages { margin-top: 22px; padding: 22px; }
-    .recent-page { display: flex; justify-content: space-between; gap: 20px; width: 100%; padding: 14px 0; text-align: left; border-bottom: 1px dashed var(--c-line); font-size: 12px; }
-    .recent-page span { color: var(--c-muted); max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .recent-pages > :where([data-paragraph]) { color: var(--c-muted); font-size: 12px; }
-    .date {
-        display: flex;
-        align-items: center;
-        gap: 7px;
-        padding: 8px 11px;
-        border: 1px solid var(--c-tab-header-border);
-        border-radius: 8px;
-        background: var(--c-paper);
-        color: var(--c-muted);
-        font-size: var(--font-min);
+    type Position = { recent?: ListPosition; tasks?: ListPosition; feed?: ListPosition };
+    const locations = new WeakMap<Tab, Position>();
+    function locationFor(id: string): Position {
+        const tab = tabState.groups.flatMap(group => group.tabs).find(tab => tab.id === id);
+        const saved = tab && locations.get(tab);
+        if (saved) return saved;
+        const location: Position = {};
+        if (tab) locations.set(tab, location);
+        return location;
     }
-    .welcome-card {
-        position: relative;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 20px;
-        padding: 28px 34px;
-        background: var(--c-gold-light);
-        overflow: hidden;
-    }
-    .welcome-copy {
-        position: relative;
-        z-index: 1;
-    }
-    .welcome-label {
-        display: inline-flex;
-        align-items: center;
-        gap: 10px;
-        padding: 5px 9px;
-        border: 1px solid #cfb77f;
-        border-radius: 6px;
-        color: var(--c-accent);
-        font-size: var(--font-min);
-        transform: rotate(-2deg);
-    }
-    h2 {
-        margin: 19px 0 12px;
-        font-size: clamp(22px, 2.4vw, 30px);
-        font-weight: 900;
-        letter-spacing: -.7px;
-        line-height: 1.5;
-    }
-    .welcome-copy h2 span {
-        display: inline-block;
-        text-decoration: underline;
-        text-decoration-color: var(--c-gold);
-        text-decoration-thickness: 6px;
-        text-underline-offset: -2px;
-        text-decoration-skip-ink: none;
-    }
-    .welcome-copy :where([data-paragraph]) {
-        margin: 0;
-        color: var(--c-muted);
-        font-size: 12px;
-        line-height: 1.9;
-    }
-    .welcome-actions {
-        display: flex;
-        align-items: center;
-        gap: 22px;
-        margin-top: 24px;
-    }
-    .text-button {
-        display: inline-flex;
-        align-items: center;
-        gap: 7px;
-        color: var(--c-muted);
-        font-size: 11px;
-        font-weight: 800;
-    }
-    .text-button:hover {
-        color: var(--c-ink);
-        text-decoration: underline;
-        text-underline-offset: 4px;
-    }
-    .hero-art {
-        position: relative;
-        width: 250px;
-        flex-shrink: 0;
-        padding-top: 12px;
-        transform: rotate(3deg);
-    }
-    .art-label {
-        display: block;
-        text-align: center;
-        color: var(--c-muted);
-        font-size: 13px;
-        font-style: italic;
-    }
-    .art-caption {
-        display: block;
-        text-align: center;
-        color: var(--c-muted);
-        font-size: 8px;
-        font-weight: 800;
-        letter-spacing: 1.8px;
-    }
-    .notice {
-        margin-top: 22px;
-    }
-    .stats {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 17px;
-        margin: 25px 0;
-    }
-    .stat-card {
-        display: grid;
-        grid-template-columns: 43px 1fr;
-        align-items: center;
-        gap: 11px 14px;
-        padding: 19px 20px 14px;
-        border: 1.5px solid var(--c-tab-header-border);
-        border-radius: 13px;
-        background: var(--c-paper);
-        text-align: left;
-    }
-    .stat-card:hover {
-        border-color: var(--c-ink);
-    }
-    .stat-icon {
-        display: grid;
-        place-items: center;
-        width: 43px;
-        height: 43px;
-        border: 1.5px solid var(--c-ink);
-        border-radius: 12px;
-        background: var(--c-gold-light);
-        transform: rotate(-5deg);
-    }
-    .sage {
-        background: var(--c-sage);
-    }
-    .lilac {
-        background: var(--c-lilac);
-    }
-    .stat-copy > span {
-        display: block;
-        color: var(--c-muted);
-        font-size: var(--font-min);
-    }
-    .stat-copy strong {
-        display: block;
-        margin-top: 3px;
-        font-size: 29px;
-        font-weight: 900;
-        line-height: 1;
-    }
-    .stat-copy small {
-        color: var(--c-muted);
-        font-size: var(--font-min);
-        font-weight: 500;
-    }
-    .stat-caption {
-        display: flex;
-        justify-content: space-between;
-        grid-column: 1 / -1;
-        padding-top: 10px;
-        border-top: 1px dashed var(--c-line);
-        color: var(--c-muted);
-        font-size: var(--font-min);
-    }
-    .dashboard-grid {
-        display: grid;
-        grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
-        gap: 24px;
-    }
-    .card-heading {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-        min-height: 60px;
-        padding: 14px 19px;
-        border-bottom: 1px solid var(--c-line);
-    }
-    .card-heading h2 {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin: 0;
-        font-size: 14px;
-        letter-spacing: 0;
-    }
-    .heading-icon {
-        display: grid;
-        place-items: center;
-        width: 29px;
-        height: 29px;
-        border: 1px solid var(--c-ink);
-        border-radius: 8px;
-        background: var(--c-gold-light);
-        transform: rotate(-5deg);
-    }
-    .heading-icon.sage {
-        background: var(--c-sage);
-    }
-    .letters {
-        min-height: 263px;
-    }
-    .letter-icon {
-        position: relative;
-        display: grid;
-        place-items: center;
-        width: 58px;
-        height: 55px;
-        margin-bottom: 4px;
-        border: 1.5px solid var(--c-ink);
-        border-radius: 11px;
-        background: var(--c-gold-light);
-        box-shadow: 3px 3px 0 #e0d4b8;
-        transform: rotate(-8deg);
-    }
-    .steps {
-        padding: 6px 18px;
-    }
-    .steps button {
-        display: flex;
-        align-items: center;
-        gap: 11px;
-        width: 100%;
-        padding: 15px 0;
-        text-align: left;
-        border-bottom: 1px dashed var(--c-line);
-    }
-    .steps button:last-child {
-        border: 0;
-    }
-    .steps button:hover strong {
-        color: var(--c-accent);
-    }
-    .step-number {
-        display: grid;
-        place-items: center;
-        flex-shrink: 0;
-        width: 30px;
-        height: 32px;
-        border: 1px solid var(--c-tab-header-border);
-        border-radius: 8px;
-        background: var(--c-gold-light);
-        font-size: 12px;
-        font-weight: 900;
-    }
-    .step-number.sage {
-        background: var(--c-sage);
-    }
-    .step-number.lilac {
-        background: var(--c-lilac);
-    }
-    .steps button > span:nth-child(2) {
-        flex: 1;
-    }
-    .steps strong {
-        display: block;
-        font-size: 11px;
-    }
-    .steps small {
-        display: block;
-        margin-top: 6px;
-        color: var(--c-muted);
-        font-size: var(--font-min);
-    }
-    .little-note {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin: 0 17px 17px;
-        padding: 11px 15px;
-        border-radius: 8px;
-        background: var(--c-cream);
-    }
-    .little-note :where([data-paragraph]) {
-        margin: 0;
-        color: var(--c-muted);
-        font-size: var(--font-min);
-        line-height: 1.8;
-    }
-    .little-note strong {
-        font-weight: 600;
-    }
-    .latest-list {
-        padding: 0 19px;
-    }
-    .latest-item {
-        display: block;
-        width: 100%;
-        padding: 17px 0;
-        border-bottom: 1px dashed var(--c-line);
-        text-align: left;
-    }
-    .latest-item:last-child {
-        border: 0;
-    }
-    .latest-item:hover strong {
-        color: var(--c-accent);
-    }
-    .item-top {
-        display: flex;
-        justify-content: space-between;
-        gap: 10px;
-        color: var(--c-muted);
-        font-size: var(--font-min);
-    }
-    .source-label {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-    .latest-item strong, .item-summary {
-        display: -webkit-box;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-        -webkit-line-clamp: 2;
-        line-clamp: 2;
-        line-height: 1.7;
-    }
-    .latest-item strong {
-        margin-top: 7px;
-        font-size: 12px;
-    }
-    .item-summary {
-        margin-top: 5px;
-        -webkit-line-clamp: 1;
-        line-clamp: 1;
-        color: var(--c-muted);
-        font-size: var(--font-min);
-    }
-    .page-footer {
-        display: flex;
-        justify-content: space-between;
-        gap: 10px;
-        padding-top: 27px;
-        color: var(--c-muted);
-        font-size: var(--font-min);
-    }
-    @container (max-width: 760px) {
-        .hero-art {
-            width: 170px;
-        }
-        .welcome-card {
-            padding: 25px;
-        }
-        .dashboard-grid {
-            grid-template-columns: 1fr;
-        }
-        .stat-card {
-            padding: 15px 12px 12px;
-            gap: 10px;
-        }
-        .stat-caption {
-            font-size: var(--font-min);
-        }
-    }
-    @container (max-width: 540px) {
-        .hero-art {
-            display: none;
-        }
-        .stats {
-            grid-template-columns: 1fr;
-            gap: 10px;
-        }
-        .stat-card {
-            grid-template-columns: 40px 1fr 1fr;
-        }
-        .stat-caption {
-            grid-column: auto;
-            border: 0;
-            padding: 0;
-        }
-        .stat-copy strong {
-            font-size: 24px;
-        }
-        .page-footer > span:last-child {
-            display: none;
-        }
-    }
-</style>
-
+</script>
 
 <script lang="ts">
-    import { message, t, failure, type ErrorValue } from "../../i18n.svelte";
-    import { onMount } from "svelte";
-    import { type FeedState } from "../../../shared/types/feed";
-    import Bloom from "../utils/Bloom.svelte";
-    import Icon, { type IconName } from "../utils/Icon.svelte";
-    import { openDestination, openPage, createPage, type Destination } from "../layout/navigation";
+    import { onMount, tick, untrack, type Snippet } from "svelte";
+    import { commands } from "../../../shared/content/commands";
+    import { secondsToDay } from "../../../shared/content/time";
+    import type { AttributeDefinition } from "../../../shared/types/attributes";
+    import { feedBatchSize, type FeedItem } from "../../../shared/types/feed";
+    import { defaultOverviewDate, defaultOverviewStatus, overviewBatchSize, type OverviewPage } from "../../../shared/workspace/overview";
+    import { commandLabel, failure, message, t, type ErrorValue } from "../../i18n.svelte";
+    import Button from "../base/Button.svelte";
+    import Menu, { type MenuItem } from "../base/Menu.svelte";
+    import VirtualList from "../base/VirtualList.svelte";
+    import { WindowRows } from "../base/window-rows";
+    import FeedRow from "../Feed/FeedRow.svelte";
+    import { formatDate } from "../Feed/labels";
+    import { openFeed } from "../Feed/navigation";
+    import { propertyName } from "../Knowledge/attribute-labels";
+    import { perform } from "../Knowledge/feedback.svelte";
+    import { kindIcons } from "../Knowledge/labels";
+    import { importPapers } from "../Knowledge/library-import.svelte";
+    import { pageMenu } from "../Knowledge/page-menu";
+    import { runCommand } from "../layout/commands";
+    import { openPage } from "../layout/navigation";
     import { currentTimeZone } from "../layout/preferences.svelte";
-    import { openFeedItem } from "../Feed/navigation.svelte";
-    import { type PageSummary } from "../../../shared/types/content";
-    import { registerList } from "../Knowledge/page-visits";
-    import { visits } from "../Tab/activity.svelte";
-
+    import { navigationState } from "../Tab/persistence.svelte";
+    import { registerViewMenu } from "../Tab/view-menu";
     import type { ViewProps } from "../Tab/views";
-    let { tabId, params }: ViewProps<"overview"> = $props();
-    let feedState = $state<FeedState | null>(null);
-    let counts = $state<{ pages: number; papers: number; tasks: number } | null>(null);
-    let recent = $state<PageSummary[]>([]);
-    let missingStatus = $state(false);
-    let pending = $state(true);
-    let error = $state<ErrorValue>("");
-    let now = $state(Date.now());
-    const date = $derived(new Date(now).toLocaleDateString("zh-CN", { timeZone: currentTimeZone(), month: "long", day: "numeric", weekday: "long" }));
-    let loading = false;
-    let active = true;
-    const stats = $derived([
-        { label: "花园中的页面", value: counts?.pages, unit: "页", caption: "连接积累的想法", icon: "library", tone: "gold", destination: "library" },
-        { label: "收藏的文献", value: counts?.papers, unit: "篇", caption: "随时回来阅读", icon: "book", tone: "sage", destination: "papers" },
-        { label: "待完成任务", value: counts?.tasks, unit: "项", caption: "给研究留出时间", icon: "calendar", tone: "lilac", destination: "calendar" }
-    ] satisfies { label: string; value: number | undefined; unit: string; caption: string; icon: IconName; tone: string; destination: Destination }[]);
+    import Icon from "../utils/Icon.svelte";
 
-    async function load(): Promise<void> {
-        if (loading) return;
-        loading = true;
-        pending = true;
-        error = "";
+    let { tabId, params, onparams, source }: ViewProps<"overview"> = $props();
+    const location = untrack(() => locationFor(tabId));
+    const status = $derived(params.status ?? defaultOverviewStatus), date = $derived(params.date ?? defaultOverviewDate);
+    let definitions = $state.raw<AttributeDefinition[]>([]);
+    let tasks = $state.raw<string[]>([]), recent = $state.raw<OverviewPage[]>([]), unread = $state.raw<string[]>([]);
+    let missingStatus = $state(false), pagesPending = $state(true), feedPending = $state(true);
+    let pageError = $state<ErrorValue>(""), feedError = $state<ErrorValue>(""), definitionsError = $state<ErrorValue>("");
+    const error = $derived(pageError || feedError || definitionsError);
+    let taskList: VirtualList, recentList: VirtualList, feedList: VirtualList;
+    const taskRows = new WindowRows<OverviewPage>(ids => window.api.pages.overviewRows(ids, date.id), cause => pageError = failure(cause));
+    const feedRows = new WindowRows<FeedItem>(ids => window.api.feed.getRows(ids), cause => feedError = failure(cause));
+    const history = $derived(new Map(navigationState.recentPages.toSorted((a, b) => b.openedAt - a.openedAt).map(row => [row.id, row.openedAt])));
+    const recentIds = $derived(recent.map(page => page.id));
+    const byId = $derived(new Map(recent.map(page => [page.id, page])));
+    let alive = true, pagesVersion = 0, feedVersion = 0, definitionVersion = 0, now = $state(Date.now());
+    let pagesLoaded = false, feedLoaded = false;
+    const today = $derived(secondsToDay(now / 1000, currentTimeZone()));
+    let pagesTimer: ReturnType<typeof setTimeout> | undefined, feedTimer: ReturnType<typeof setTimeout> | undefined;
+    function range(ids: string[], rows: WindowRows<OverviewPage> | WindowRows<FeedItem>, size: number, first: number, end: number): void {
+        void rows.request(ids.slice(Math.floor(first / size) * size, Math.ceil((end + 12) / size) * size));
+    }
+    async function loadPages(): Promise<void> {
+        const version = ++pagesVersion;
+        const at = pagesLoaded ? taskList?.position() : location.tasks;
         try {
-            const status = (await window.api.attributes.definitions()).find(def => def.id === params.status?.id && def.type === "status");
-            const taskCounts = status ? (status.metadata.options ?? [])
-                .filter(option => option.group === "incomplete")
-                .map(option => window.api.pages.list({ attributes: { [status.id]: option.id }, limit: 1 })) : [];
-            const [result, pages, papers, tasks] = await Promise.all([
-                window.api.feed.getState({}), window.api.pages.list({ limit: 5 }), window.api.pages.list({ kind: "paper", limit: 1 }),
-                Promise.all(taskCounts)
-            ]);
-            if (active) {
-                missingStatus = !!params.status && !status;
-                feedState = result; counts = { pages: pages.total, papers: papers.total, tasks: tasks.reduce((sum, list) => sum + list.total, 0) }; recent = pages.items;
+            const next = await window.api.pages.overviewIndex({ status: status.id, date: date.id, recent: Array.from(history.keys()), around: at?.id });
+            if (!alive || version !== pagesVersion) return;
+            const taskAnchor = pagesLoaded ? taskList?.position() : location.tasks, openedAnchor = pagesLoaded ? recentList?.position() : location.recent;
+            taskRows.start(next.tasks);
+            recent = next.recent; tasks = next.taskIds; missingStatus = next.missingStatus;
+            pagesLoaded = true; pageError = "";
+            await tick();
+            if (alive && version === pagesVersion) {
+                taskList?.restorePosition(taskAnchor);
+                recentList?.restorePosition(openedAnchor);
             }
         }
         catch (cause) {
-            if (active) error = failure(cause);
+            if (alive && version === pagesVersion) pageError = failure(cause);
         }
         finally {
-            loading = false;
-            if (active) pending = false;
+            if (alive && version === pagesVersion) pagesPending = false;
         }
     }
-
+    async function loadFeed(): Promise<void> {
+        const version = ++feedVersion;
+        const at = feedLoaded ? feedList?.position() : location.feed;
+        try {
+            const result = await window.api.feed.getState({ read: "unread" }, at?.id);
+            if (!alive || version !== feedVersion) return;
+            const anchor = feedLoaded ? feedList?.position() : location.feed;
+            feedRows.start(result.items);
+            unread = result.ids; feedLoaded = true; feedError = "";
+            await tick();
+            if (alive && version === feedVersion) feedList?.restorePosition(anchor);
+        }
+        catch (cause) {
+            if (alive && version === feedVersion) feedError = failure(cause);
+        }
+        finally {
+            if (alive && version === feedVersion) feedPending = false;
+        }
+    }
+    async function loadDefinitions(): Promise<void> {
+        const version = ++definitionVersion;
+        try {
+            const next = await window.api.attributes.definitions();
+            if (alive && version === definitionVersion) {
+                definitions = next;
+                definitionsError = "";
+            }
+        }
+        catch (cause) {
+            if (alive && version === definitionVersion) definitionsError = failure(cause);
+        }
+    }
+    $effect(() => {
+        void status.id; void date.id; void history;
+        untrack(() => void loadPages());
+    });
+    function header(): MenuItem[] {
+        const states = definitions.filter(entry => entry.type === "status");
+        const dates = definitions.filter(entry => entry.type === "day");
+        return [
+            { label: t("overview.chooseStatus"), disabled: !states.length, items: states.map(entry => ({
+                label: propertyName(entry), checked: status.id === entry.id,
+                onselect: () => onparams({ ...params, status: { kind: "attribute", type: "status", id: entry.id } })
+            })) },
+            { label: t("overview.chooseDate"), disabled: !dates.length, items: dates.map(entry => ({
+                label: propertyName(entry), checked: date.id === entry.id,
+                onselect: () => onparams({ ...params, date: { kind: "attribute", type: "day", id: entry.id } })
+            })) }
+        ];
+    }
     onMount(() => {
-        const release = registerList(tabId, change => [...change.pages, ...(change.definition ? [change.definition] : [])], load);
-        const timer = setInterval(() => {
-            now = Date.now(); visits.refresh(tabId);
-        }, 60000);
+        const offMenu = registerViewMenu(tabId, header);
+        void loadDefinitions();
+        void loadFeed();
+        const offPages = window.api.pages.onChanged(change => {
+            if (change.definition) void loadDefinitions();
+            if (!change.definition && !change.pages.length && !change.purged?.length) return;
+            clearTimeout(pagesTimer);
+            pagesTimer = setTimeout(() => void loadPages(), 100);
+        });
+        const offFeed = window.api.feed.onChanged(() => {
+            clearTimeout(feedTimer);
+            feedTimer = setTimeout(() => void loadFeed(), 100);
+        });
+        const clock = setInterval(() => now = Date.now(), 60000);
         return () => {
-            active = false; clearInterval(timer); release();
+            if (pagesLoaded) {
+                location.tasks = taskList?.position();
+                location.recent = recentList?.position();
+            }
+            if (feedLoaded) location.feed = feedList?.position();
+            alive = false;
+            offMenu(); offPages(); offFeed();
+            clearTimeout(pagesTimer); clearTimeout(feedTimer); clearInterval(clock);
+            taskRows.start([], true); feedRows.start([], true);
         };
     });
+
+    let menu = $state(false), point = $state({ x: 0, y: 0 }), target = $state.raw<OverviewPage>();
+    let contextList: VirtualList;
+    const anchor = { getBoundingClientRect: () => new DOMRect(point.x, point.y, 0, 0) };
+    const entries = $derived(menu && target ? pageMenu({ id: target.id, attributes: { pinned: target.pinned } }, source, [target.id], true)
+        .map(item => ({ label: item.label, shortcut: item.id === "open" ? item.shortcut : undefined, onselect: item.run })) : []);
+    function context(page: OverviewPage | undefined, list: VirtualList, x: number, y: number): void {
+        if (!page) return;
+        contextList = list; target = page; point = { x, y }; menu = true;
+    }
+    function retry(): void {
+        if (pageError) void loadPages();
+        if (feedError) void loadFeed();
+        if (definitionsError) void loadDefinitions();
+    }
+    const open = (id: string): void => openPage(id, { currentGroup: true });
 </script>
+
+{#snippet panel(title: string, count: number, list: Snippet)}
+    <section class="panel" aria-label={title}>
+        <header><h2>{title}</h2><span>{count}</span></header>
+        {@render list()}
+    </section>
+{/snippet}
+
+<section class="overview">
+    <header class="overview-actions">
+        <Button icon="add" onclick={() => runCommand("newPage")}>{commandLabel("newPage")} <kbd class="ui-shortcut">{commands.newPage.shortcut}</kbd></Button>
+        <Button icon="book" onclick={() => void perform(() => importPapers(source))}>{commandLabel("importPDF")}</Button>
+        <Button icon="rss" onclick={() => openFeed({ kind: "add" })}>{t("feed.addSource")}</Button>
+    </header>
+    {#if error}<div class="error" role="alert">{message(error)} <Button onclick={retry}>{t("dialog.retry")}</Button></div>{/if}
+    <div class="overview-lists">
+        {@render panel(t("overview.recent"), recentIds.length, recentRows)}
+        {@render panel(t("overview.todo"), tasks.length, taskItems)}
+        {@render panel(t("overview.unread"), unread.length, feedItems)}
+    </div>
+</section>
+
+{#snippet recentRows()}
+    <VirtualList bind:this={recentList} ids={recentIds} label={t("overview.recent")} empty={t("overview.noRecent")} pending={pagesPending}
+        onrange={() => {}} onopen={open} oncontext={(id, x, y) => context(byId.get(id), recentList, x, y)}>
+        {#snippet row(id)}
+            {@const page = byId.get(id)}
+            {#if page}
+                <span class="page-title"><Icon name={kindIcons[page.kind]} size="var(--ui-icon-normal)" /><span data-list-label>{page.title || t("shell.untitled")}</span></span>
+                <span class="page-meta" data-list-label>{formatDate(history.get(id) ?? null)}</span>
+            {/if}
+        {/snippet}
+    </VirtualList>
+{/snippet}
+{#snippet taskItems()}
+    <VirtualList bind:this={taskList} ids={tasks} label={t("overview.todo")} empty={t(missingStatus ? "overview.missingStatus" : "overview.noTodo")} pending={pagesPending}
+        onrange={(first, end) => range(tasks, taskRows, overviewBatchSize, first, end)} onopen={open}
+        oncontext={(id, x, y) => context(taskRows.rows.get(id), taskList, x, y)}>
+        {#snippet row(id)}
+            {@const page = taskRows.rows.get(id)}
+            {#if page}
+                <span class="page-title"><span data-list-label>{page.title || t("shell.untitled")}</span></span>
+                {#if page.date !== null}
+                    {@const day = secondsToDay(page.date)}
+                    <time datetime={day} class="page-meta" class:overdue={day < today}>{day}</time>
+                {/if}
+            {/if}
+        {/snippet}
+    </VirtualList>
+{/snippet}
+{#snippet feedItems()}
+    <VirtualList bind:this={feedList} ids={unread} label={t("overview.unread")} empty={t("overview.noUnread")} pending={feedPending}
+        onrange={(first, end) => range(unread, feedRows, feedBatchSize, first, end)} onopen={id => openFeed({ kind: "item", id })}>
+        {#snippet row(id)}
+            {@const item = feedRows.rows.get(id)}
+            {#if item}<FeedRow {item} overview />{/if}
+        {/snippet}
+    </VirtualList>
+{/snippet}
+<Menu bind:open={menu} {anchor} items={entries} first onrestore={() => contextList?.focus()} />
+
+<style>
+    .overview { height: 100%; min-height: 0; display: flex; flex-direction: column; color: var(--ui-text); background: var(--ui-surface-window); font-family: var(--ui-font-family); container-type: inline-size; }
+    .overview-actions { display: flex; align-items: center; flex: none; min-height: var(--ui-toolbar-height); gap: var(--ui-space-3); padding: var(--ui-space-4); border-bottom: var(--ui-stroke) solid var(--ui-divider); overflow-x: auto; }
+    .overview-actions :global(button) { flex: none; }
+    .overview-lists { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .panel { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+    .panel + .panel { border-inline-start: var(--ui-stroke) solid var(--ui-divider); }
+    .panel header { display: flex; align-items: center; justify-content: space-between; flex: none; gap: var(--ui-space-3); min-height: var(--ui-toolbar-height); padding-inline: var(--ui-space-3); border-bottom: var(--ui-stroke) solid var(--ui-divider); font-size: var(--ui-font-small); color: var(--ui-text-secondary); }
+    h2 { margin: 0; color: var(--ui-text); font-size: var(--ui-font-body); font-weight: 600; }
+    .page-title { display: flex; align-items: center; gap: var(--ui-space-2); min-width: 0; font-size: var(--ui-font-body); line-height: 1.4; }
+    .page-meta { color: var(--ui-text-secondary); font-size: var(--ui-font-small); line-height: 1.4; }
+    [data-list-label] { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .overdue { color: var(--ui-warning); }
+    .error { display: flex; align-items: center; gap: var(--ui-space-2); padding-inline: var(--ui-space-3); color: var(--ui-danger); }
+    @container (max-width: 760px) {
+        .overview-lists { display: flex; flex-direction: column; overflow: auto; }
+        .panel { flex: 0 0 clamp(12em, 40vh, 23em); }
+        .panel + .panel { border-inline-start: 0; border-block-start: var(--ui-stroke) solid var(--ui-divider); }
+    }
+</style>

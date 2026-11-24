@@ -14,6 +14,7 @@ const root = resolve(import.meta.dirname, "..");
 
 export default defineConfig({
     root: resolve(root, "renderer"),
+    optimizeDeps: { entries: ["feed-preview.html"], exclude: ["svelte/elements"] },
     plugins: [
         svelte({ configFile: resolve(root, "configs/svelte.config.js") }),
         {
@@ -58,7 +59,8 @@ export default defineConfig({
                         let result: unknown;
                         switch (method) {
                             case "version": result = version; break;
-                            case "getState": result = feed.getState(args[0] as FeedQuery); break;
+                            case "getState": result = feed.getState(args[0] as FeedQuery, (args[1] ?? undefined) as string | undefined); break;
+                            case "getRows": result = feed.getRows(args[0] as string[]); break;
                             case "getItem": result = feed.getItem(args[0] as string); break;
                             case "resolveSource": result = await feed.resolveSource(args[0] as FeedSourceInput); break;
                             case "discardSource": result = feed.discardSource(args[0] as string); break;

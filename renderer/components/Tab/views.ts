@@ -11,6 +11,7 @@ import Overview from "../tabs/Overview.svelte";
 import About from "../tabs/About.svelte";
 import Settings from "../tabs/Settings.svelte";
 import FeedView from "../Feed/FeedView.svelte";
+import { viewMenu } from "./view-menu";
 import { t } from "../../i18n.svelte";
 import { type MenuItem } from "../base/Menu.svelte";
 import { type IconName } from "../utils/Icon.svelte";
@@ -40,9 +41,9 @@ const views: { [K in keyof ViewParams]: Definition<K> } = {
     page: { component: PageView, header: pageHeader, title: p => pageTitle(p.page.id), history: p => ({ kind: "page", id: p.page.id }), keepMounted: true },
     library: { component: Library, header: libraryHeader, title: p => toStore(() => t(p.scope === "trash" ? "shell.trashView" : p.scope === "pinned" ? "shell.pinnedView" : p.paperOnly ? "command.papers" : "command.library")), history: workspace, keepMounted: true },
     calendar: { component: Calendar, title: named("shell.calendarView"), history: workspace, keepMounted: true },
-    overview: { component: Overview, title: named("shell.overviewView"), history: workspace, keepMounted: false },
+    overview: { component: Overview, title: named("command.overview"), history: workspace, keepMounted: false, header: id => ({ buttons: [], menu: viewMenu(id) }) },
     attributes: { component: AttributeManagement, title: named("command.attributes"), history: workspace, keepMounted: false },
-    feed: { component: standalone(FeedView), title: named("shell.feedView"), history: workspace, keepMounted: false },
+    feed: { component: FeedView, title: named("shell.feedView"), history: workspace, keepMounted: true, header: id => ({ buttons: [], menu: viewMenu(id) }) },
     settings: { component: standalone(Settings), title: named("command.settings"), history: workspace, keepMounted: false },
     about: { component: standalone(About), title: named("command.about"), history: workspace, keepMounted: false }
 };

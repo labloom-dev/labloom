@@ -363,3 +363,27 @@ test("saving a resolved source applies its interval after intervening page edits
     assert.deepEqual(knowledge.get(id).attributes.feed_refresh, interval(90));
     assert.equal(knowledge.get(id).attributes.feed_url, "https://example.org/new");
 });
+
+test("the complete feed index supports viewport reads, stable ordering and the open item", t => {
+    const { database } = createWorkspace(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "feed-index-")));
+    t.after(() => session.close());
+    const knowledge = knowledgeServices();
+    const active = knowledge.create("feed", "A", { feed_url: "https://example.org/a" });
+    const cancelled = knowledge.create("feed", "B", { feed_url: "https://example.org/b", feed_status: "cancelled" });
+    const insert = database.prepare("INSERT INTO feed_items(id,source_id,title,authors,summary,published_at,is_read) VALUES(?,?,?,'','Summary',?,?)");
+    for (let i = 0; i < 130; i++) insert.run(String(i), active.id, "Observation " + i, i === 129 ? null : i * 1000, i % 2);
+    insert.run("cancelled", cancelled.id, "Observation", 200000, 0);
+    const state = feed.getState({ read: "unread" });
+    assert.equal(state.ids.length, 65);
+    assert.equal(state.unreadCount, 65);
+    assert.equal(state.sources.find(source => source.id === cancelled.id)?.unreadCount, 1);
+    const complete = feed.getState({ order: "oldest" }, "105");
+    assert.equal(complete.ids.length, 130);
+    assert.equal(complete.ids.at(-1), "129");
+    assert.ok(complete.items.some(row => row.id === "105"));
+    assert.deepEqual(feed.getRows(["129", "1", "absent"]).map(item => item.id), ["129", "1"]);
+    feed.setRead("128", true);
+    assert.deepEqual(feed.getState({ read: "unread", keep: "128" }).ids, state.ids);
+    assert.deepEqual(feed.getState({ keyword: "missing", keep: "128" }).ids, ["128"]);
+    assert.deepEqual(feed.getState({ sourceId: cancelled.id, keep: "128" }).ids, ["cancelled"]);
+});

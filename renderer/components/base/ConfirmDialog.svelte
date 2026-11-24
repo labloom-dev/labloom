@@ -10,10 +10,19 @@
         cancelLabel: string;
         danger?: boolean;
         open?: boolean;
-        trigger: NonNullable<AlertDialog.TriggerProps["child"]>;
+        trigger?: NonNullable<AlertDialog.TriggerProps["child"]>;
         onconfirm: () => void;
         oncancel?: () => void;
     } = $props();
+    let content = $state<HTMLElement | null>(null);
+    function focusContent(event: Event): void {
+        if (trigger) return;
+        event.preventDefault();
+        const dialog = content;
+        requestAnimationFrame(() => {
+            if (dialog?.isConnected) dialog.focus({ preventScroll: true });
+        });
+    }
     function changeOpen(next: boolean): void {
         if (open && !next) oncancel?.();
         open = next;
@@ -31,10 +40,11 @@
 </script>
 
 <AlertDialog.Root bind:open={() => open, changeOpen}>
-    <AlertDialog.Trigger child={trigger} />
+    {#if trigger}<AlertDialog.Trigger child={trigger} />{/if}
     {#if open}<TopLayer>
         <AlertDialog.Overlay class="ui-scrim" />
-        <AlertDialog.Content class="ui-popup ui-dialog" onkeydown={defaultAction} interactOutsideBehavior="close">
+        <AlertDialog.Content class="ui-popup ui-dialog" bind:ref={content} onOpenAutoFocus={focusContent}
+            onkeydown={defaultAction} interactOutsideBehavior="close">
             <AlertDialog.Title class="ui-dialog-title">{title}</AlertDialog.Title>
             <AlertDialog.Description class="ui-dialog-body">{body}</AlertDialog.Description>
             <div class="ui-dialog-actions">

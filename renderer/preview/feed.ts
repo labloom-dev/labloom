@@ -6,6 +6,7 @@ import { saveSubscription } from "../components/Feed/operations";
 import { write } from "../components/Knowledge/page-sessions";
 import FeedView from "../components/Feed/FeedView.svelte";
 import { LabloomError } from "../../shared/failure";
+import { t } from "../i18n.svelte";
 import "./feed.css";
 
 async function request<T>(method: keyof FeedAPI | "attachPDF" | "version", ...args: unknown[]): Promise<T> {
@@ -20,7 +21,8 @@ async function request<T>(method: keyof FeedAPI | "attachPDF" | "version", ...ar
 }
 
 const api: FeedAPI = {
-    getState: query => request("getState", query),
+    getState: (query, around) => request("getState", query, around),
+    getRows: ids => request("getRows", ids),
     getItem: id => request("getItem", id),
     resolveSource: input => request("resolveSource", input),
     discardSource: key => request("discardSource", key),
@@ -64,8 +66,15 @@ const api: FeedAPI = {
 
 async function seedExample(): Promise<void> {
     if (!(await api.getState({})).sources.length) await saveSubscription(api, {
-        name: "示例：AI / 机器学习（large language model）", url: arxivURL("cs.AI, cs.LG", "large language model")
+        name: t("feed.exampleName"), url: arxivURL("cs.AI, cs.LG", "large language model")
     }, write);
 }
+document.title = t("shell.feedView") + " · Labloom";
+const theme = window.matchMedia("(prefers-color-scheme: dark)");
+function updateTheme(): void {
+    document.documentElement.dataset.theme = theme.matches ? "dark" : "light";
+}
+theme.addEventListener("change", updateTheme);
+updateTheme();
 void seedExample().catch(error => console.warn("Could not load the example subscription", error));
 mount(FeedView, { target: document.getElementById("app")!, props: { api, attachPDF: (pageId, fileId) => request("attachPDF", pageId, fileId) } });

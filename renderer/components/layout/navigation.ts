@@ -14,13 +14,12 @@ import { perform } from "../Knowledge/feedback.svelte";
 import { write } from "../Knowledge/page-sessions";
 
 import { defaultLibrary } from "../../../shared/workspace/library";
+import { defaultOverviewDate, defaultOverviewStatus as status } from "../../../shared/workspace/overview";
 
 export type { Destination } from "./destinations";
 
-const status = { kind: "attribute", id: "task_status", type: "status" } as const;
-
 export const destinationViews: Record<Destination, View> = {
-    overview: { type: "overview", params: { status } },
+    overview: { type: "overview", params: { status, date: defaultOverviewDate } },
     library: { type: "library", params: defaultLibrary() },
     papers: { type: "library", params: defaultLibrary(true) },
     calendar: { type: "calendar", params: { date: { kind: "attribute", type: "day", id: "schedule_date" }, start: { kind: "attribute", type: "minute", id: "schedule_start" }, status } },
@@ -50,6 +49,15 @@ function openView(view: View): Tab {
     return tab;
 }
 export function openDestination(type: Destination): Tab {
+    if (type === "feed" || type === "overview") {
+        const focused = tabState.groups.find(group => group.id === tabState.focusedGroupId);
+        const existing = focused?.tabs.find(tab => tab.view.type === type)
+            ?? tabState.groups.flatMap(group => group.tabs).find(tab => tab.view.type === type);
+        if (existing) {
+            activateTab(existing.id);
+            return existing;
+        }
+    }
     return openView(destinationViews[type]);
 }
 

@@ -1,6 +1,6 @@
 body {
     overflow: hidden;
-    background: var(--c-cream);
+    background: var(--ui-surface-window);
 }
 
 #app {

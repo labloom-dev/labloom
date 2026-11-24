@@ -3,6 +3,7 @@ import type { uuid } from "../types/uuid";
 import type { AttributeType, AttributeValue } from "../types/attributes";
 import type { PageKind } from "../types/content";
 
+import type { FeedParams } from "./feed";
 import type { LibraryColumn, LibrarySort } from "./library";
 
 type ReferenceId = string & tags.MinLength<1>;
@@ -28,9 +29,9 @@ export type ViewParams = {
         filters: { attribute: { kind: "attribute"; id: ReferenceId }; value: AttributeValue }[];
     };
     calendar: { date: AttributeRef<"day">; start?: AttributeRef<"minute">; status?: AttributeRef<"status"> };
-    overview: { status?: AttributeRef<"status"> };
+    overview: { status?: AttributeRef<"status">; date?: AttributeRef<"day"> };
     attributes: NoParams;
-    feed: NoParams;
+    feed: FeedParams;
     settings: NoParams;
     about: NoParams;
 };

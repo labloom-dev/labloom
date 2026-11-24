@@ -1,6 +1,5 @@
-import type { AttributeDefinition, AttributeValue } from "../../../shared/types/attributes";
+import { type AttributeDefinition, type AttributeValue } from "../../../shared/types/attributes";
 import * as formatting from "../../../shared/attrs/format";
-import * as time from "../../../shared/content/time";
 import * as attrs from "../../../shared/attrs/builtins";
 import * as i18n from "../../i18n.svelte";
 
@@ -17,10 +16,6 @@ export function propertyOption(definition: AttributeDefinition, option: { id: st
 
 export function propertyText(definition: AttributeDefinition, value: AttributeValue, zone: string): string {
     if (definition.type === "json") return JSON.stringify(value);
-    if (definition.type === "hour" && typeof value === "number") {
-        const wall = time.secondsToWall(value, zone);
-        return wall.slice(0, 10) + " " + i18n.t("property.hourValue", { hour: wall.slice(11, 13) });
-    }
     if (definition.type === "recurrence" && value && typeof value === "object" && !Array.isArray(value) && typeof value.every === "number" && typeof value.unit === "string" && ["minute", "hour", "day", "week", "month"].includes(value.unit)) {
         const period = new Intl.NumberFormat(document.documentElement.lang || "zh-CN", { style: "unit", unit: value.unit, unitDisplay: "long" }).format(value.every);
         return i18n.t("property.repeatPeriod", { period });
