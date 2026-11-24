@@ -1,76 +1,70 @@
-<section class="workspace-page">
-    <div class="paper-card about">
-        <img src={icon} alt="Labloom 标志" />
+<script lang="ts">
+    import { onMount } from "svelte";
+    import type { AppInfo } from "../../../shared/app/ipc";
+    import { failure, message, t, type ErrorValue } from "../../i18n.svelte";
+    import Button from "../base/Button.svelte";
+    import icon from "../../assets/icon.png";
 
-        <h1>知织 <span>Labloom</span></h1>
-        <div data-paragraph class="tagline">Where ideas take root.</div>
-        <div data-paragraph>追踪研究动态，阅读论文，记录想法。<br />把散落的知识，编织成自己的世界。</div>
-        <div class="principles"><span>本地工作区</span><span>专注研究</span><span>持续生长</span></div>
-        <div class="bloom"><Bloom /></div>
-        <div data-paragraph class="version">Labloom，MIT License</div>
+    let info = $state<AppInfo>(), error = $state<ErrorValue>(""), copied = $state(false);
+    let copyTimer: ReturnType<typeof setTimeout> | undefined;
+    const rows = $derived(info ? [
+        { label: t("about.version"), value: info.version },
+        { label: t("about.electron"), value: info.electron },
+        { label: t("about.chromium"), value: info.chromium },
+        { label: t("about.node"), value: info.node },
+        { label: t("about.v8"), value: info.v8 },
+        { label: t("about.os"), value: [info.os.type, info.os.arch, info.os.version].join(" ") },
+        { label: t("about.license"), value: "MIT" }
+    ] : []);
+
+    onMount(() => {
+        void window.api.app.getInfo().then(value => info = value).catch(reason => {
+            error = failure(reason);
+        });
+        return () => clearTimeout(copyTimer);
+    });
+
+    async function copy(): Promise<void> {
+        if (!info) return;
+        error = "";
+        try {
+            await navigator.clipboard.writeText(rows.map(({ label, value }) => label + " " + value).join("\n"));
+            copied = true;
+            clearTimeout(copyTimer);
+            copyTimer = setTimeout(() => copied = false, 2000);
+        }
+        catch (reason) {
+            copied = false;
+            error = failure(reason);
+        }
+    }
+</script>
+
+<div class="about">
+    <div class="brand"><img src={icon} alt="" draggable="false" /><span>{t("app.name")}</span></div>
+    {#if info}
+        <dl>
+            {#each rows as { label, value } (label)}
+                <div><dt>{label}</dt><dd>{value}</dd></div>
+            {/each}
+        </dl>
+    {/if}
+    <div class="actions">
+        <Button disabled={!info} onclick={copy}>{t("command.copy")}</Button>
+        <span role="status">{copied ? t("about.copied") : ""}</span>
     </div>
-</section>
-
+    {#if error}<div class="error" role="alert">{message(error)}</div>{/if}
+</div>
 
 <style>
-    .about {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        padding: 45px 24px 24px;
-        text-align: center;
-    }
-    img {
-        width: 68px;
-        height: 68px;
-        margin-bottom: 24px;
-        object-fit: contain;
-    }
-    h1 {
-        margin: 15px 0 8px;
-        font-size: 36px;
-        font-weight: 900;
-    }
-    h1 span {
-        margin-left: 8px;
-    }
-    :where([data-paragraph]) {
-        margin: 15px 0;
-        color: var(--c-muted);
-        font-size: 13px;
-        line-height: 1.9;
-    }
-    .tagline {
-        color: var(--c-accent);
-        font-size: 18px;
-        font-style: italic;
-    }
-    .principles {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-        justify-content: center;
-        margin-top: 12px;
-    }
-    .principles span {
-        padding: 7px 12px;
-        border: 1px solid var(--c-tab-header-border);
-        border-radius: 8px;
-        background: var(--c-cream);
-        color: var(--c-muted);
-        font-size: 11px;
-    }
-    .bloom {
-        width: 175px;
-        margin-top: 16px;
-    }
-    .version {
-        font-size: var(--font-min);
-    }
+    .about { height: 100%; padding: var(--ui-space-6); overflow: auto; background: var(--ui-surface-window); font-size: var(--ui-font-body); }
+    .brand { display: flex; align-items: center; gap: var(--ui-space-4); font-size: var(--ui-font-title); font-weight: 600; }
+    .brand img { width: calc(3 * var(--ui-icon-large)); height: auto; }
+    dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--ui-space-2) var(--ui-space-5); margin: var(--ui-space-5) 0; }
+    dl div { display: contents; }
+    dt { color: var(--ui-text-secondary); }
+    dd { margin: 0; overflow-wrap: anywhere; user-select: text; }
+    .actions { display: flex; align-items: center; gap: var(--ui-space-3); }
+    .actions span { color: var(--ui-text-secondary); font-size: var(--ui-font-small); }
+    .error { margin-top: var(--ui-space-2); color: var(--ui-text-danger); font-size: var(--ui-font-small); }
 </style>
-
-
-<script lang="ts">
-    import icon from "../../assets/icon.png";
-    import Bloom from "../utils/Bloom.svelte";
-</script>

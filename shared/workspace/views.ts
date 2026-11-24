@@ -30,7 +30,7 @@ export type ViewParams = {
     };
     calendar: { date: AttributeRef<"day">; start?: AttributeRef<"minute">; status?: AttributeRef<"status">; agendaWidth?: number & tags.Minimum<1> };
     overview: { status?: AttributeRef<"status">; date?: AttributeRef<"day"> };
-    attributes: NoParams;
+    attributes: { listWidth?: number & tags.Minimum<1> };
     feed: FeedParams;
     settings: NoParams;
     about: NoParams;

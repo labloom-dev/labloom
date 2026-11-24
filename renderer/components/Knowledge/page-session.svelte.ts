@@ -1,20 +1,19 @@
 import { watchHistory } from "./history";
 import { type HistorySource } from "../../../shared/history/ipc";
 import { PageWrites, fallbackFields, fields, reviewEdit, type Fields } from "./page-writes";
-import { confirmationText } from "../../../shared/content/confirmation";
 import { publishTitle } from "../Tab/page-titles";
 import { blockText } from "../../../shared/content/blocks";
 import { type AttributeDefinition, type AttributeValue } from "../../../shared/types/attributes";
-import { type Backlink, type ChangePreview, type Changed, type CommitResult, type KnowledgeChange, type PageRecord } from "../../../shared/types/content";
+import { type Backlink, type Changed, type CommitResult, type KnowledgeChange, type PageRecord } from "../../../shared/types/content";
 import { type HistoryState } from "../../../shared/types/knowledge";
 import { PendingInput } from "../Editor/pending-input";
 import { readingTabs, visits } from "../Tab/activity.svelte";
 import { registerPageView } from "./page-visits";
 import { WriteReceipts } from "./write-tracker";
-import { ask, confirmed } from "./confirmation.svelte";
+import { confirmChange, confirmed } from "./confirmation.svelte";
 import { copyData } from "../copy-data";
 import { knowledgeState, perform } from "./feedback.svelte";
-import { t, failure, type ErrorValue } from "../../i18n.svelte";
+import { failure, type ErrorValue } from "../../i18n.svelte";
 import { LabloomError } from "../../../shared/failure";
 
 class PageState {
@@ -100,7 +99,6 @@ export function makeSession(tabId: string, pageId: string, source: HistorySource
     const newBlocks = new Set<string>();
     let timer: ReturnType<typeof setTimeout> | undefined, composing = false;
     let reviewing: Promise<void> | undefined, load = 0;
-    const prompt = (p: ChangePreview): Promise<boolean> => ask(() => t("dialog.change"), () => confirmationText(p, t));
     function updateCounts(ids: string[], uses: Record<string, number>): void {
         if (!ids.length || !state.page) return;
         const counts = state.page.sharedUses ??= {};
@@ -125,7 +123,7 @@ export function makeSession(tabId: string, pageId: string, source: HistorySource
             const { safe, restore, proposed } = fallbackFields(input, causes, stored, key => writes.current(key));
             apply(fields(restore));
             notify(ids);
-            if (!await prompt(result.preview)) {
+            if (!await confirmChange(result.preview)) {
                 writes.retain(fields(safe));
                 return;
             }
@@ -287,7 +285,7 @@ export function makeSession(tabId: string, pageId: string, source: HistorySource
             const input = writes.input(edit);
             try {
                 let savedResult: Extract<CommitResult, { status: "saved" }> | undefined;
-                await reviewEdit(input, prompt, async (value, token) => {
+                await reviewEdit(input, confirmChange, async (value, token) => {
                     const result = await receipts.submit(id => api.pages.commitEdit(value, source, token, id));
                     if (result.status === "saved") savedResult = result;
                     return result;

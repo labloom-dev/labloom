@@ -173,7 +173,7 @@ export function forecast(plan: EditChanges, inspect: string[] = []): ReturnType<
 function changePreview(plan: EditChanges, { action, deletedBlocks = [], positions }: Review, projection?: Projection): ChangePreview | null {
     const ids = projection?.changes.filter(row => !row.deleted && row.reason !== null).map(row => row.id) ?? [];
     if (!ids.length && !deletedBlocks.length) return null;
-    const name = (id: string): { id: string; title: string } => ({ id, title: data.title(id) });
+    const name = (id: string): { id: string; title: string } => ({ id, title: data.title(id, "") });
     return {
         token: fingerprint({ action, ids, ...(positions ? { positions, deletedBlocks } : {}) }), recycled: ids.map(name),
         direct: ids.filter(id => plan.direct.has(id)).map(name), causes: [...plan.causes], deletedBlocks

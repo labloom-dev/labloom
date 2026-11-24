@@ -26,13 +26,15 @@
     background-color: var(--ui-text-selection);
 }
 
+:root[data-theme="dark"] { color-scheme: dark; }
+
 body {
     margin: 0;
     height: 100vh;
     width: 100vw;
-    color: var(--c-ink);
-    background: var(--c-cream);
-    font-size: var(--font-body);
+    color: var(--ui-text);
+    background: var(--ui-surface-window);
+    font-size: var(--ui-font-body);
     font-family: var(--ui-font-family);
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
@@ -76,8 +78,8 @@ button, a, input, select, textarea, summary {
 }
 
 :focus-visible {
-    outline: 3px solid var(--c-border-focus);
-    outline-offset: 3px;
+    outline: var(--ui-focus-width) solid var(--ui-focus);
+    outline-offset: var(--ui-focus-offset);
 }
 
 input, textarea, [contenteditable="true"] {

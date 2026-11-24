@@ -1,9 +1,11 @@
 <script lang="ts">
     import { AlertDialog } from "bits-ui";
+    import type { Snippet } from "svelte";
+    import { isComposingKey } from "../../../shared/content/commands";
     import Button from "./Button.svelte";
     import TopLayer from "./TopLayer.svelte";
 
-    let { title, body, confirmLabel, cancelLabel, danger = false, open = $bindable(false), trigger, onconfirm, oncancel }: {
+    let { title, body, confirmLabel, cancelLabel, danger = false, open = $bindable(false), trigger, children, preventScroll = true, dismissOutside = true, onconfirm, oncancel }: {
         title: string;
         body: string;
         confirmLabel: string;
@@ -11,6 +13,9 @@
         danger?: boolean;
         open?: boolean;
         trigger?: NonNullable<AlertDialog.TriggerProps["child"]>;
+        children?: Snippet;
+        preventScroll?: boolean;
+        dismissOutside?: boolean;
         onconfirm: () => void;
         oncancel?: () => void;
     } = $props();
@@ -33,7 +38,7 @@
         onconfirm();
     }
     function defaultAction(event: KeyboardEvent): void {
-        if (event.key !== "Enter" || event.isComposing || event.repeat || event.target instanceof HTMLButtonElement) return;
+        if (event.key !== "Enter" || isComposingKey(event) || event.repeat || event.target instanceof HTMLButtonElement) return;
         event.preventDefault();
         confirm();
     }
@@ -44,9 +49,12 @@
     {#if open}<TopLayer>
         <AlertDialog.Overlay class="ui-scrim" />
         <AlertDialog.Content class="ui-popup ui-dialog" bind:ref={content} onOpenAutoFocus={focusContent}
-            onkeydown={defaultAction} interactOutsideBehavior="close">
+            {preventScroll} onkeydown={defaultAction} interactOutsideBehavior={dismissOutside ? "close" : "ignore"}>
             <AlertDialog.Title class="ui-dialog-title">{title}</AlertDialog.Title>
-            <AlertDialog.Description class="ui-dialog-body">{body}</AlertDialog.Description>
+            <AlertDialog.Description>
+                {#snippet child({ props })}<div {...props} class="ui-dialog-body">{body}</div>{/snippet}
+            </AlertDialog.Description>
+            {@render children?.()}
             <div class="ui-dialog-actions">
                 <AlertDialog.Cancel>
                     {#snippet child({ props })}<Button {...props}>{cancelLabel}</Button>{/snippet}
@@ -58,3 +66,7 @@
         </AlertDialog.Content>
     </TopLayer>{/if}
 </AlertDialog.Root>
+
+<style>
+    .ui-dialog-body { white-space: pre-line; overflow-wrap: anywhere; }
+</style>

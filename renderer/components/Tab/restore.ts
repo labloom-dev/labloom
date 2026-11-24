@@ -47,7 +47,9 @@ export function restoreTabState(state: unknown): TabState | undefined {
                 type: "overview", params: { status: defaultOverviewStatus, date: defaultOverviewDate }
             } });
             else if (record(view) && view.type === "calendar") tabs.push({ id: tab.id, view: { type: "calendar", params: defaultCalendar } });
-            else if (record(view) && view.type === "feed") tabs.push({ id: tab.id, view: { type: "feed", params: {} } });
+            else if (record(view) && (view.type === "feed" || view.type === "attributes" || view.type === "settings" || view.type === "about")) {
+                tabs.push({ id: tab.id, view: { type: view.type, params: {} } });
+            }
             else if (record(view) && view.type === "library") {
                 const papers = record(view.params) && view.params.paperOnly === true;
                 tabs.push({ id: tab.id, view: { type: "library", params: defaultLibrary(papers) } });

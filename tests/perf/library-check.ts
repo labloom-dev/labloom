@@ -104,10 +104,10 @@ export async function checkLibraryDeletion(papers: boolean): Promise<number> {
         find(active + "[data-library-keyboard]")!.dispatchEvent(new KeyboardEvent("keydown", { key: value, bubbles: true, cancelable: true, ...opts }));
     };
     const started = performance.now(); key("a", { ctrlKey: true }); key("Delete");
-    const dialog = await until(() => find("[role=dialog].confirmation") ?? find(".shade[role=dialog] .confirmation"));
+    const dialog = await until(() => find(":popover-open [role=alertdialog]"));
     await paint(); const deletion = performance.now() - started;
     if (!find(active + "aside")?.textContent?.includes(String(total))) throw Error("Partial select all");
-    if (papers && !(dialog.textContent?.includes("批注 00001") && dialog.textContent.includes("Annotation 09991"))) throw Error("Missing dependent annotations from recycle preview");
+    if (papers && !dialog.querySelector("[role=listitem][aria-setsize=\"6000\"]")) throw Error("Missing dependent annotations from recycle preview");
     dialog.querySelector("button")!.click();
     find(".tab.active .close-tab")!.click();
     await paint();

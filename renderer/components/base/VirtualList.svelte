@@ -49,14 +49,16 @@
             if (text.isConnected) tip = text;
         }, 450);
     }
-    function scrolled(): void {
+    function scrolled(event: Event & { currentTarget: HTMLElement }): void {
+        const list = event.currentTarget;
+        if (list !== viewport) return;
         hideTip();
-        if (!viewport.clientHeight) return;
-        const top = viewport.scrollTop, index = Math.floor(top / size);
+        if (!list.clientHeight) return;
+        const top = list.scrollTop, index = Math.floor(top / size);
         if (index < start || Math.min(ids.length, index + count) > end) scroll = top;
         else if (idle === undefined) idle = requestIdleCallback(() => {
             idle = undefined;
-            if (viewport.clientHeight) scroll = viewport.scrollTop;
+            if (list === viewport && list.clientHeight) scroll = list.scrollTop;
         }, { timeout: 24 });
     }
     export function position(): ListPosition {

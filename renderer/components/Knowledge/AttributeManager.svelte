@@ -1,85 +1,107 @@
-<section class="manager">
-    <nav aria-label="属性定义">
-        <button class="button" onclick={create}>新建属性</button>
-        {#each [true, false] as builtin (builtin)}
-            <h3>{builtin ? "内置属性" : "自定义属性"}</h3>
-            {#each definitions.filter(item => isBuiltin(item.id) === builtin && !item.hidden && item.id !== "deleted") as item (item.id)}
-                <button class="definition" class:active={draft?.id === item.id} onclick={() => select(item.id)}><span>{item.name || item.id}</span><small>{t(`attributeType.${item.type}`)}</small></button>
-            {/each}
-        {/each}
-    </nav>
-    <div class="manager-body">
-        {#if draft}
-            <label>名称<input bind:value={draft.name} disabled={isBuiltin(draft.id)} /></label>
-            <label>类型<select value={draft.type} onchange={event => {
-                const type = event.currentTarget.value as AttributeType;
-                draft = { ...draft!, type, metadata: convertMetadata(draft!.type, type, draft!.metadata) };
-            }} disabled={isBuiltin(draft.id)}>{#each attributeTypes.filter(type => type !== "recurrence" || draft?.type === "recurrence") as type (type)}<option value={type}>{t(`attributeType.${type}`)}</option>{/each}</select></label>
-            {#if draft.type === "status" || draft.type === "select" || draft.type === "multiselect"}
-                <div data-paragraph class="muted">选项改名会保留原有选择；移除选项前会预览影响。</div>
-                <div bind:this={optionsRoot}>
-                    {#each draft.metadata.options ?? [] as option (option.id)}
-                        <div class="option"><input bind:value={option.name} aria-label="选项名称" disabled={isBuiltin(draft.id) && !editableBuiltinMetadata(draft.id)} />
-                            {#if draft.type === "status"}<label><input type="checkbox" checked={option.group === "complete"} onchange={event => option.group = event.currentTarget.checked ? "complete" : "incomplete"} />已完成</label>{/if}
-                            <button class="text-button" disabled={isBuiltin(draft.id) && !editableBuiltinMetadata(draft.id)} onclick={() => draft!.metadata.options = draft!.metadata.options!.filter(item => item.id !== option.id)}>移除</button></div>
-                    {/each}
-                </div>
-                <button class="text-button" disabled={isBuiltin(draft.id) && !editableBuiltinMetadata(draft.id)} onclick={addOption}><Icon name="add" size="1em" /> 添加选项</button>
-            {/if}
-            <footer><button class="button primary" disabled={busy} onclick={() => apply(draft)}>保存定义</button>{#if !isBuiltin(draft.id)}<button class="button" disabled={busy} onclick={() => apply(null)}>删除属性</button>{/if}</footer>
-            {#if error}<div data-paragraph class="error">{message(error)}</div>{/if}
-        {/if}
-    </div>
-</section>
-<style>
-    .manager { display: flex; min-height: 100%; background: var(--c-paper); font-size: var(--font-body); }
-    nav { width: 230px; flex-shrink: 0; padding: 8px; border-right: var(--border-width) solid var(--c-line); }
-    h3 { font-size: var(--font-secondary); color: var(--c-muted); margin: 12px 0 4px; }
-    .definition { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; height: var(--panel-row-height); padding-inline: 4px; text-align: left; }
-    .definition span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .definition:hover, .active { background: var(--c-sage); }
-    small { color: var(--c-muted); white-space: nowrap; font-size: var(--font-secondary); }
-    .manager-body { flex: 1; min-width: 0; padding: 12px; }
-    label, .option, footer { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-    label { min-height: var(--property-row-height); }
-    input, select { flex: 1; min-width: 0; height: var(--button-height); padding-inline: 6px; border: var(--border-width) solid var(--c-line); border-radius: var(--control-radius); background: var(--c-paper); color: inherit; font: inherit; }
-    .muted { color: var(--c-muted); font-size: var(--font-secondary); }
-    footer { margin-top: 12px; }
-</style>
 <script lang="ts">
-    import Icon from "../utils/Icon.svelte";
-    import { t, failure, message, type ErrorValue } from "../../i18n.svelte";
     import { tick } from "svelte";
     import { attributeTypes, type AttributeDefinition, type AttributeType } from "../../../shared/types/attributes";
     import { editableBuiltinMetadata, isBuiltin } from "../../../shared/attrs/builtins";
     import { convertMetadata } from "../../../shared/attrs/values";
+    import { attributeShortcuts, isComposingKey } from "../../../shared/content/commands";
+    import { LabloomError } from "../../../shared/failure";
+    import { t, failure, message, type ErrorValue } from "../../i18n.svelte";
+    import { copyData } from "../copy-data";
+    import Button from "../base/Button.svelte";
+    import Checkbox from "../base/Checkbox.svelte";
+    import IconButton from "../base/IconButton.svelte";
+    import Input from "../base/Input.svelte";
+    import ListRow from "../base/ListRow.svelte";
+    import Select from "../base/Select.svelte";
+    import TextButton from "../base/TextButton.svelte";
+    import Resizer from "../utils/Resizer.svelte";
+    import { propertyName, propertyOption } from "./attribute-labels";
     import { define } from "./confirmation.svelte";
     import { write } from "./page-sessions";
-    let { definitions }: { definitions: AttributeDefinition[] } = $props();
+
+    let { definitions, readDefinitions, listWidth, onresize }: {
+        definitions: AttributeDefinition[];
+        readDefinitions: () => Promise<AttributeDefinition[]>;
+        listWidth?: number;
+        onresize: (width: number) => void;
+    } = $props();
+
     let draft = $state<AttributeDefinition | null>(null), busy = $state(false), error = $state<ErrorValue>("");
+    let list: HTMLDivElement;
     let optionsRoot = $state<HTMLDivElement>();
+    let width = $state(0);
+    const minWidth = $derived(Math.min(144, Math.max(1, Math.floor(width * .4))));
+    const maxWidth = $derived(Math.max(minWidth, Math.floor(width * .7)));
+    const paneWidth = $derived(width ? Math.min(maxWidth, Math.max(minWidth, listWidth ?? 230)) : listWidth ?? 230);
+
+    const builtins = $derived(definitions.filter(item => isBuiltin(item.id) && !item.hidden && item.id !== "deleted"));
+    const custom = $derived(definitions.filter(item => !isBuiltin(item.id) && !item.hidden));
+    const items = $derived([...builtins, ...custom]);
+    const selected = $derived(items.findIndex(item => item.id === draft?.id));
+    const typeOptions = $derived(attributeTypes.filter(type => type !== "recurrence" || draft?.type === type)
+        .map(value => ({ value, label: t(`attributeType.${value}`) })));
+    const builtin = $derived(!!draft && isBuiltin(draft.id));
+    const editableOptions = $derived(!!draft && (!isBuiltin(draft.id) || editableBuiltinMetadata(draft.id)));
+
     async function addOption(): Promise<void> {
         if (!draft) return;
-        draft.metadata.options = [...(draft.metadata.options ?? []), { id: crypto.randomUUID(), name: "", ...(draft.type === "status" ? { group: "incomplete" as const } : {}) }];
+        draft.metadata.options = [...(draft.metadata.options ?? []), {
+            id: crypto.randomUUID(), name: "", ...(draft.type === "status" ? { group: "incomplete" as const } : {})
+        }];
         await tick();
-        optionsRoot?.querySelector<HTMLInputElement>(".option:last-of-type input")?.focus();
+        optionsRoot?.querySelector<HTMLInputElement>(".option:last-child input")?.focus();
     }
-    function select(id: string): void {
-        const value = definitions.find(item => item.id === id);
-        draft = value ? JSON.parse(JSON.stringify(value)) : null;
+
+    function select(value: AttributeDefinition): void {
+        if (draft?.id === value.id) return;
+        draft = copyData(value);
         error = "";
     }
+
+    function move(event: KeyboardEvent, id: string): void {
+        if (event.defaultPrevented || isComposingKey(event) || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
+        const key = event.key;
+        if (key !== attributeShortcuts.previous && key !== attributeShortcuts.next) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const current = items.findIndex(item => item.id === id);
+        const next = Math.min(items.length - 1, Math.max(0, current + (key === attributeShortcuts.next ? 1 : -1)));
+        const item = items[next];
+        if (item) {
+            select(item);
+            list.querySelectorAll<HTMLButtonElement>(".ui-row-main")[next]?.focus();
+        }
+    }
+
     function create(): void {
-        draft = { id: `custom:${crypto.randomUUID()}`, type: "string", name: "新属性", metadata: {} };
+        draft = { id: `custom:${crypto.randomUUID()}`, type: "string", name: t("attributes.newName"), metadata: {} };
         error = "";
     }
-    async function apply(value: AttributeDefinition | null): Promise<void> {
+
+    function changeType(type: AttributeType): void {
+        if (draft) draft = { ...draft, type, metadata: convertMetadata(draft.type, type, draft.metadata) };
+    }
+
+    function removeOption(id: string): void {
+        if (draft?.metadata.options) draft.metadata.options = draft.metadata.options.filter(item => item.id !== id);
+    }
+
+    async function apply(remove: boolean): Promise<void> {
+        if (!draft || busy) return;
+        const id = draft.id, value = remove ? null : copyData(draft);
         busy = true;
+        error = "";
         try {
-            if (await write(() => define(draft!.id, value ? JSON.parse(JSON.stringify(value)) : null))) {
+            if (!await write(() => define(id, value))) return;
+            if (remove) {
                 draft = null;
-                error = "";
+                return;
             }
+            const saved = (await readDefinitions()).find(item => item.id === id);
+            if (!saved) throw new LabloomError({ kind: "attribute-missing" });
+            draft = copyData(saved);
+            await tick();
+            list?.querySelector("[aria-selected=true]")?.scrollIntoView({ block: "nearest" });
         }
         catch (problem) {
             error = failure(problem);
@@ -89,3 +111,98 @@
         }
     }
 </script>
+
+<div class="manager" bind:clientWidth={width}>
+    <div class="pane" style:width={paneWidth + "px"}>
+        <div class="create">
+            <Button icon="add" disabled={busy} onclick={create}>{t("attributes.create")}</Button>
+        </div>
+        <div class="definitions" role="listbox" aria-label={t("command.attributes")} bind:this={list}>
+            {#each [{ title: t("attributes.builtins"), rows: builtins }, { title: t("attributes.custom"), rows: custom }] as group (group.title)}
+                <div role="group" aria-label={group.title}>
+                    <h3>{group.title}</h3>
+                    {#each group.rows as item (item.id)}
+                        {@const name = propertyName(item)}
+                        {@const active = draft?.id === item.id}
+                        <ListRow title={name} selected={active} onclick={() => select(item)}
+                            buttonProps={{ role: "option", "aria-selected": active, disabled: busy,
+                                tabindex: active || selected < 0 && item.id === items[0]?.id ? 0 : -1,
+                                onkeydown: event => move(event, item.id) }}>
+                            <span class="ui-row-title">{name}</span>
+                            <span class="ui-row-description">{t(`attributeType.${item.type}`)}</span>
+                        </ListRow>
+                    {/each}
+                </div>
+            {/each}
+        </div>
+    </div>
+    <Resizer direction="vertical" label={t("attributes.listWidth")} origin={paneWidth} min={minWidth} max={maxWidth}
+        changeCB={value => onresize(Math.round(value))} />
+    <div class="editor">
+        {#if draft}
+            <div class="fields">
+                <div class="field">
+                    <div class="label">{t("attributes.name")}</div>
+                    <Input label={t("attributes.name")} value={builtin ? propertyName(draft) : draft.name} disabled={builtin || busy}
+                        oninput={name => {
+                            if (draft) draft.name = name;
+                        }} />
+                </div>
+                <div class="field">
+                    <div class="label">{t("attributes.type")}</div>
+                    <Select label={t("attributes.type")} value={draft.type} options={typeOptions} disabled={builtin || busy}
+                        onchange={value => changeType(value as AttributeType)} />
+                </div>
+                {#if draft.type === "status" || draft.type === "select" || draft.type === "multiselect"}
+                    <div class="field">
+                        <div class="label">{t("attributes.options")}</div>
+                        <div class="options" bind:this={optionsRoot}>
+                            {#each draft.metadata.options ?? [] as option (option.id)}
+                                <div class="option">
+                                    <Input label={t("attributes.optionName")} value={editableOptions ? option.name : propertyOption(draft, option)}
+                                        disabled={busy || !editableOptions} oninput={name => option.name = name} />
+                                    {#if draft.type === "status"}
+                                        <Checkbox label={t("attributes.complete")} checked={option.group === "complete"}
+                                            disabled={busy || !editableOptions} onchange={checked => option.group = checked ? "complete" : "incomplete"} />
+                                    {/if}
+                                    <IconButton icon="close" label={t("attributes.removeOption")} disabled={busy || !editableOptions}
+                                        onclick={() => removeOption(option.id)} />
+                                </div>
+                            {/each}
+                        </div>
+                        <TextButton text={t("attributes.addOption")} icon="add" disabled={busy || !editableOptions} onclick={addOption} />
+                    </div>
+                {/if}
+                <footer>
+                    <Button variant="primary" disabled={busy} onclick={() => apply(false)}>{t("attributes.save")}</Button>
+                    {#if !builtin}<Button variant="danger" disabled={busy} onclick={() => apply(true)}>{t("attributes.delete")}</Button>{/if}
+                </footer>
+                {#if error}<div class="error" role="alert">{message(error)}</div>{/if}
+            </div>
+        {/if}
+    </div>
+</div>
+
+<style>
+    .manager { display: flex; height: 100%; min-width: 0; background: var(--ui-surface-window); font-size: var(--ui-font-body); }
+    .pane { display: flex; flex: none; flex-direction: column; min-height: 0; min-width: 0; background: var(--ui-surface-panel); }
+    .create { padding: var(--ui-space-3); }
+    .create :global(.ui-control) { max-width: 100%; }
+    .definitions { flex: 1; min-height: 0; overflow: auto; }
+    h3 { padding-inline: var(--ui-space-3); margin: var(--ui-space-3) 0 var(--ui-space-2); color: var(--ui-text-secondary); font-size: var(--ui-font-small); font-weight: 600; }
+    .definitions :global(.ui-row) { display: flex; }
+    .definitions :global(.ui-row-main) { justify-content: space-between; }
+    .definitions :global(.ui-row-description) { max-width: 50%; }
+    .editor { flex: 1; min-width: 0; overflow: auto; }
+    .fields { max-width: var(--ui-editor-content-width); padding: var(--ui-space-6); }
+    .field + .field, footer { margin-top: var(--ui-space-5); }
+    .label { margin-bottom: var(--ui-space-2); font-weight: 600; }
+    .field :global(.ui-field) { width: min(24em, 100%); }
+    .options { display: grid; gap: var(--ui-space-2); }
+    .option { display: flex; align-items: center; flex-wrap: wrap; gap: var(--ui-space-2); }
+    .option :global(.ui-field) { flex: 1 1 8em; }
+    .option :global(.ui-check) { flex: none; }
+    .options:not(:empty) + :global(.ui-control) { margin-top: var(--ui-space-2); }
+    footer { display: flex; flex-wrap: wrap; gap: var(--ui-space-3); }
+    .error { margin-top: var(--ui-space-2); color: var(--ui-text-danger); font-size: var(--ui-font-small); }
+</style>

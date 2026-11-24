@@ -42,6 +42,9 @@ export const libraryShortcuts = {
 export const feedShortcuts = {
     previous: "ArrowUp", next: "ArrowDown", first: "Home", last: "End", screenUp: "PageUp", screenDown: "PageDown", menu: "F10"
 } as const;
+export const comboboxShortcuts = { previous: "ArrowUp", next: "ArrowDown", select: "Enter" } as const;
+export const attributeShortcuts = { previous: "ArrowUp", next: "ArrowDown" } as const;
+export const settingsShortcuts = { apply: "Enter" } as const;
 export const calendarShortcuts = {
     left: "ArrowLeft", right: "ArrowRight", up: "ArrowUp", down: "ArrowDown",
     previousPage: "PageUp", nextPage: "PageDown", today: "Home", cancel: "Escape"

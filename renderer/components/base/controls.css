@@ -1,6 +1,6 @@
 @import "../../styles/ui-tokens.css";
 
-/* Reset the native elements before styling so the legacy button/input/kbd rules cannot leak in. */
+/* Reset native element styles before applying control styles. */
 .ui-control, .ui-field, .ui-field-input, .ui-check, .ui-row, .ui-row-main, .ui-popup, .ui-menu-item, .ui-shortcut {
     all: unset;
     box-sizing: border-box;

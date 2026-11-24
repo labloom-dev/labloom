@@ -16,6 +16,7 @@ import * as history from "../main/knowledge/history";
 import * as commit from "../main/knowledge/commit";
 import * as events from "../main/knowledge/events";
 import { defaultSettings, minWindowHeight, minWindowWidth } from "../shared/settings/defaults";
+import { readingSizes } from "../shared/types/appearance";
 import { dayToSeconds } from "../shared/content/time";
 import { randomUUID } from "node:crypto";
 import { hasFailure } from "./failures";
@@ -39,6 +40,7 @@ test("settings snapshots are frozen, merge groups, flush durably and leave confi
     const root = fixture(t), legacy = "{\"version\":1,\"lastWorkspace\":{\"id\":\"ignored\"}}";
     writeFileSync(join(root, "config.json"), legacy);
     const first = settings.get();
+    assert.equal(first.settings.appearance.readingSize, 15);
     assert.equal(Object.isFrozen(first), true);
     assert.equal(Object.isFrozen(first.settings.appearance), true);
     assert.equal(Reflect.set(first.settings.layout, "width", 400), false);
@@ -63,7 +65,7 @@ test("settings snapshots are frozen, merge groups, flush durably and leave confi
 
 test("existing settings without a history limit retain their layout and default to unlimited", () => {
     const root = folder(), { history: _history, ...legacy } = defaultSettings;
-    const value = { ...legacy, layout: { width: 311, collapsed: true } };
+    const value = { ...legacy, appearance: { ...legacy.appearance, readingSize: 16 }, layout: { width: 311, collapsed: true } };
     writeFileSync(join(root, "settings.json"), JSON.stringify(value));
     assert.equal(settings.initialize(root).notice, undefined);
     assert.deepEqual(settings.get().settings, { ...value, history: { limit: null } });
@@ -78,12 +80,13 @@ test("five rapid changes write once within 600ms of the final theme update", asy
         }
     }));
     for (let i = 0; i < 5; i++) {
-        assert.equal(settings.update({ appearance: { readingSize: [14, 16, 18, 14, 16][i], theme: i % 2 ? "light" : "dark" } }).success, true);
+        assert.equal(settings.update({ appearance: { readingSize: readingSizes[i % readingSizes.length], theme: i % 2 ? "light" : "dark" } }).success, true);
         if (i < 4) await delay(25);
     }
     const start = performance.now();
     await delay(600);
     assert.equal(stored(root).appearance.theme, "dark");
+    assert.equal(stored(root).appearance.readingSize, readingSizes[4 % readingSizes.length]);
     assert.ok(completed - start <= 600);
     assert.equal(saved.length, 1);
 });

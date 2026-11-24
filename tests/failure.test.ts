@@ -159,7 +159,7 @@ test("confirmation descriptions use the selected language and include the actual
     };
     const chinese = confirmationText(preview, translator("zh-CN")), english = confirmationText(preview, translator("en"));
     assert.ok(chinese.includes("3个位置") && chinese.includes("4个链接"));
-    assert.ok(english.includes("3 positions across 2 pages") && english.includes("4 link references") && english.includes("recycle bin: A"));
+    assert.ok(english.includes("3 positions across 2 pages") && english.includes("4 link references") && english.includes("Move one page to the recycle bin."));
     assert.ok(!/[\u4e00-\u9fff]/.test(english));
 });
 

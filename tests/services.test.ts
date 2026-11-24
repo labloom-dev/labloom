@@ -19,7 +19,7 @@ import * as commit from "../main/knowledge/commit";
 import * as events from "../main/knowledge/events";
 import * as feed from "../main/feed/service";
 import { registerIPCs } from "../main/register";
-import { pagesChannels, attributesChannels, historyChannels, papersChannels, timersChannels, workspaceChannels, settingsChannels, startupChannels, feedChannels } from "../shared/ipc";
+import { appQueryChannels, pagesChannels, attributesChannels, historyChannels, papersChannels, timersChannels, workspaceChannels, settingsChannels, startupChannels, feedChannels } from "../shared/ipc";
 import { type CommitResult, type PageRecord } from "../shared/types/content";
 import { type AnnotationInput } from "../shared/types/papers";
 import { type FeedEntry } from "../shared/types/feed";
@@ -341,7 +341,7 @@ test("IPC can register again for a recreated window without replacing the worksp
     };
     const a = create();
     registerIPCs(a.window, () => { });
-    assert.deepEqual(new Set(a.handlers.keys()), new Set([pagesChannels, attributesChannels, historyChannels, papersChannels, timersChannels, workspaceChannels, settingsChannels, startupChannels, feedChannels].flatMap(group => Object.values(group))));
+    assert.deepEqual(new Set(a.handlers.keys()), new Set([appQueryChannels, pagesChannels, attributesChannels, historyChannels, papersChannels, timersChannels, workspaceChannels, settingsChannels, startupChannels, feedChannels].flatMap(group => Object.values(group))));
     a.window.webContents.emit("destroyed");
     a.window.emit("closed");
     const b = create();

@@ -1,23 +1,30 @@
-import { confirmationText } from "../../../shared/content/confirmation";
+import { confirmationText, recycledPageNames } from "../../../shared/content/confirmation";
 import { type AttributeDefinition } from "../../../shared/types/attributes";
-import { type CommitResult } from "../../../shared/types/content";
+import { type ChangePreview, type CommitResult } from "../../../shared/types/content";
 import { t } from "../../i18n.svelte";
 
-export const confirmation = $state<{ heading: () => string; text: () => string; names: string[]; resolve: ((value: boolean) => void) | null }>({ heading: () => "", text: () => "", names: [], resolve: null });
-export function ask(heading: () => string, text: () => string, names: string[] = []): Promise<boolean> {
-    if (confirmation.resolve) return Promise.resolve(false);
-    return new Promise(resolve => Object.assign(confirmation, { heading, text, names, resolve }));
+type Request = { heading: () => string; text: () => string; names: string[]; danger: boolean; resolve: (value: boolean) => void };
+export const confirmation = $state<{ current: Request | null }>({ current: null });
+export function ask(heading: () => string, text: () => string, names: string[] = [], danger = false): Promise<boolean> {
+    if (confirmation.current) return Promise.resolve(false);
+    return new Promise(resolve => {
+        confirmation.current = { heading, text, names, danger, resolve };
+    });
 }
 export function answer(value: boolean): void {
-    const resolve = confirmation.resolve;
-    confirmation.resolve = null;
-    resolve?.(value);
+    const request = confirmation.current;
+    confirmation.current = null;
+    request?.resolve(value);
+}
+export function confirmChange(preview: ChangePreview, heading = (): string => t("dialog.change")): Promise<boolean> {
+    const names = recycledPageNames(preview);
+    return ask(heading, () => confirmationText(preview, t, names.length), names);
 }
 export async function confirmed(commit: (token?: string) => Promise<CommitResult>): Promise<boolean> {
     let result = await commit();
     while (result.status === "confirmation") {
         const { preview } = result;
-        if (!await ask(() => t(preview.deletedBlocks.length ? "dialog.deleteBlock" : "dialog.change"), () => confirmationText(preview, t))) return false;
+        if (!await confirmChange(preview, () => t(preview.deletedBlocks.length ? "dialog.deleteBlock" : "dialog.change"))) return false;
         result = await commit(preview.token);
     }
     return true;
@@ -25,8 +32,11 @@ export async function confirmed(commit: (token?: string) => Promise<CommitResult
 export async function define(id: string, value: AttributeDefinition | null): Promise<boolean> {
     let impact = await window.api.attributes.define(id, value);
     while (impact) {
-        if (!await ask(() => t("dialog.sharedAttribute"), () => t("dialog.attributeImpact") + (impact?.recycled?.length ? t("dialog.attributeRecycle", { count: impact.recycled.length }) : ""), [...impact.pages, ...(impact.recycled ?? [])].map(page => page.title))) return false;
-        impact = await window.api.attributes.define(id, value, impact.token);
+        const { pages, recycled, token } = impact;
+        if (!await ask(() => t("dialog.sharedAttribute"),
+            () => t("dialog.attributeImpact") + (recycled?.length ? "\n" + t("dialog.attributeRecycle", { count: recycled.length }) : ""),
+            [...pages, ...(recycled ?? [])].map(page => page.title), value === null)) return false;
+        impact = await window.api.attributes.define(id, value, token);
     }
     return true;
 }

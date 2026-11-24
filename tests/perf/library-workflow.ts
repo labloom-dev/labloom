@@ -79,8 +79,8 @@ export async function libraryWorkflow(paths: string[], bulkPapers: string[] | nu
     const importButton = await until(() => button(toolbar, "导入 PDF"), "import PDF button");
     importButton.click();
     await until(() => el(library + "aside > [data-paragraph]")?.textContent?.includes("2"), "multiple PDF selection");
-    await until(() => el(".notice.error details")?.textContent?.includes("broken.pdf"), "per-file failure");
-    el(".notice.error button")?.click();
+    await until(() => el(":popover-open .toast.error details")?.textContent?.includes("broken.pdf"), "per-file failure");
+    el(":popover-open .toast.error button")?.click();
     const target = await until(() => [...document.querySelectorAll<HTMLElement>(library + "[data-kind=paper]")].find(r => r.getAttribute("aria-selected") === "true"), "imported row");
     const importedIds = [...document.querySelectorAll<HTMLElement>(library + "[aria-selected=true][data-page-id]")].map(r => r.dataset.pageId!);
     target.click();
@@ -182,9 +182,9 @@ export async function libraryWorkflow(paths: string[], bulkPapers: string[] | nu
     const purge = await until(() => button(el(library + ".library-toolbar")!, "永久删除全部结果"), "purge filtered results");
     await until(() => !purge.disabled && el(library + "[role=grid]")?.getAttribute("aria-rowcount") === "2", "only the recycled paper");
     purge.click();
-    const confirmation = await until(() => el(".confirmation"), "filtered purge confirmation");
+    const confirmation = await until(() => el(":popover-open [role=alertdialog]"), "filtered purge confirmation");
     if (!confirmation.textContent?.includes("1个页面") || confirmation.textContent.includes(note.title)) throw Error("Incorrect purge scope");
-    confirmation.querySelectorAll("footer button")[1].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    confirmation.querySelectorAll(".ui-dialog-actions button")[1].dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await until(() => purge.disabled && el(library + "[role=grid]")?.getAttribute("aria-rowcount") === "1", "empty filtered trash disabled");
     if (!(await window.api.pages.get(note.id)).attributes.deleted) throw Error("Unrelated recycled page lost");
 
@@ -200,10 +200,10 @@ export async function libraryWorkflow(paths: string[], bulkPapers: string[] | nu
     await until(() => !purge.disabled && el(library + "[role=grid]")?.getAttribute("aria-rowcount") === "5001", "bulk recycle results");
     const start = performance.now();
     purge.click();
-    const preview = await until(() => el(".confirmation"), "bulk permanent deletion confirmation");
+    const preview = await until(() => el(":popover-open [role=alertdialog]"), "bulk permanent deletion confirmation");
     await new Promise<void>(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
     const elapsed = performance.now() - start, message = preview.textContent ?? "";
-    if (!message.includes("6000个页面") || !message.includes("批注 00001") || !message.includes("Annotation 09991") || message.includes(note.title)) {
+    if (!message.includes("6000个页面") || !preview.querySelector("[role=listitem][aria-setsize=\"6000\"]") || message.includes(note.title)) {
         throw Error("Incorrect bulk purge confirmation scope");
     }
     preview.querySelector("button")!.click();

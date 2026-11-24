@@ -17,7 +17,7 @@ import { display } from "../shared/attrs/format";
 import { dayToSeconds } from "../shared/content/time";
 import { validateValue } from "../shared/attrs/values";
 import { pageKinds } from "../shared/types/content";
-import { confirmationText } from "../shared/content/confirmation";
+import { confirmationText, recycledPageNames } from "../shared/content/confirmation";
 import { payload, blockText } from "../shared/content/blocks";
 import { type ContentBlock, type EditCommit, type CommitResult, type PageRecord } from "../shared/types/content";
 
@@ -367,7 +367,8 @@ test("reference deletion names its target, omits zero counts and lists all recyc
     const remove = (token?: string): CommitResult => service.deleteBlock({ pageId: d.id, blockId }, pageHistory(d.id), token);
     const result = remove();
     assert.equal(result.status, "confirmation");
-    assert.equal(confirmationText(result.preview), "指向「E」的链接引用将从1个页面的1个位置消失。\n将移入回收站：E、F。");
+    assert.equal(confirmationText(result.preview), "指向「E」的链接引用将从1个页面的1个位置消失。\n将把2个页面移入回收站。");
+    assert.deepEqual(recycledPageNames(result.preview), ["E", "F"]);
     assert.equal(remove(result.preview.token).status, "saved");
     for (const page of [e, f]) assert.equal(service.get(page.id).attributes.deleted, true);
 });

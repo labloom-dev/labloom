@@ -94,7 +94,7 @@
             <h2>{article.title || t("shell.untitled")}</h2>
             <div class="metadata">
                 <span>{[article.sourceName || t("shell.untitled"), formatDate(article.publishedAt), article.authors].filter(Boolean).join(" · ")}</span>
-                {#if !article.fullContent}<span class="badge">{t("feed.summaryOnly")}</span>{/if}
+                {#if !article.fullContent}<span class="summary-only">{t("feed.summaryOnly")}</span>{/if}
             </div>
             {#if content}<div class="feed-content" {@attach markup(content, base)}></div>
             {:else if article.summary}<div class="feed-content plain">{article.summary}</div>{/if}
@@ -112,7 +112,7 @@
     .article { max-width: calc(var(--ui-editor-content-width) + 2 * var(--ui-editor-gutter)); box-sizing: border-box; margin-inline: auto; padding: var(--ui-space-6) var(--ui-editor-gutter); user-select: text; }
     h2 { margin: 0 0 var(--ui-space-4); font: 700 var(--ui-editor-font-title)/var(--ui-editor-heading-line-height) var(--ui-font-family); overflow-wrap: anywhere; }
     .metadata { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-space-2) var(--ui-space-3); margin-block-end: var(--ui-space-5); font-size: var(--ui-font-small); line-height: 1.4; color: var(--ui-text-secondary); }
-    .badge { background: var(--ui-surface-panel); border-radius: var(--ui-radius-control); padding: var(--ui-space-1) var(--ui-space-2); }
+    .summary-only { background: var(--ui-surface-panel); border-radius: var(--ui-radius-control); padding: var(--ui-space-1) var(--ui-space-2); }
     .feed-content { font: var(--ui-editor-font-body)/var(--ui-editor-line-height) var(--ui-font-family); overflow-wrap: anywhere; }
     .plain { white-space: pre-wrap; }
     .feed-content :global(:where([data-paragraph], div, ol, ul, dl, blockquote, pre, figure, h3, h4, h5, h6, hr, table)) { margin: 0; font: inherit; }

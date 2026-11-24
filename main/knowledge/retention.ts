@@ -143,7 +143,7 @@ export function purgePlan(ids: string[] | null): { pages: { id: string; title: s
             SELECT 'page',id FROM removed UNION ALL SELECT 'block',id FROM removed_blocks
         )
         SELECT (
-            SELECT json_group_array(json_object('id',p.id,'title',COALESCE(NULLIF(knowledge_text(b.type,b.content),''),'未命名')) ORDER BY p.id)
+            SELECT json_group_array(json_object('id',p.id,'title',COALESCE(knowledge_text(b.type,b.content),'')) ORDER BY p.id)
             FROM removed r CROSS JOIN pages p ON p.id=r.id JOIN blocks b ON b.id=p.title_block_id
         ) AS pages,
         (SELECT json_group_array(id ORDER BY id) FROM removed_blocks) AS blocks,

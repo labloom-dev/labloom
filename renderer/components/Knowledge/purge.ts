@@ -7,8 +7,10 @@ export async function purgePages(ids: string[] | null): Promise<boolean> {
     let result = await submit();
     while (result.status === "confirmation") {
         const preview = result;
-        const text = (): string => t("dialog.purgeImpact", { count: preview.pages.length, titles: preview.pages.map(page => page.title).join(t("dialog.listJoin")) }) + (preview.links ? "\n" + t("dialog.deletedLinks", { count: preview.links }) : "");
-        if (!await ask(() => t("dialog.purge"), text)) return false;
+        const count = preview.pages.length;
+        const text = (): string => t(count === 1 ? "dialog.purgeOne" : "dialog.purgeImpact", { count })
+            + (preview.links ? "\n" + t("dialog.deletedLinks", { count: preview.links }) : "");
+        if (!await ask(() => t("dialog.purge"), text, preview.pages.map(page => page.title), true)) return false;
         result = await submit(result.token);
     }
     return true;

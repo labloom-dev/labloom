@@ -1,4 +1,4 @@
-import type { AppCommands } from "./app/ipc";
+import type { AppCommands, AppQueries } from "./app/ipc";
 import type { PagesAPI } from "./pages/ipc";
 import type { AttributesAPI } from "./attributes/ipc";
 import type { HistoryAPI } from "./history/ipc";
@@ -10,7 +10,7 @@ import type { StartupAPI } from "./startup/ipc";
 import type { FeedAPI } from "./feed/ipc";
 
 export type AppAPI = {
-    app: AppCommands;
+    app: AppCommands & AppQueries;
     pages: PagesAPI;
     attributes: AttributesAPI;
     history: HistoryAPI;

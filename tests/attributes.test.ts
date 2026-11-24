@@ -171,6 +171,74 @@ test("removing options clears a selected option and preserves remaining multisel
     }
 });
 
+test("retyping retains option additions, renames and removals from the same save", t => {
+    const { service } = fixture(t), { setDefinition } = knowledgeServices();
+    const a = { id: "a", name: "A" }, b = { id: "b", name: "B" }, c = { id: "c", name: "C" };
+    for (const { from, to, options } of [
+        { from: "select", to: "multiselect", options: [a, b, c] },
+        { from: "select", to: "multiselect", options: [{ ...a, name: "A2" }, b] },
+        { from: "multiselect", to: "select", options: [a] }
+    ] as const) {
+        const id = `custom:${randomUUID()}`;
+        const original = { id, name: "Choices", type: from, metadata: { options: [a, b] } };
+        const next = { ...original, type: to, metadata: { options: [...options] } };
+        assert.equal(setDefinition(id, original), null);
+        assert.equal(setDefinition(id, next), null);
+        assert.deepEqual(service.definition(id), next);
+    }
+});
+
+test("retyping status options keeps edits and selected option IDs while normalizing groups", t => {
+    const { id: page, service } = fixture(t), { setDefinition } = knowledgeServices();
+    const id = `custom:${randomUUID()}`;
+    const a = { id: "a", name: "A" }, b = { id: "b", name: "B" }, c = { id: "c", name: "C" };
+    const original: AttributeDefinition = { id, name: "Choices", type: "select", metadata: { options: [a, b] } };
+    assert.equal(setDefinition(id, original), null);
+    service.write(page, { [id]: a.id });
+
+    const complete = { ...b, group: "complete" as const };
+    const status: AttributeDefinition = { ...original, type: "status", metadata: { options: [a, complete, c] } };
+    const statusImpact = setDefinition(id, status)!;
+    assert.deepEqual(statusImpact.pages.map(({ id }) => id), [page]);
+    assert.equal(setDefinition(id, status, statusImpact.token), null);
+    const grouped = service.definition(id);
+    assert.deepEqual(grouped.metadata.options, [{ ...a, group: "incomplete" }, complete, { ...c, group: "incomplete" }]);
+    assert.equal(service.values(page)[id], a.id);
+
+    const select: AttributeDefinition = { ...grouped, type: "select", metadata: { options: grouped.metadata.options!.map(option =>
+        option.id === a.id ? { ...option, name: "A2" } : option) } };
+    const selectImpact = setDefinition(id, select)!;
+    assert.deepEqual(selectImpact.pages.map(({ id }) => id), [page]);
+    assert.equal(setDefinition(id, select, selectImpact.token), null);
+    assert.deepEqual(service.definition(id).metadata.options, [{ ...a, name: "A2" }, b, c]);
+    assert.equal(service.values(page)[id], a.id);
+});
+
+test("retyping with an option removed confirms and writes the same affected pages", t => {
+    const { id: pageA, service } = fixture(t), knowledge = knowledgeServices();
+    const pageB = knowledge.create("editable", "B").id, pageC = knowledge.create("editable", "C").id;
+    const id = `custom:${randomUUID()}`, a = { id: "a", name: "A" }, b = { id: "b", name: "B" };
+    const original: AttributeDefinition = { id, name: "Choices", type: "select", metadata: { options: [a, b] } };
+    assert.equal(knowledge.setDefinition(id, original), null);
+    service.write(pageA, { [id]: a.id, modified_at: 0 }, true);
+    service.write(pageB, { [id]: b.id, modified_at: 0 }, true);
+    service.write(pageC, { modified_at: 0 }, true);
+
+    const next: AttributeDefinition = { ...original, type: "status", metadata: { options: [a] } };
+    const preview = knowledge.setDefinition(id, next)!;
+    assert.deepEqual(preview.pages.map(page => page.id).sort(), [pageA, pageB].sort());
+    assert.ok(preview.pages.some(page => page.id === pageB && page.title === "B"));
+    assert.equal(service.values(pageB)[id], b.id);
+    assert.equal(service.values(pageB).modified_at, 0);
+    assert.deepEqual(service.definition(id), original);
+
+    assert.equal(knowledge.setDefinition(id, next, preview.token), null);
+    assert.equal(service.values(pageA)[id], a.id);
+    assert.equal(service.values(pageB)[id], null);
+    assert.equal(service.values(pageC)[id], undefined);
+    assert.deepEqual([pageA, pageB, pageC].filter(page => service.values(page).modified_at !== 0).sort(), preview.pages.map(page => page.id).sort());
+});
+
 test("recurrence has a canonical nullable JSON value, readable search text and empty cross-type conversions", () => {
     const recurrence: AttributeDefinition = { id: "feed_refresh", type: "recurrence", name: "重复", metadata: {} }, value = { every: 2, unit: "week" };
     validateValue(recurrence, value);

@@ -1,3 +1,18 @@
+import type { Channels } from "../ipc/contract";
+
+export type AppInfo = {
+    version: string;
+    electron: string;
+    chromium: string;
+    node: string;
+    v8: string;
+    os: { type: string; arch: string; version: string };
+};
+export type AppQueries = {
+    getInfo(): Promise<AppInfo>;
+};
+export const appQueryChannels = { getInfo: "app:get-info" } as const satisfies Channels<AppQueries>;
+
 export type AppCommands = {
     openDevTools(): void;
     setFrameColors(color: string, symbolColor: string): void;

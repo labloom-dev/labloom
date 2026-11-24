@@ -1,18 +1,3 @@
 :root {
     --annotation-min-height: 150px;
-    --library-toolbar-height: 32px;
-    --library-row-height: 28px;
-    --panel-row-height: 22px;
-    --menu-row-height: 26px;
-    --property-row-height: 26px;
-    --button-height: 24px;
-    --control-radius: 4px;
-    --font-body: 13px;
-    --font-secondary: 12px;
-    --font-min: 11px;
-    --border-width: 1px;
-    --focus-width: 2px;
-    --focus-offset: 2px;
-
-    --dc-font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
 }

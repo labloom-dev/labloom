@@ -87,7 +87,7 @@ test("builtin identity, names, permissions and fixed metadata cannot be edited",
     assert.deepEqual(service.attributes.definition(base.id), base);
 });
 
-test("metadata has a type-specific shape and retyping normalizes metadata before converting values", t => {
+test("submitted metadata must match the destination type when creating or retyping an attribute", t => {
     const { service, database } = fixture(t), select = definition("select");
     for (const value of [
         { ...select, metadata: { options: [{ id: "a", name: "A" }, { id: "a", name: "B" }] } },
@@ -97,9 +97,15 @@ test("metadata has a type-specific shape and retyping normalizes metadata before
     ]) assert.throws(() => service.setDefinition(value.id, value), hasFailure("attribute-invalid-metadata"));
     select.metadata.options = [{ id: "a", name: "A" }, { id: "b", name: "B" }];
     service.setDefinition(select.id, select);
-    service.setDefinition(select.id, { ...select, type: "multiselect", metadata: {} });
+    for (const value of [
+        { ...select, type: "multiselect", metadata: {} },
+        { ...select, type: "string" },
+        { ...select, type: "status", metadata: { ...select.metadata, name: "Wrong location" } }
+    ] as const) assert.throws(() => service.setDefinition(select.id, value), hasFailure("attribute-invalid-metadata"));
+    assert.deepEqual(service.attributes.definition(select.id), select);
+    service.setDefinition(select.id, { ...select, type: "multiselect" });
     assert.deepEqual(service.attributes.definition(select.id).metadata, select.metadata);
-    service.setDefinition(select.id, { ...select, type: "string" });
+    service.setDefinition(select.id, { ...select, type: "string", metadata: {} });
     assert.deepEqual(service.attributes.definition(select.id).metadata, {});
     assert.deepEqual(database.prepare("SELECT name,metadata FROM attrs_meta WHERE id=?").get(select.id), { name: "A", metadata: "{}" });
 });
