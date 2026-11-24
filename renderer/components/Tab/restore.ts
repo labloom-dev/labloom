@@ -4,6 +4,7 @@ import type { View } from "../../../shared/workspace/views";
 import type { TabState } from "./defs";
 
 import { defaultOverviewDate, defaultOverviewStatus } from "../../../shared/workspace/overview";
+import { defaultCalendar } from "../../../shared/workspace/calendar";
 import { defaultLibrary } from "../../../shared/workspace/library";
 import { record } from "../../../shared/attrs/values";
 
@@ -45,6 +46,7 @@ export function restoreTabState(state: unknown): TabState | undefined {
             else if (record(view) && view.type === "overview") tabs.push({ id: tab.id, view: {
                 type: "overview", params: { status: defaultOverviewStatus, date: defaultOverviewDate }
             } });
+            else if (record(view) && view.type === "calendar") tabs.push({ id: tab.id, view: { type: "calendar", params: defaultCalendar } });
             else if (record(view) && view.type === "feed") tabs.push({ id: tab.id, view: { type: "feed", params: {} } });
             else if (record(view) && view.type === "library") {
                 const papers = record(view.params) && view.params.paperOnly === true;

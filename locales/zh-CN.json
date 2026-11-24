@@ -380,6 +380,7 @@
         "group3": "聚焦第3标签组",
         "about": "关于知织",
         "devtools": "开发者工具",
+        "showNotices": "显示通知",
         "blockMenu": "块菜单",
         "toggleProperties": "切换属性面板"
     },
@@ -501,7 +502,6 @@
         "resizeGroup": "调整标签组大小",
         "trashView": "回收站",
         "pinnedView": "已固定",
-        "calendarView": "研究日历",
         "feedView": "订阅动态",
         "targetDeleted": "目标已删除"
     },
@@ -630,7 +630,55 @@
         "feed_last_modified": "Last-Modified"
     },
     "notice": {
-        "reminderTitle": "知织提醒"
+        "reminderTitle": "知织提醒",
+        "title": "通知",
+        "unreadCount": "显示通知（{{count}}条未读）",
+        "readAll": "全部标为已读",
+        "clearAll": "全部清除",
+        "markRead": "标为已读",
+        "markUnread": "标为未读",
+        "clear": "清除",
+        "empty": "没有通知"
+    },
+    "datePicker": {
+        "previous": "上一页",
+        "next": "下一页",
+        "now": "现在",
+        "empty": "空",
+        "clock": "钟点",
+        "clear": "清除",
+        "format": "请输入 {{format}} 格式的值。",
+        "weekdays": {
+            "monday": "一",
+            "tuesday": "二",
+            "wednesday": "三",
+            "thursday": "四",
+            "friday": "五",
+            "saturday": "六",
+            "sunday": "日"
+        },
+        "examples": {
+            "title": "日期选择器",
+            "precision": "精度",
+            "filled": "有值",
+            "readonly": "只读",
+            "clock": "钟点列",
+            "invalid": "输入错误"
+        }
+    },
+    "calendar": {
+        "previousMonth": "上个月",
+        "nextMonth": "下个月",
+        "today": "今天",
+        "chooseDate": "选择日期属性",
+        "chooseStart": "选择开始时间属性",
+        "chooseStatus": "选择状态属性",
+        "missingDate": "找不到日期属性",
+        "agendaWidth": "当天列表宽度",
+        "remaining": "还有 {{count}} 条",
+        "noPages": "没有页面",
+        "complete": "标为完成",
+        "reopen": "重新打开"
     },
     "block": {
         "title": "标题",
@@ -683,8 +731,6 @@
         "openPage": "打开页面",
         "removeItem": "移除{{name}}",
         "json": "JSON 值",
-        "hour": "小时",
-        "year": "四位年份",
         "addTag": "添加标签…",
         "createTag": "新建标签 {{name}}",
         "files": "{{name}}文件列表",
@@ -701,7 +747,6 @@
         "weekBefore": "提前 1 周",
         "morning": "当天 9:00",
         "loadingFile": "正在读取文件…",
-        "yearHint": "YYYY",
         "repeatPeriod": "每{{period}}",
         "enabled": "启用",
         "paused": "暂停",

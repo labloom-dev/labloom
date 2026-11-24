@@ -13,6 +13,7 @@
     align-items: center;
     gap: var(--ui-space-2);
     min-width: 0;
+    user-select: none;
     border-radius: var(--ui-radius-control);
     transition: background-color var(--ui-duration-fast), border-color var(--ui-duration-fast), color var(--ui-duration-fast);
 }

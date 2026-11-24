@@ -9,7 +9,7 @@
         trigger?: NonNullable<Popover.TriggerProps["child"]>;
         children: Snippet;
         open?: boolean;
-        contentProps?: Pick<Popover.ContentProps, "ref" | "class" | "style" | "customAnchor" | "sideOffset" | "onOpenAutoFocus" | "onCloseAutoFocus" | "trapFocus" | "collisionPadding" | "onInteractOutside">;
+        contentProps?: Pick<Popover.ContentProps, "ref" | "class" | "style" | "role" | "customAnchor" | "sideOffset" | "onOpenAutoFocus" | "onCloseAutoFocus" | "trapFocus" | "collisionPadding" | "onInteractOutside">;
         align?: Popover.ContentProps["align"];
         side?: Popover.ContentProps["side"];
     } = $props();

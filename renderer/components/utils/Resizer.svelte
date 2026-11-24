@@ -20,6 +20,7 @@
 </style>
 
 <script lang="ts">
+    import { isComposingKey } from "../../../shared/content/commands";
     import type { XYDirection } from "../types";
 
     type Props = {
@@ -52,7 +53,7 @@
         return direction === "horizontal" ? event.clientY : event.clientX;
     }
     function onkeydown(event: KeyboardEvent): void {
-        if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
+        if (event.defaultPrevented || isComposingKey(event) || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
         const decreaseKey = direction === "vertical" ? "ArrowLeft" : "ArrowUp";
         const increaseKey = direction === "vertical" ? "ArrowRight" : "ArrowDown";
         if (event.key !== decreaseKey && event.key !== increaseKey) return;

@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { AppAPI, BridgeAPI } from "../shared/ipc";
 import type { Channels, InvokeKeys } from "../shared/ipc/contract";
-import { appChannels, beforeQuit, feedChanged, historyChanged, pagesChanged, settingsChanged, pagesChannels, attributesChannels, historyChannels, papersChannels, timersChannels, workspaceChannels, settingsChannels, startupChannels, feedChannels } from "../shared/ipc";
+import { appChannels, beforeQuit, feedChanged, historyChanged, pagesChanged, settingsChanged, openReminderPage, pagesChannels, attributesChannels, historyChannels, papersChannels, timersChannels, workspaceChannels, settingsChannels, startupChannels, feedChannels } from "../shared/ipc";
 
 function methods<API>(channels: Record<keyof API, string>, call: (channel: string, ...args: unknown[]) => unknown): API {
     return Object.fromEntries(Object.entries<string>(channels).map(([key, channel]) => [key, (...args: unknown[]) => call(channel, ...args)])) as API;
@@ -36,7 +36,7 @@ const api: BridgeAPI<AppAPI> = {
     attributes: invokes<AppAPI["attributes"]>(attributesChannels),
     history: { ...invokes<AppAPI["history"]>(historyChannels), onChanged: listener => subscribe(historyChanged, listener) },
     papers: invokes<AppAPI["papers"]>(papersChannels),
-    timers: invokes<AppAPI["timers"]>(timersChannels),
+    timers: { ...invokes<AppAPI["timers"]>(timersChannels), onOpenNotice: listener => subscribe(openReminderPage, listener) },
     workspace: invokes<AppAPI["workspace"]>(workspaceChannels),
     settings: { ...invokes<AppAPI["settings"]>(settingsChannels), onChanged: listener => subscribe(settingsChanged, listener) },
     startup: invokes<AppAPI["startup"]>(startupChannels),

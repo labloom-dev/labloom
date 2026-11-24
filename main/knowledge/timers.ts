@@ -1,25 +1,42 @@
 import { display } from "../../shared/attrs/format";
 import { isTimeType, resolveTimeZone } from "../../shared/content/time";
 import { reminderDue } from "../../shared/content/timers";
+import type { NoticeKey } from "../../shared/types/knowledge";
 import * as workspace from "../workspace-state";
+import { t } from "../ui/i18n";
 import * as attributes from "./attributes";
 import * as commit from "./commit";
 import * as events from "./events";
 import * as data from "./records";
 import * as core from "./timer-state";
 
-export { notices, settings } from "./timer-state";
+export { notices, settings, unreadCount } from "./timer-state";
 export function set(pageId: string, attrId: string, leadSeconds: number, enabled: boolean): void {
     commit.run({ history: false, updateModified: false }, context => {
         core.set(pageId, attrId, leadSeconds, enabled);
         context.change({ pages: [pageId], notices: true });
     });
 }
-export function read(pageId: string, attrId: string, leadSeconds: number): void {
+function modifyNotices(change: () => number): void {
     commit.run({ history: false, updateModified: false }, context => {
-        core.read(pageId, attrId, leadSeconds);
-        context.change({ pages: [pageId], notices: true });
+        if (change()) context.change({ notices: true });
+        else context.skip();
     });
+}
+export function read(pageId: string, attrId: string, leadSeconds: number, firedAt?: number): void {
+    modifyNotices(() => core.updateNotice("read", { pageId, attrId, leadSeconds, firedAt }));
+}
+export function unread(notice: NoticeKey): void {
+    modifyNotices(() => core.updateNotice("unread", notice));
+}
+export function clear(notice: NoticeKey): void {
+    modifyNotices(() => core.updateNotice("clear", notice));
+}
+export function readAll(): void {
+    modifyNotices(() => core.updateAllNotices(false));
+}
+export function clearAll(): void {
+    modifyNotices(() => core.updateAllNotices(true));
 }
 export function recalculateAll(): void {
     commit.run({ history: false, updateModified: false }, context => {
@@ -57,9 +74,10 @@ export function check(): Promise<string[]> {
                 const changed = data.statement("UPDATE timers SET due_at=NULL,fired_at=CASE WHEN ? THEN ? ELSE fired_at END,seen=CASE WHEN ? THEN 0 ELSE seen END WHERE page_id=? AND attr_id=? AND lead_seconds=? AND due_at=?")
                     .run(Number(allowed), now, Number(allowed), row.pageId, row.attrId, row.leadSeconds, row.dueAt).changes;
                 context.change({ pages: [row.pageId], notices: true });
-                if (allowed && changed) {
-                    const notice = core.notice({ ...row, firedAt: now, seen: 0 });
-                    const body = `${notice.title} · ${definition.name} ${display(definition, page.attributes[row.attrId], { zone: resolveTimeZone(workspace.timeZone()) })}`;
+                if (allowed && changed && isTimeType(definition.type)) {
+                    const value = page.attributes[row.attrId] as number | null;
+                    const notice = core.notice({ ...row, firedAt: now, seen: 0 }, { ...definition, type: definition.type }, value);
+                    const body = `${notice.title || t("shell.untitled")} · ${definition.name} ${display(definition, value, { zone: resolveTimeZone(workspace.timeZone()) })}`;
                     context.after(() => events.reminder(notice, body));
                 }
                 else if (!isTimeType(definition.type)) console.warn(`Unsupported timer attribute type: ${definition.type}`);

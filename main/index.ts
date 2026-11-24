@@ -9,6 +9,7 @@ import * as settingsEffects from "./settings/effects";
 import * as lifecycle from "./lifecycle";
 import * as windows from "./ui/window";
 import * as reminders from "./ui/reminders";
+import { openReminderPage } from "../shared/timers/ipc";
 
 // Set both paths before ready, so development also isolates Chromium state.
 const dataPath = app.isPackaged
@@ -33,7 +34,14 @@ else {
     settingsEffects.initialize();
     lifecycle.initialize();
     session.configureNetwork((input, init) => net.fetch(input instanceof URL ? input.toString() : input, init));
-    reminders.initialize();
+    reminders.initialize(pageId => {
+        const contents = windows.show(applicationLog).webContents;
+        const send = (): void => {
+            if (!contents.isDestroyed()) contents.send(openReminderPage, pageId);
+        };
+        if (contents.isLoadingMainFrame()) contents.once("did-finish-load", send);
+        else send();
+    });
 
     app.whenReady().then(() => {
         app.setAppUserModelId("dev.labloom.app");

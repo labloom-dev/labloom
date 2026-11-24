@@ -23,8 +23,8 @@ body { background: var(--ui-surface-window); color: var(--ui-text); font: var(--
 .state-table th { font-weight: 500; }
 .state-table thead { background: var(--ui-surface-panel); color: var(--ui-text-secondary); }
 .state-table tbody tr:last-child > * { border-bottom: 0; }
-.state-table td > div { display: flex; align-items: center; }
-.state-table :is(.ui-field, .ui-select) { width: 100%; max-width: 156px; }
+.state-table td > div[inert] { display: flex; align-items: center; }
+.state-table td > div[inert] > :is(.ui-field, .ui-select) { width: 100%; max-width: 156px; }
 .state-table .ui-row { max-width: 156px; }
 .row-examples { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 10px; gap: 16px; }
 .row-examples > div > span { display: block; margin-bottom: 4px; color: var(--ui-text-secondary); font-size: var(--ui-font-small); }

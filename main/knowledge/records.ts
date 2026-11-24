@@ -5,7 +5,7 @@ import { libraryText, search } from "../../shared/attrs/format";
 import { attributeTargetKind, decodeValue, emptyValue, encodeValue, nullable, record, validUUID } from "../../shared/attrs/values";
 import { blockText, payload, validateBlock, validTarget } from "../../shared/content/blocks";
 import { matchRanges } from "../../shared/content/matches";
-import { isTimeType, resolveTimeZone } from "../../shared/content/time";
+import { isTimeType, resolveTimeZone, validTimeSeconds } from "../../shared/content/time";
 import { LabloomError } from "../../shared/failure";
 import { type AttributeDefinition, type AttributeValue } from "../../shared/types/attributes";
 import { pageKinds, type Backlink, type ContentBlock, type LinkTarget, type PageKind, type PageList, type PageObjects, type PageQuery, type PageRecord, type PageSummary, type PageSearchResult, type ResolvedTarget, type Target } from "../../shared/types/content";
@@ -13,6 +13,7 @@ import { type blocks, type pages } from "../storage/tables";
 import * as workspace from "../workspace-state";
 
 import { overviewBatchSize, type OverviewIndex, type OverviewPage, type OverviewQuery } from "../../shared/workspace/overview";
+import type { CalendarPage, CalendarQuery } from "../../shared/workspace/calendar";
 import { libraryBatchSize, type LibraryIndex, type LibraryQuery } from "../../shared/workspace/library";
 import { createI18n, type Translate } from "../../shared/i18n";
 
@@ -518,6 +519,28 @@ export function overviewRows(ids: string[], date?: string): OverviewPage[] {
         LEFT JOIN page_attrs f ON f.page_id=p.id AND f.attr_id='pinned'
         LEFT JOIN page_attrs day ON day.page_id=p.id AND day.attr_id=? ORDER BY j.key`).all(JSON.stringify(ids), day) as OverviewPage[];
     return rows.map(row => ({ ...row, pinned: !!row.pinned }));
+}
+
+export function calendarRows(query: CalendarQuery): CalendarPage[] {
+    workspace.requireWorkspace();
+    if (!validTimeSeconds("day", query.from) || !validTimeSeconds("day", query.to) || query.from >= query.to || definition(query.date)?.type !== "day") return [];
+    const start = query.start && definition(query.start)?.type === "minute" ? query.start : null;
+    const status = query.status && definition(query.status)?.type === "status" ? query.status : null;
+    // The initial scan starts at the indexed date range. Changes start at the affected page IDs.
+    const range = query.ids ? "json_each(@ids) j CROSS JOIN page_attrs d ON d.page_id=j.value" : "page_attrs d INDEXED BY page_attrs_by_value";
+    const result = statement(`SELECT p.id,knowledge_text(b.type,b.content) AS title,d.value AS date,
+            s.value AS start,st.value AS status,st.page_id IS NOT NULL AS hasStatus,f.value AS pinned
+        FROM ${range}
+        CROSS JOIN pages p ON p.id=d.page_id
+        CROSS JOIN blocks b ON b.id=p.title_block_id
+        CROSS JOIN page_attrs r ON r.page_id=p.id AND r.attr_id='deleted' AND r.value=0
+        LEFT JOIN page_attrs s ON s.page_id=p.id AND s.attr_id=@start
+        LEFT JOIN page_attrs st ON st.page_id=p.id AND st.attr_id=@status
+        LEFT JOIN page_attrs f ON f.page_id=p.id AND f.attr_id='pinned'
+        WHERE d.attr_id=@date AND d.value>=@from AND d.value<@to AND typeof(d.value)='integer'`).all({
+        date: query.date, from: query.from, to: query.to, start, status, ...(query.ids ? { ids: JSON.stringify(query.ids) } : {})
+    }) as (Omit<CalendarPage, "hasStatus" | "pinned"> & { hasStatus: number; pinned: number | null })[];
+    return result.map(page => ({ ...page, hasStatus: !!page.hasStatus, pinned: !!page.pinned }));
 }
 
 export function listUpdates(query: PageQuery, unchanged: string[], labelColumns?: string[]): PageList & { order: string[]; names?: Record<string, string> } {

@@ -114,9 +114,10 @@ export function createWindow(applicationLog: LogFile | null): void {
 }
 
 
-export function show(applicationLog: LogFile | null): void {
+export function show(applicationLog: LogFile | null): BrowserWindow {
     if (!mainWindowRef || mainWindowRef.isDestroyed()) createWindow(applicationLog);
     const window = mainWindowRef!;
     if (window.isMinimized()) window.restore();
     window.show(); window.focus();
+    return window;
 }

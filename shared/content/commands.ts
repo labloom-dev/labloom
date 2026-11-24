@@ -12,7 +12,7 @@ export const commands = {
     nextTab: { shortcut: "Ctrl+Tab" }, previousTab: { shortcut: "Ctrl+Shift+Tab" },
     group1: { shortcut: "Ctrl+1" }, group2: { shortcut: "Ctrl+2" }, group3: { shortcut: "Ctrl+3" },
     blockMenu: { shortcut: "Ctrl+/" }, toggleProperties: { shortcut: "Ctrl+Alt+P" },
-    about: { shortcut: "" }, devtools: { shortcut: "F12" }
+    about: { shortcut: "" }, devtools: { shortcut: "F12" }, showNotices: { shortcut: "" }
 } as const;
 export type Command = keyof typeof commands;
 export const menus = [
@@ -41,6 +41,14 @@ export const libraryShortcuts = {
 } as const;
 export const feedShortcuts = {
     previous: "ArrowUp", next: "ArrowDown", first: "Home", last: "End", screenUp: "PageUp", screenDown: "PageDown", menu: "F10"
+} as const;
+export const calendarShortcuts = {
+    left: "ArrowLeft", right: "ArrowRight", up: "ArrowUp", down: "ArrowDown",
+    previousPage: "PageUp", nextPage: "PageDown", today: "Home", cancel: "Escape"
+} as const;
+export const datePickerShortcuts = { ...calendarShortcuts, select: "Enter" } as const;
+export const clockInputShortcuts = {
+    left: "ArrowLeft", right: "ArrowRight", up: "ArrowUp", down: "ArrowDown", apply: "Enter"
 } as const;
 export const annotationShortcuts = {
     next: "ArrowDown", previous: "ArrowUp", edit: "Enter", openTab: "Ctrl+Enter", remove: "Delete", menu: "Shift+F10"

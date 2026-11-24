@@ -12,7 +12,6 @@ import { display, libraryText, search } from "../shared/attrs/format";
 import { createI18n } from "../shared/i18n";
 import { languages } from "../shared/locale";
 import { defaultValue, encodeValue, validateDefinition, validateValue } from "../shared/attrs/values";
-import { scheduleDay } from "../renderer/components/Knowledge/calendar-day";
 import { dayToSeconds, monthToSeconds, secondsToDay, secondsToHour, secondsToMinute, secondsToMonth, secondsToSecond, secondsToWall, secondsToYear, timeToSeconds, timeTypes, wallToSeconds, yearToSeconds } from "../shared/content/time";
 import { type AttributeDefinition, type AttributeType, type AttributeValue } from "../shared/types/attributes";
 
@@ -194,8 +193,9 @@ test("calendar search and grouping stay on the same day after changing zones and
         assert.deepEqual(new Set(service.list({ keyword: "2026-11" }).items.map(p => p.id)), new Set([event.id, task.id]));
         assert.equal(service.list({ keyword: "2026-11-11" }).total, 2);
         assert.equal(service.list({ keyword: String(day) }).total, 0);
-        assert.equal(scheduleDay(service.get(event.id).attributes, "schedule_date"), "2026-11-11");
-        assert.equal(scheduleDay(service.get(task.id).attributes, "schedule_date"), "2026-11-11");
+        const rows = service.calendarRows({ date: "schedule_date", from: day, to: day + 86400 });
+        assert.deepEqual(new Set(rows.map(row => row.id)), new Set([event.id, task.id]));
+        assert.ok(rows.every(row => secondsToDay(row.date) === "2026-11-11"));
     }
     session.close();
     const reopened = openWorkspace(info.path, undefined, { timeZone: () => "America/New_York" });
@@ -203,5 +203,5 @@ test("calendar search and grouping stay on the same day after changing zones and
     const next = knowledgeServices();
     assert.equal(next.get(event.id).attributes.schedule_date, day);
     assert.equal(next.list({ keyword: "2026-11-11" }).total, 2);
-    assert.equal(scheduleDay(next.get(event.id).attributes, "schedule_date"), "2026-11-11");
+    assert.equal(next.calendarRows({ date: "schedule_date", from: day, to: day + 86400, ids: [event.id] })[0].date, day);
 });

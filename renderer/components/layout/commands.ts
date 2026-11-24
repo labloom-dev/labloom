@@ -131,12 +131,14 @@ export function runCommand(id: Command): void {
     }
     else if (id === "newPage") {
         const view = group.tabs.find(tab => tab.id === group.activeTabId)?.view;
-        createPage({}, view?.type === "library" && (view.params.paperOnly || view.params.pageType?.type === "paper") ? "paper" : "editable");
+        if (view?.type === "calendar") document.querySelector<HTMLButtonElement>(`[data-tabs-content][data-value="${CSS.escape(group.activeTabId ?? "")}"] .calendar-create`)?.click();
+        else createPage({}, view?.type === "library" && (view.params.paperOnly || view.params.pageType?.type === "paper") ? "paper" : "editable");
     }
     else if (id === "closeTab") {
         if (group.activeTabId) removeTab(group.activeTabId);
     }
     else if (id === "sidebar") togglePanel();
+    else if (id === "showNotices") shell.noticesOpen = true;
     else if (id === "search" || id === "commandPalette") {
         const origin = lastFocus?.isConnected ? lastFocus : document.activeElement;
         if (!shell.search) prepareCommands(origin);

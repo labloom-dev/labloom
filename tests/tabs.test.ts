@@ -4,6 +4,7 @@ import { validate, version } from "uuid";
 import { getGroupID, getTabID } from "../renderer/components/Tab/ids";
 import { defaultLibrary, repairLibraryFields } from "../shared/workspace/library";
 import { restoreTabState } from "../renderer/components/Tab/restore";
+import { defaultCalendar } from "../shared/workspace/calendar";
 import { TabVisits, type TabView } from "../renderer/components/Tab/visits";
 
 function latch(): { wait: Promise<void>; release: () => void } {
@@ -167,7 +168,7 @@ const savedViews = [
     { type: "page", params: { page: pageRef } },
     ...[true, false].map(showProperties => ({ type: "page", params: { page: pageRef, showProperties } })),
     { type: "page", params: { page: pageRef, fileId: pageRef.id, showProperties: false, infoWidth: 336, paperSidebar: "annotations" } },
-    { type: "calendar", params: { date, start: { kind: "attribute", type: "minute", id: "start" }, status } },
+    { type: "calendar", params: { date, start: { kind: "attribute", type: "minute", id: "start" }, status, agendaWidth: 346 } },
     { type: "library", params: { scope: "trash", pageType: { kind: "page-type", type: "paper" }, sort: { column: "title", direction: "asc" }, tags: ["A"], filters: [{ attribute: { kind: "attribute", id: "missing" }, value: { list: [false, null] } }] } },
     { type: "library", params: { scope: "all", paperOnly: true, sort: { column: "paper_year", direction: "desc" }, tags: [], filters: [], columns: [{ id: "paper_year", width: 92 }, { id: "title" }], showProperties: false, infoWidth: 332 } },
     { type: "overview", params: { status, date } },
@@ -186,7 +187,7 @@ test("all view parameters round-trip independently of whether referenced objects
 });
 test("unknown views and invalid parameters discard only their tab and repair the active selection", () => {
     for (const bad of [
-        { type: "future", params: {} }, { type: "calendar", params: { date: status } },
+        { type: "future", params: {} },
         { type: "page", params: { page: { kind: "page", id: "invalid" } } },
         { type: "page", params: { page: pageRef, unexpected: "true" } },
         { type: "about", params: { keyword: "A" } }
@@ -195,6 +196,12 @@ test("unknown views and invalid parameters discard only their tab and repair the
         const restored = restoreTabState(saved);
         assert.deepEqual(restored?.groups[0].tabs, saved.groups[0].tabs.slice(1));
         assert.equal(restored?.groups[0].activeTabId, "1");
+    }
+});
+test("invalid calendar parameters retain the tab with default dates and width", () => {
+    for (const params of [{ date: status }, { date, agendaWidth: 0 }, { date, agendaWidth: "wide" }, { date, month: 123 }]) {
+        const saved = layout([{ type: "calendar", params }]);
+        assert.deepEqual(restoreTabState(saved), layout([{ type: "calendar", params: defaultCalendar }]));
     }
 });
 test("invalid overview and feed parameters keep the active tab and use defaults", () => {

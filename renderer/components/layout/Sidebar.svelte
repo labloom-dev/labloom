@@ -1,4 +1,6 @@
-<ActivityBar active={activeDestination} onopen={openDestination} />
+<ActivityBar active={activeDestination} onopen={openDestination}>
+    {#snippet notifications()}<NoticeCenter />{/snippet}
+</ActivityBar>
 {#if !shell.collapsed}
     <SidePanel width={shell.width} bind:filter>
         <SidebarGroup groupKey="pinned" title={t("shell.pinned")} query={{ pinned: true }} keyword={applied} {currentPage} />
@@ -12,6 +14,7 @@
 <script lang="ts">
     import SidePanel from "./SidePanel.svelte";
     import ActivityBar from "./ActivityBar.svelte";
+    import NoticeCenter from "./NoticeCenter.svelte";
     import { t } from "../../i18n.svelte";
     import { onMount } from "svelte";
     import { tabState } from "../Tab/state.svelte";
@@ -25,7 +28,8 @@
     const group = $derived(tabState.groups.find(group => group.id === tabState.focusedGroupId));
     const activeView = $derived(group?.tabs.find(tab => tab.id === group.activeTabId)?.view);
     const currentPage = $derived(activeView?.type === "page" ? activeView.params.page.id : undefined);
-    const activeDestination = $derived(activeView?.type === "library" ? (activeView.params.paperOnly ? "papers" : "library") : (Object.keys(destinationViews) as Destination[]).find(id => sameView(activeView, destinationViews[id])));
+    const activeDestination = $derived(activeView?.type === "library" ? (activeView.params.paperOnly ? "papers" : "library")
+        : activeView?.type === "calendar" ? "calendar" : (Object.keys(destinationViews) as Destination[]).find(id => sameView(activeView, destinationViews[id])));
     $effect(() => {
         const value = filter; const timer = setTimeout(() => applied = value, 200); return () => clearTimeout(timer);
     });

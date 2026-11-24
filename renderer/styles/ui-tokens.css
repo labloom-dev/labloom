@@ -134,6 +134,7 @@
     --ui-text-placeholder: var(--ui-p-neutral-6);
     --ui-text-on-accent: var(--ui-p-white);
     --ui-text-selected: var(--ui-p-neutral-9);
+    --ui-text-danger: var(--ui-p-ink-red);
     --ui-border: var(--ui-p-neutral-4);
     --ui-border-input: var(--ui-p-neutral-5);
     --ui-border-check: var(--ui-p-check-gray);

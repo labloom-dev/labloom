@@ -29,6 +29,7 @@ export class EditChanges {
     readonly seeds = new Map<string, Target>();
     readonly dependencies = new Set<string>();
     readonly touches = new Set<string>();
+    removesNotice = false;
     private readonly links = new Map<string, { source: Target; field: string; targets: LinkTarget[] }>();
     private readonly containers = new Map<string, { source: Target; before: string[]; after: string[]; added: string[] }>();
     private readonly ownersCache = new Map<string, string[]>();
@@ -161,6 +162,9 @@ export class EditChanges {
         if (id === "deleted" || id === "recycle_reason" || id === "recycled_at") throw new LabloomError({ kind: "attribute-readonly" });
         const before = this.readValue(pageId, id);
         if (same(before, value)) return;
+        if (!value && !this.removesNotice && isTimeType(def.type)) {
+            this.removesNotice = !!data.statement("SELECT 1 FROM timers WHERE page_id=? AND attr_id=? AND fired_at IS NOT NULL LIMIT 1").get(pageId, id);
+        }
         if (id === "paper_annotations") this.highlightPages.add(pageId);
         if (isTimeType(def.type) || def.type === "status" || ["feed_url", "feed_status", "feed_refresh"].includes(id)) {
             const fields = this.schedules.get(pageId) ?? new Set<string>();

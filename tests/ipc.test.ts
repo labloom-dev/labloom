@@ -17,6 +17,7 @@ import { knownCoordinatePdf } from "./fixtures/pdf-text";
 import { fixture as scaleFixture } from "./perf/fixture";
 import { hasFailure } from "./failures";
 import type { SavedTabs } from "../shared/workspace/tabs";
+import type { CalendarPage } from "../shared/workspace/calendar";
 import type { AttributeDefinition, AttributeImpact, AttributeValue } from "../shared/types/attributes";
 import type { FeedState } from "../shared/types/feed";
 import type { PaperResources } from "../shared/types/papers";
@@ -96,19 +97,21 @@ test("starter definitions belong to the workspace and dated ordinary pages follo
     await call(pagesChannels.create, workspaceHistory, "C");
     assert.throws(() => session.getNative().prepare("UPDATE pages SET kind=? WHERE id=?").run("unknown", page.id), /pages_kind/);
     assert.deepEqual(session.getNative().prepare("SELECT DISTINCT kind FROM pages").pluck().all(), ["editable"]);
-    const calendar = (): Promise<PageList> => call(pagesChannels.list, { hasValue: "schedule_date" });
+    const calendar = (): Promise<CalendarPage[]> => call(pagesChannels.calendarRows, { date: "schedule_date", from: 0, to: 86400 });
     const date = starters.find(def => def.id === "schedule_date")!;
     assert.equal(await call(attributesChannels.define, date.id, { ...date, name: "会议日期" }), null);
-    assert.deepEqual((await calendar()).items.map(item => item.id), [page.id]);
+    assert.deepEqual(await calendar(), [{ id: page.id, title: "A", date: 0, start: null, status: null, hasStatus: false, pinned: false }]);
+    assert.deepEqual(await call(pagesChannels.calendarRows, { date: "schedule_date", from: 86400, to: 172800 }), []);
+    assert.equal((await invoke(pagesChannels.calendarRows, { date: "schedule_date", from: 0, to: 86400, ids: ["invalid"] })).ok, false);
     for (const id of ids) {
         const impact = await call<AttributeImpact | null>(attributesChannels.define, id, null);
         if (impact) assert.equal(await call(attributesChannels.define, id, null, impact.token), null);
     }
-    assert.deepEqual(await calendar(), { items: [], total: 0 });
+    assert.deepEqual(await calendar(), []);
     session.close();
     session.open(path, "open");
     assert.deepEqual((await definitions()).filter(def => ids.includes(def.id)), []);
-    assert.deepEqual(await calendar(), { items: [], total: 0 });
+    assert.deepEqual(await calendar(), []);
 });
 
 test("review status values, groups and definition changes reschedule every reminder on the page", async t => {
