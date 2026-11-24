@@ -3,10 +3,11 @@ import typia from "@typia/unplugin/vite";
 import { defineConfig } from "electron-vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { viteStaticCopy } from "vite-plugin-static-copy";
+import { ipcValidators } from "./ipc-validators";
 
 export default defineConfig({
     main: {
-        plugins: [typia({ include: [/[/\\]main[/\\][^/\\]+[/\\]ipc\.ts$/], tsconfig: "configs/tsconfig.node.json" })],
+        plugins: [ipcValidators()],
         build: {
             outDir: "dist/main",
             rollupOptions: {

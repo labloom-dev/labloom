@@ -14,7 +14,7 @@
         "lint:fix": "eslint --config configs/eslint.config.js --fix .",
         "test": "npm run test:feed && npm run test:db",
         "test:feed": "node --test configs/feed.test.js",
-        "test:db": "node --import tsx --test tests/database-tools.test.ts && node tests/run-workspace.mjs",
+        "test:db": "node --import tsx --test tests/database-tools.test.ts tests/ipc-validators.test.ts && node tests/run-workspace.mjs",
         "perf": "node tests/run-workspace.mjs --perf",
         "db:generate": "node --import tsx scripts/database.mjs generate",
         "db:check": "node --import tsx scripts/database.mjs check",
