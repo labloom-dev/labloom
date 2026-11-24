@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { validate, version } from "uuid";
 import { getGroupID, getTabID } from "../renderer/components/Tab/ids";
+import { defaultLibrary, repairLibraryFields } from "../shared/workspace/library";
 import { restoreTabState } from "../renderer/components/Tab/restore";
 import { TabVisits, type TabView } from "../renderer/components/Tab/visits";
 
@@ -165,8 +166,10 @@ const pageRef = { kind: "page", id: "11111111-1111-4111-8111-111111111111" };
 const savedViews = [
     { type: "page", params: { page: pageRef } },
     ...[true, false].map(showProperties => ({ type: "page", params: { page: pageRef, showProperties } })),
+    { type: "page", params: { page: pageRef, fileId: pageRef.id, showProperties: false, infoWidth: 336, paperSidebar: "annotations" } },
     { type: "calendar", params: { date, start: { kind: "attribute", type: "minute", id: "start" }, status } },
-    { type: "library", params: { scope: "trash", pageType: { kind: "page-type", type: "paper" }, sort: "title", tags: ["A"], filters: [{ attribute: { kind: "attribute", id: "missing" }, value: { list: [false, null] } }] } },
+    { type: "library", params: { scope: "trash", pageType: { kind: "page-type", type: "paper" }, sort: { column: "title", direction: "asc" }, tags: ["A"], filters: [{ attribute: { kind: "attribute", id: "missing" }, value: { list: [false, null] } }] } },
+    { type: "library", params: { scope: "all", paperOnly: true, sort: { column: "paper_year", direction: "desc" }, tags: [], filters: [], columns: [{ id: "paper_year", width: 92 }, { id: "title" }], showProperties: false, infoWidth: 332 } },
     { type: "overview", params: { status } },
     ...["feed", "attributes", "settings", "about"].map(type => ({ type, params: {} }))
 ];
@@ -183,14 +186,42 @@ test("unknown views and invalid parameters discard only their tab and repair the
     for (const bad of [
         { type: "future", params: {} }, { type: "calendar", params: { date: status } },
         { type: "page", params: { page: { kind: "page", id: "invalid" } } },
-        { type: "page", params: { page: pageRef, showProperties: "true" } },
-        { type: "overview", params: { status: date } }, { type: "about", params: { keyword: "A" } },
-        { type: "library", params: { scope: "papers" } }
+        { type: "page", params: { page: pageRef, unexpected: "true" } },
+        { type: "overview", params: { status: date } }, { type: "about", params: { keyword: "A" } }
     ]) {
         const saved = layout([bad, ...savedViews]);
         const restored = restoreTabState(saved);
         assert.deepEqual(restored?.groups[0].tabs, saved.groups[0].tabs.slice(1));
         assert.equal(restored?.groups[0].activeTabId, "1");
+    }
+});
+test("invalid reader sidebar settings keep the page and its selected PDF", () => {
+    const location = { page: pageRef, fileId: pageRef.id };
+    for (const invalid of [{ infoWidth: 0 }, { showProperties: "true" }, { paperSidebar: "unknown" }]) {
+        const saved = layout([{ type: "page", params: { ...location, showProperties: false, paperSidebar: "annotations", ...invalid } }]);
+        assert.deepEqual(restoreTabState(saved)?.groups[0].tabs[0].view, { type: "page", params: location });
+    }
+});
+test("invalid library settings restore the view with its defaults", () => {
+    const saved = layout([{ type: "library", params: { scope: "papers", paperOnly: true } }]);
+    assert.deepEqual(restoreTabState(saved)?.groups[0].tabs[0].view, { type: "library", params: defaultLibrary(true) });
+});
+test("missing or hidden library fields only remove their own columns, filters and sort", () => {
+    for (const papers of [true, false]) {
+        const field = (id: string): ReturnType<typeof defaultLibrary>["filters"][number] => ({ attribute: { kind: "attribute" as const, id }, value: "A" });
+        const original = { ...defaultLibrary(papers), scope: "trash" as const, tags: ["tag"], infoWidth: 337, showProperties: false,
+            columns: [{ id: "tags", width: 126 }, { id: "retired", width: 104 }, { id: "title" }],
+            filters: [field("retired"), field("title"), field("author")], sort: { column: "retired", direction: "asc" as const } };
+        const available = new Set(["tags", "author", "modified_at", "created_at"]);
+        const repaired = repairLibraryFields(original, available);
+        assert.deepEqual(repaired, { ...original, columns: [original.columns[0], original.columns[2]], filters: [field("author")], sort: defaultLibrary(papers).sort });
+        assert.equal(repairLibraryFields(repaired, available), repaired);
+    }
+});
+test("malformed column layouts, legacy sort strings and double paper types restore view defaults", () => {
+    for (const invalid of [{ columns: [{ id: "kind" }] }, { columns: [{ id: "title" }, { id: "title" }] }, { sort: "title" }, { pageType: { kind: "page-type", type: "paper" } }]) {
+        const saved = layout([{ type: "library", params: { ...defaultLibrary(true), infoWidth: 283, ...invalid } }]);
+        assert.deepEqual(restoreTabState(saved)?.groups[0].tabs[0].view, { type: "library", params: defaultLibrary(true) });
     }
 });
 test("broken layout relationships and the previous tab format use the default layout", () => {

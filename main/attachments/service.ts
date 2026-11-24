@@ -22,11 +22,17 @@ function storing<T>(action: (store: Store) => T): T {
             const target = attachmentPath(workspace.root(), storedName);
             mkdirSync(join(workspace.root(), "attachments"), { recursive: true });
             place(target);
-            created.push(target);
-            validate?.(target);
-            const file = { id, ...info, size: statSync(target).size };
-            db.insert(attachments).values({ ...file, storedName }).run();
-            return file;
+            try {
+                validate?.(target);
+                const file = { id, ...info, size: statSync(target).size };
+                db.insert(attachments).values({ ...file, storedName }).run();
+                created.push(target);
+                return file;
+            }
+            catch (error) {
+                unlinkSync(target);
+                throw error;
+            }
         });
     }
     catch (error) {
@@ -36,7 +42,7 @@ function storing<T>(action: (store: Store) => T): T {
 }
 
 // Local imports accept the PDF signature within the first 1024 bytes, as before.
-function checkLocalPDF(path: string): void {
+export function checkLocalPDF(path: string): void {
     const fd = openSync(path, "r");
     try {
         const header = Buffer.alloc(1024);

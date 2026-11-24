@@ -164,8 +164,7 @@ test("purging a paper removes its solely retained annotation pages, PDF bytes an
 test("another live or recycled paper retains an annotation and the immutable attachment it still needs", async t => {
     const { service, purge, id, annotation, file } = await annotated(t);
     const other = service.create("paper", "B");
-    const ref = { id: randomUUID(), type: "blocked_reference" as const, payload: { ...payload("blocked_reference"), target: { kind: "page" as const, id: annotation } }, children: [] };
-    service.commitEdit({ pageId: other.id, batch: 1, blocks: [ref], pageChildren: [ref.id] }, pageHistory(other.id));
+    service.commitEdit({ pageId: other.id, batch: 1, blocks: [], attributes: { links: [annotation] } }, pageHistory(other.id));
     confirm(token => service.trash([id, other.id], workspaceHistory, token));
     assert.equal(service.flags(annotation).deleted, true);
     assert.deepEqual(erase(purge, [id]), [id]);
@@ -173,6 +172,39 @@ test("another live or recycled paper retains an annotation and the immutable att
     assert.equal(existsSync(file), true);
     assert.deepEqual(new Set(erase(purge, [other.id])), new Set([other.id, annotation]));
     assert.equal(existsSync(file), false);
+});
+test("a dependent page in the recycle bin can retain a downstream page during permanent deletion", t => {
+    const { service, purge } = fixture(t);
+    const a = service.create("editable", "Selected"), outside = service.create("editable", "Other parent");
+    const target = service.create("editable", "Keep", {}, a.id);
+    const remaining = service.create("editable", "Non-independent owner", { links: [target.id] }, outside.id);
+    confirm(token => service.trash([outside.id, a.id], workspaceHistory, token));
+    assert.equal(service.get(remaining.id).attributes.independent, false);
+    assert.equal(service.get(remaining.id).attributes.deleted, true);
+    assert.deepEqual(erase(purge, [a.id]), [a.id]);
+    assert.equal(service.get(target.id).attributes.deleted, true);
+    assert.deepEqual(new Set(erase(purge, null)), new Set([outside.id, remaining.id, target.id]));
+});
+
+test("a surviving annotation retains its contents and can identify its permanently deleted original", async t => {
+    const { service, purge, papers, id, annotation } = await annotated(t);
+    const retained = service.create("editable", "Keeps the annotation", { links: [annotation] });
+    const page = service.get(annotation), body = page.blocks[page.children[0]];
+    service.commitEdit({ pageId: annotation, batch: 0, blocks: [{ ...body, payload: payload("paragraph", "Keep this note") }] }, pageHistory(annotation));
+    const before = service.get(annotation);
+    const owner = { id, title: service.get(id).title, recycled: false };
+    assert.deepEqual(papers.annotationPaper(annotation), owner);
+    assert.equal(Object.hasOwn(before.attributes, "annotation_paper"), false);
+    confirm(token => service.trash([id], workspaceHistory, token));
+    assert.deepEqual(papers.annotationPaper(annotation), { ...owner, recycled: true });
+    assert.deepEqual(service.backlinks(annotation).map(row => row.sourceId), [retained.id]);
+    assert.deepEqual(erase(purge, [id]), [id]);
+    const after = await papers.get(annotation);
+    assert.deepEqual(after.blocks, before.blocks);
+    assert.deepEqual(after.attributes, before.attributes);
+    assert.equal(papers.annotationPaper(annotation), null);
+    assert.equal(service.resolve({ kind: "page", id }), null);
+    assert.deepEqual(service.backlinks(annotation).map(row => row.sourceId), [retained.id]);
 });
 test("purging one paper deletes only its independent copy of an identically imported PDF", async t => {
     const { service, purge, papers, info } = fixture(t), path = join(info.path, "shared.pdf");

@@ -8,7 +8,8 @@ import {
     InvalidPDFException,
     PasswordResponses,
     type PDFDocumentLoadingTask,
-    type PDFDocumentProxy
+    type PDFDocumentProxy,
+    type PageViewport
 } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { EventBus, FindState, PDFFindController, PDFLinkService, PDFViewer } from "pdfjs-dist/legacy/web/pdf_viewer.mjs";
 import viewerCss from "pdfjs-dist/legacy/web/pdf_viewer.css?inline";
@@ -16,7 +17,7 @@ import workerUrl from "pdfjs-dist/legacy/build/pdf.worker.mjs?url";
 import { scalePresets, type ReaderRotation, type ReaderScalePreset, type ReaderViewState } from "./defs";
 import { type FailureInfo, LabloomError, diagnostic } from "../../../shared/failure";
 
-export { FindState, PasswordResponses, type PDFDocumentProxy };
+export { FindState, PasswordResponses, type PDFDocumentProxy, type PageViewport };
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 

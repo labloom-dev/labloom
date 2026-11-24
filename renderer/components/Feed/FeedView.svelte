@@ -1,12 +1,12 @@
 <section class="feed" class:reading={detail !== null}>
     <header class="top">
         <div class="heading-copy"><h1>{t("shell.feedView")}</h1>{@render belowTitle?.()}</div>
-        <p class="summary-line" role="status">{summary}</p>
+        <div data-paragraph class="summary-line" role="status">{summary}</div>
         <button disabled={!enabled.length || refreshing > 0} onclick={() => refresh()}><Icon name="refresh" size={15} />{refreshing ? "正在刷新…" : "刷新全部"}</button>
         <button class="primary" onclick={() => openForm()}><Icon name="add" size={15} />添加来源</button>
     </header>
     {#if error}
-        <p class="error banner" role="alert"><span>{message(error)}</span><button onclick={() => error = ""}>{t("dialog.close")}</button></p>
+        <div data-paragraph class="error banner" role="alert"><span>{message(error)}</span><button onclick={() => error = ""}>{t("dialog.close")}</button></div>
     {/if}
 
     <div class="body">
@@ -26,7 +26,7 @@
                     {#if item.unreadCount}<span class="count">{item.unreadCount}</span>{/if}
                 </button>
             {:else}
-                <p class="hint">还没有订阅来源。</p>
+                <div data-paragraph class="hint">还没有订阅来源。</div>
             {/each}
             {#if cancelled.length}
                 <details open={cancelled.some(item => item.id === sourceId)}>
@@ -72,7 +72,7 @@
                 {@const current = source}
                 <div class="context">
                     <div class="context-head"><strong>{current.name}</strong><span class="address" title={current.url}>{current.url}</span></div>
-                    <p>{sourceStatus(current)}</p>
+                    <div data-paragraph>{sourceStatus(current)}</div>
                     {#if current.error && current.status !== "cancelled"}
                         <div class="error" role="alert">{message(current.error)}{#if current.error.diagnostic}<details><summary>{t("dialog.details")}</summary>{current.error.diagnostic}</details>{/if}</div>
                     {/if}
@@ -90,7 +90,7 @@
                     </div>
                     {#if confirming === "cancel"}
                         <div class="confirmation">
-                            <p>{t("dialog.cancelFeed")}</p>
+                            <div data-paragraph>{t("dialog.cancelFeed")}</div>
                             <button onclick={() => setStatus(current.id, "cancel")}>{t("dialog.confirmCancelFeed")}</button>
                             <button onclick={() => confirming = ""}>{t("dialog.keepFeed")}</button>
                         </div>
@@ -98,7 +98,7 @@
                 </div>
             {:else if followed}
                 <div class="context">
-                    <p>标题或摘要包含任一关注关键词的内容会显示在这里。</p>
+                    <div data-paragraph>标题或摘要包含任一关注关键词的内容会显示在这里。</div>
                     {#if feedState.keywords.length}
                         <div class="chips">
                             {#each feedState.keywords as word (word)}
@@ -114,7 +114,7 @@
             {:else if failing.length}
                 <div class="context">
                     {#each failing as item (item.id)}
-                        <p class="error" role="alert"><span>{item.name}：{message(item.error)}</span><button disabled={item.refreshing} onclick={() => refresh(item.id)}>{item.refreshing ? "正在刷新…" : "重试"}</button></p>
+                        <div data-paragraph class="error" role="alert"><span>{item.name}：{message(item.error)}</span><button disabled={item.refreshing} onclick={() => refresh(item.id)}>{item.refreshing ? "正在刷新…" : "重试"}</button></div>
                     {/each}
                 </div>
             {/if}
@@ -127,7 +127,7 @@
             </div>
             {#if confirming === "read"}
                 <div class="context confirmation">
-                    <p>{t("dialog.markRead", { source: source ? source.name : t("dialog.allSources"), count: unreadInScope })}</p>
+                    <div data-paragraph>{t("dialog.markRead", { source: source ? source.name : t("dialog.allSources"), count: unreadInScope })}</div>
                     <button onclick={markAll}>{t("dialog.confirmMarkRead")}</button>
                     <button onclick={() => confirming = ""}>{t("dialog.cancel")}</button>
                 </div>
@@ -157,14 +157,14 @@
                             <Icon name="rss" size={30} />
                             {#if !active.length && !sourceId}
                                 <strong>还没有新知来信</strong>
-                                <p>添加论文或博客的订阅来源，开始获取更新。</p>
+                                <div data-paragraph>添加论文或博客的订阅来源，开始获取更新。</div>
                                 <button onclick={() => openForm()}>添加来源</button>
                             {:else if followed && !feedState.keywords.length}
                                 <strong>还没有关注关键词</strong>
-                                <p>在上方添加关键词，匹配的论文和文章会集中显示在这里。</p>
+                                <div data-paragraph>在上方添加关键词，匹配的论文和文章会集中显示在这里。</div>
                             {:else}
                                 <strong>没有匹配的内容</strong>
-                                <p>试试刷新来源，或调整上方的筛选条件。</p>
+                                <div data-paragraph>试试刷新来源，或调整上方的筛选条件。</div>
                             {/if}
                         </div>
                     {/if}
@@ -185,11 +185,11 @@
                 <button class="back" onclick={close}>返回列表</button>
 
                 <h2>{current.title}</h2>
-                <p class="meta metadata">
+                <div data-paragraph class="meta metadata">
                     <span>{current.sourceName}</span>
                     <span>{formatDate(current.publishedAt)}</span>
-                </p>
-                {#if current.authors}<p class="authors">{current.authors}</p>{/if}
+                </div>
+                {#if current.authors}<div data-paragraph class="authors">{current.authors}</div>{/if}
                 <div class="actions toolbar">
                     <button disabled={!current.url} onclick={() => openOriginal(current.id)}>打开原文</button>
                     <button onclick={toggleRead}>{current.isRead ? "标为未读" : "标为已读"}</button>
@@ -212,21 +212,21 @@
                 </div>
                 {#if current.paperState === "recycled" || current.paperState === "missing"}
                     <div class="context confirmation">
-                        <p>{t(current.paperState === "recycled" ? "dialog.reimportRecycled" : "dialog.reimportMissing")}</p>
+                        <div data-paragraph>{t(current.paperState === "recycled" ? "dialog.reimportRecycled" : "dialog.reimportMissing")}</div>
                         <button disabled={importing} onclick={() => importItem(true)}>{t("dialog.reimport")}</button>
                     </div>
                 {/if}
                 {#if current.paperState === "saved" && current.pdfStatus === "failed"}
-                    <p class="error" role="alert">{message(current.pdfFailure ?? { kind: "pdf-unavailable" })}</p>
+                    <div data-paragraph class="error" role="alert">{message(current.pdfFailure ?? { kind: "pdf-unavailable" })}</div>
                 {/if}
                 {#if current.content}
                     <div class="content" {@attach show(current.content, current.url)}></div>
                 {:else}
-                    <p class="content plain">{current.summary || "来源未提供摘要。"}</p>
+                    <div data-paragraph class="content plain">{current.summary || "来源未提供摘要。"}</div>
                 {/if}
-                <p class="meta note">{current.fullContent ? "以上为来源提供的正文。" : "以上为来源提供的摘要，可能不是全文。"}{current.url ? current.fullContent ? "" : "完整内容请打开原文查看。" : "来源未提供可用的原文链接。"}</p>
+                <div data-paragraph class="meta note">{current.fullContent ? "以上为来源提供的正文。" : "以上为来源提供的摘要，可能不是全文。"}{current.url ? current.fullContent ? "" : "完整内容请打开原文查看。" : "来源未提供可用的原文链接。"}</div>
             {:else}
-                <div class="empty-state"><div class="empty-art"><Bloom /></div><strong>挑一封来信，慢慢读。</strong><p>选择左侧内容，在这里阅读正文或摘要，<br />或打开原文继续探索。</p></div>
+                <div class="empty-state"><div class="empty-art"><Bloom /></div><strong>挑一封来信，慢慢读。</strong><div data-paragraph>选择左侧内容，在这里阅读正文或摘要，<br />或打开原文继续探索。</div></div>
             {/if}
         </article>
     </div>
@@ -491,7 +491,7 @@
         background: var(--c-gold-light);
         line-height: 1.7;
     }
-    .context p {
+    .context :where([data-paragraph]) {
         margin: 0 0 8px;
     }
     .context > :last-child {
@@ -742,7 +742,7 @@
     .content.plain {
         white-space: pre-wrap;
     }
-    .content :global(:is(p, ul, ol, blockquote, pre, table, figure, h3, h4, h5, h6)) {
+    .content :global(:is(:where([data-paragraph]), ul, ol, blockquote, pre, table, figure, h3, h4, h5, h6)) {
         margin-block: 0 1em;
     }
     .content :global(:is(h3, h4, h5, h6)) {

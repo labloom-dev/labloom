@@ -17,12 +17,13 @@
     import { tick } from "svelte";
     import { ContextMenu, DropdownMenu } from "bits-ui";
     import Icon from "../utils/Icon.svelte";
+    import TopLayer from "./TopLayer.svelte";
     import "./controls.css";
 
-    let { items, trigger, context = false, anchor, align, portal, first = false, onrestore, open = $bindable(false) }: {
+    let { items, trigger, context = false, anchor, align, first = false, onrestore, open = $bindable(false) }: {
         items: MenuItem[];
         trigger?: NonNullable<DropdownMenu.TriggerProps["child"]>;
-        context?: boolean; first?: boolean; portal?: HTMLElement; onrestore?: () => void;
+        context?: boolean; first?: boolean; onrestore?: () => void;
         anchor?: DropdownMenu.ContentProps["customAnchor"];
         align?: DropdownMenu.ContentProps["align"];
         open?: boolean;
@@ -65,13 +66,15 @@
         {#if "separator" in item}
             <DropdownMenu.Separator class="ui-menu-separator" />
         {:else if "items" in item}
+            {@const sub = { trigger: null as HTMLElement | null }}
             <DropdownMenu.Sub>
-                <DropdownMenu.SubTrigger class="ui-menu-item" disabled={item.disabled} textValue={item.label}>{@render caption(item)}</DropdownMenu.SubTrigger>
-                <DropdownMenu.Portal to={portal}>
-                    <DropdownMenu.SubContent class="ui-popup ui-menu" data-context={context || undefined} sideOffset={2} collisionPadding={8} loop>
-                        {@render entries(item.items)}
-                    </DropdownMenu.SubContent>
-                </DropdownMenu.Portal>
+                <DropdownMenu.SubTrigger class="ui-menu-item" disabled={item.disabled} textValue={item.label} bind:ref={() => sub.trigger, value => sub.trigger = value}>{@render caption(item)}</DropdownMenu.SubTrigger>
+                <DropdownMenu.SubContent class="ui-popup ui-menu" strategy="fixed" sideOffset={2} collisionPadding={8} loop escapeKeydownBehavior="close"
+                    onEscapeKeydown={() => void tick().then(() => sub.trigger?.focus({ preventScroll: true }))}>
+                    {#snippet child({ props, wrapperProps })}
+                        <TopLayer props={wrapperProps}><div {...props}>{@render entries(item.items)}</div></TopLayer>
+                    {/snippet}
+                </DropdownMenu.SubContent>
             </DropdownMenu.Sub>
         {:else if item.checked !== undefined}
             <DropdownMenu.CheckboxItem class="ui-menu-item" checked={item.checked} disabled={item.disabled} textValue={item.label} onSelect={item.onselect}>{@render caption(item)}</DropdownMenu.CheckboxItem>
@@ -84,15 +87,19 @@
 {#if context}
     <ContextMenu.Root bind:open>
         {#if trigger}<ContextMenu.Trigger tabindex={0} onkeydown={contextKey} child={trigger} />{/if}
-        <ContextMenu.Portal to={portal}>
-            <ContextMenu.Content class="ui-popup ui-menu" data-context="" onCloseAutoFocus={closed} collisionPadding={8} loop>{@render entries(items)}</ContextMenu.Content>
-        </ContextMenu.Portal>
+        <ContextMenu.Content class="ui-popup ui-menu" strategy="fixed" onCloseAutoFocus={closed} collisionPadding={8} loop>
+            {#snippet child({ props, wrapperProps })}
+                <TopLayer props={wrapperProps}><div {...props}>{@render entries(items)}</div></TopLayer>
+            {/snippet}
+        </ContextMenu.Content>
     </ContextMenu.Root>
 {:else}
     <DropdownMenu.Root bind:open>
         {#if trigger}<DropdownMenu.Trigger child={trigger} />{/if}
-        <DropdownMenu.Portal to={portal}>
-            <DropdownMenu.Content class="ui-popup ui-menu" bind:ref={content} customAnchor={anchor} {align} onOpenAutoFocus={opened} onCloseAutoFocus={closed} sideOffset={4} collisionPadding={8} loop>{@render entries(items)}</DropdownMenu.Content>
-        </DropdownMenu.Portal>
+        <DropdownMenu.Content class="ui-popup ui-menu" strategy="fixed" bind:ref={content} customAnchor={anchor} {align} onOpenAutoFocus={opened} onCloseAutoFocus={closed} sideOffset={4} collisionPadding={8} loop>
+            {#snippet child({ props, wrapperProps })}
+                <TopLayer props={wrapperProps}><div {...props}>{@render entries(items)}</div></TopLayer>
+            {/snippet}
+        </DropdownMenu.Content>
     </DropdownMenu.Root>
 {/if}

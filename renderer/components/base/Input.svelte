@@ -39,10 +39,12 @@
             {placeholder} {disabled} {value} bind:this={input} data-pointer={pointer || undefined}
             onfocus={() => pointer = fromPointer()} onblur={() => pointer = false}
             onchange={event => {
-                inputProps?.onchange?.(event); onchange?.(event.currentTarget.value);
+                inputProps?.onchange?.(event);
+                onchange?.(event.currentTarget.value);
             }}
             oninput={event => {
-                value = event.currentTarget.value; oninput?.(value);
+                value = event.currentTarget.value;
+                oninput?.(value);
             }} />
     {/if}
     {#if search && value}

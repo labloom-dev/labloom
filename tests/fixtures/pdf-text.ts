@@ -8,7 +8,7 @@ export function knownCoordinatePdf(embedded = true, stream = [
         "BT /F1 14 Tf 1 0 0 1 50 580 Tm (H) Tj 5 Ts /F1 8 Tf (2) Tj 0 Ts /F1 14 Tf (O) Tj ET",
         "BT /F1 12 Tf 1 0 0 1 50 530 Tm (Dense one) Tj 0 -10 Td (Dense two) Tj ET",
         "BT /F1 16 Tf 1 0 0 1 50 480 Tm [(Fake) -300 (space)] TJ ET"
-    ].join("\n")): Uint8Array {
+    ].join("\n"), pages = 1): Uint8Array {
     const binaryFont = atob(fixtureFont);
     const objects = [
         "<< /Type /Catalog /Pages 2 0 R >>",
@@ -19,6 +19,11 @@ export function knownCoordinatePdf(embedded = true, stream = [
         "<< /Type /FontDescriptor /FontName /LabloomFixture /Flags 32 /FontBBox [50 0 550 700] /ItalicAngle 0 /Ascent 800 /Descent -200 /CapHeight 700 /StemV 80 /FontFile2 7 0 R >>",
         `<< /Length ${binaryFont.length} /Length1 ${binaryFont.length} >>\nstream\n${binaryFont}\nendstream`
     ];
+    if (pages > 1) {
+        const next = Array.from({ length: pages - 1 }, (_, index) => `${index + 8} 0 R`);
+        objects[1] = `<< /Type /Pages /Kids [3 0 R ${next.join(" ")}] /Count ${pages} >>`;
+        for (const _page of next) objects.push(objects[2]);
+    }
     let text = "%PDF-1.7\n";
     const offsets = [0];
     objects.forEach((object, index) => {

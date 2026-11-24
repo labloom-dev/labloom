@@ -46,8 +46,8 @@ function entryFingerprint(entry: Pick<FeedEntry, "title" | "authors" | "publishe
     return createHash("sha256").update(JSON.stringify([entry.title, entry.authors, date])).digest("hex");
 }
 
-function sources(includeDeleted = false): SourceRow[] {
-    const ids = knowledge.statement("SELECT p.id FROM pages p JOIN page_attrs d ON d.page_id=p.id AND d.attr_id='deleted' WHERE p.kind='feed'" + (includeDeleted ? "" : " AND d.value=0")).pluck().all() as string[];
+function sources(): SourceRow[] {
+    const ids = knowledge.statement("SELECT p.id FROM pages p JOIN page_attrs d ON d.page_id=p.id AND d.attr_id='deleted' WHERE p.kind='feed' AND d.value=0").pluck().all() as string[];
     const values = knowledge.valuesFor(ids);
     return ids.map(id => {
         const a = values.get(id)!, at = (key: string): number | null => typeof a[key] === "number" ? a[key] * 1000 : null;
@@ -125,6 +125,7 @@ function sourceForInput(input: FeedSourceInput): SourceRow | undefined {
     if (interval !== undefined && (!Number.isSafeInteger(interval) || interval < feedIntervals.min || interval > feedIntervals.max)) throw new LabloomError({ kind: "feed-invalid-interval" });
     const url = feedURL(input.url);
     if (!input.id) return duplicate(url);
+    knowledge.writable(input.id);
     const existing = source(input.id);
     if (existing.status === "cancelled") throw new LabloomError({ kind: "feed-cancelled" });
     duplicate(url, existing.id);
@@ -180,6 +181,7 @@ export function saveSource(key: string): string {
 export function setSourceStatus(id: string, action: FeedSourceAction): void {
     workspace.requireWorkspace();
     return commit.run({ feed: true, history: false, updateModified: false }, () => {
+        knowledge.writable(id);
         const localSource = source(id);
         if (!["pause", "cancel", "resume"].includes(action)) throw new LabloomError({ kind: "feed-invalid-action" });
         const status = action === "pause" ? "paused" : action === "cancel" ? "cancelled" : "enabled";
@@ -299,16 +301,16 @@ function item(id: string): ItemRow {
     return row;
 }
 
-function source(id: string, includeDeleted = false): SourceRow {
+function source(id: string): SourceRow {
     if (typeof id !== "string") throw new LabloomError({ kind: "feed-invalid-source" });
-    const row = sources(includeDeleted).find(source => source.id === id);
+    const row = sources().find(source => source.id === id);
     if (!row) throw new LabloomError({ kind: "feed-source-missing" });
     return row;
 }
 
 function duplicate(url: string, except?: string): SourceRow | undefined {
-    const other = sources(true).find(source => source.url === url && source.id !== except);
-    if (other && (other.deleted || other.status !== "cancelled" || except)) throw new LabloomError({ kind: "feed-duplicate" });
+    const other = sources().find(source => source.url === url && source.id !== except);
+    if (other && (other.status !== "cancelled" || except)) throw new LabloomError({ kind: "feed-duplicate" });
     return other;
 }
 

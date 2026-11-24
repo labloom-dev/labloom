@@ -1,42 +1,49 @@
-<div class="file-input">
+{#snippet contents()}
+    {#each files as file (file.id)}
+        <div class="file-row">
+            {#if openPaperPDF}<Menu context items={[{ label: t("library.openFile"), onselect: () => external(file) }]}>
+                {#snippet trigger({ props })}<TextButton {...props} class="file-name" text={file.originalName} onclick={() => file.mediaType === "application/pdf" ? openPaperPDF?.(file.id) : external(file)} />{/snippet}
+            </Menu>{:else}<TextButton class="file-name" text={file.originalName} onclick={() => openFile(file)} />{/if}
+            {#if !disabled}<IconButton icon="close" label={t("property.removeItem", { name: file.originalName })} onclick={() => remove(file.id)} />{/if}
+        </div>
+    {:else}<span class="muted">{t("property.noFiles")}</span>{/each}
+    {#if !disabled}
+        {#if session}<Button icon="add" disabled={busy} onclick={add}>{t(busy ? "property.addingFile" : "property.addFile")}</Button>
+        {:else}
+            <Input search label={t("property.findFile")} clearLabel={t("shell.clearFilter")} placeholder={t("property.findFile")} bind:value={query} />
+            {#each choices.filter(file => !ids.includes(file.id) && file.originalName.toLocaleLowerCase().includes(query.toLocaleLowerCase())) as file (file.id)}
+                <TextButton text={file.originalName} onclick={() => choose(file.id)} />
+            {:else}<span class="muted">{t("property.noFileChoices")}</span>{/each}
+        {/if}
+        {#if definition.type === "files" && ids.length}<Button variant="text" onclick={() => onchange([])}>{t("property.clear", { name: propertyName(definition) })}</Button>{/if}
+    {/if}
+    {#if error}<div data-paragraph role="alert">{message(error)}</div>{/if}
+{/snippet}
+{#if openPaperPDF}
+    <div class="inline-files">{@render contents()}</div>
+{:else}<div class="file-input">
     {#if definition.type === "file" && files[0]}
-        <button class="file-name ui-control" title={files[0].originalName} onclick={() => openFile(files[0])}>{files[0].originalName}</button>
+        <TextButton class="file-name" text={files[0].originalName} onclick={() => openFile(files[0])} />
         {#if !disabled}<IconButton class="file-clear" icon="close" label={t("property.clear", { name: files[0].originalName })} onclick={() => onchange(null)} />{/if}
     {/if}
     <Popover label={t("property.files", { name: propertyName(definition) })} bind:open={expanded} contentProps={{ class: "file-menu" }}>
         {#snippet trigger({ props })}
-            <Button {...props} variant="text" class="file-trigger" title={display(definition, value, { fileName })} aria-label={t("property.files", { name: propertyName(definition) })}>
-                {definition.type === "files" ? display(definition, value, { fileName }) || t(disabled ? "property.empty" : "property.addFile") : t(disabled ? "attributeType.file" : "property.addFile")}
-            </Button>
+            <TextButton {...props} class="file-trigger" aria-label={t("property.files", { name: propertyName(definition) })}
+                text={definition.type === "files" ? display(definition, value, { fileName }) || t(disabled ? "property.empty" : "property.addFile") : t(disabled ? "attributeType.file" : "property.addFile")} />
         {/snippet}
-        {#each files as file (file.id)}
-            <div class="file-row">
-                <button class="ui-control file-name" title={file.originalName} onclick={() => openFile(file)}>{file.originalName}</button>
-                {#if !disabled}<IconButton icon="close" label={t("property.removeItem", { name: file.originalName })} onclick={() => remove(file.id)} />{/if}
-            </div>
-        {:else}<span class="muted">{t("property.noFiles")}</span>{/each}
-        {#if !disabled}
-            {#if session}<Button icon="add" disabled={busy} onclick={add}>{t(busy ? "property.addingFile" : "property.addFile")}</Button>
-            {:else}
-                <Input search label={t("property.findFile")} clearLabel={t("shell.clearFilter")} placeholder={t("property.findFile")} bind:value={query} />
-                {#each choices.filter(file => !ids.includes(file.id) && file.originalName.toLocaleLowerCase().includes(query.toLocaleLowerCase())) as file (file.id)}
-                    <Button variant="text" onclick={() => choose(file.id)}>{file.originalName}</Button>
-                {:else}<span class="muted">{t("property.noFileChoices")}</span>{/each}
-            {/if}
-            {#if definition.type === "files" && ids.length}<Button variant="text" onclick={() => onchange([])}>{t("property.clear", { name: propertyName(definition) })}</Button>{/if}
-        {/if}
-        {#if error}<p role="alert">{message(error)}</p>{/if}
+        {@render contents()}
     </Popover>
-</div>
+</div>{/if}
 {#if preview}
     {#await import("./AttachmentReader.svelte") then { default: AttachmentReader }}<AttachmentReader file={preview} onclose={() => preview = null} />{/await}
 {/if}
 
 <style>
     .file-input, .file-row { display: flex; align-items: center; min-width: 0; gap: var(--ui-space-2); }
+    .inline-files { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--ui-space-1); justify-items: start; }
+    .inline-files .file-row { width: 100%; }
     .file-row { min-height: var(--ui-row-height); }
-    .file-name, :global(.file-trigger) { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: start; }
-    .file-name { flex: 1; }
+    :global(.file-name) { flex: 1; }
     .file-input :global(.file-clear) { opacity: 0; width: 0; overflow: hidden; }
     .file-input:is(:hover, :focus-within) :global(.file-clear), :global(.property:is(:hover, :focus-within)) .file-input :global(.file-clear) { width: var(--ui-icon-large); opacity: 1; }
     :global(.file-menu) { display: grid; gap: var(--ui-space-2); width: var(--ui-properties-width); }
@@ -45,8 +52,10 @@
 </style>
 <script lang="ts">
     import { t, failure, message, type ErrorValue } from "../../i18n.svelte";
+    import Menu from "../base/Menu.svelte";
     import Popover from "../base/Popover.svelte";
     import Button from "../base/Button.svelte";
+    import TextButton from "../base/TextButton.svelte";
     import IconButton from "../base/IconButton.svelte";
     import Input from "../base/Input.svelte";
     import { propertyControls } from "./property-controls";
@@ -57,7 +66,7 @@
     import { type PageSession } from "./page-session.svelte";
     import { knowledgeState } from "./feedback.svelte";
     import { write } from "./page-sessions";
-    let { definition, value, session, disabled = false, onchange }: { definition: AttributeDefinition; value: AttributeValue; session?: PageSession; disabled?: boolean; onchange: (value: AttributeValue) => void } = $props();
+    let { definition, value, session, disabled = false, openPaperPDF, onchange }: { definition: AttributeDefinition; value: AttributeValue; session?: PageSession; disabled?: boolean; openPaperPDF?: (id: string) => void; onchange: (value: AttributeValue) => void } = $props();
     const services = propertyControls();
     const ids = $derived((Array.isArray(value) ? value : typeof value === "string" ? [value] : []) as string[]);
     let files = $state<Attachment[]>([]), choices = $state<Attachment[]>([]), preview = $state<Attachment | null>(null);
@@ -97,6 +106,14 @@
     function choose(id: string): void {
         onchange(definition.type === "file" ? id : [...ids, id]);
         if (definition.type === "file") expanded = false;
+    }
+    async function external(file: Attachment): Promise<void> {
+        try {
+            await services.openFile(file.id);
+        }
+        catch (problem) {
+            error = failure(problem);
+        }
     }
     async function openFile(file: Attachment): Promise<void> {
         try {

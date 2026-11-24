@@ -1,8 +1,8 @@
 import { type HistorySource } from "../../shared/history/ipc";
 import { eq, sql } from "drizzle-orm";
-import { readFileSync } from "node:fs";
+import { accessSync, constants, readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
-import { basename, dirname, extname, join } from "node:path";
+import { basename, dirname, extname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { PDFDocumentLoadingTask, PDFDocumentProxy } from "pdfjs-dist/types/src/display/api";
 import { record, validUUID } from "../../shared/attrs/values";
@@ -12,7 +12,7 @@ import { charactersFromTextContent, extractText, PDF_EXTRACTOR_VERSION, type Pdf
 import { diagnostic, LabloomError, toFailureInfo } from "../../shared/failure";
 import { type AttributeValue } from "../../shared/types/attributes";
 import { type CommitResult, type PageRecord } from "../../shared/types/content";
-import { type AnnotationInput, type Attachment, type PaperAnnotation, type PaperImport, type PaperResources, type ReadingPosition } from "../../shared/types/papers";
+import { type AnnotationInput, type AnnotationPaper, type Attachment, type PaperAnnotation, type PaperImport, type PaperImportBatch, type PaperResources, type ReadingPosition } from "../../shared/types/papers";
 import * as attachmentFiles from "../attachments/service";
 import { attachmentPath } from "../storage/files";
 import { attachments } from "../storage/tables";
@@ -115,7 +115,8 @@ export async function unlockPDF(fileId: string, password: string): Promise<void>
 
 function paper(id: string, writable = false): PageRecord {
     const page = data.get(id);
-    if (page.kind !== "paper" || (writable && page.attributes.deleted)) throw new LabloomError({ kind: "paper-unavailable" });
+    if (page.kind !== "paper") throw new LabloomError({ kind: "paper-unavailable" });
+    if (writable && page.attributes.deleted) throw new LabloomError({ kind: "page-recycled-readonly" });
     return page;
 }
 
@@ -169,6 +170,8 @@ function append(pageId: string, attributeId: string, files: Attachment[], source
 }
 
 export function attachFile(pageId: string, attributeId: string, fileId: string, source: HistorySource): void {
+    data.writable(pageId);
+    if (source.kind === "page" && source.id !== pageId) data.writable(source.id);
     const file = files([fileId])[0];
     if (!file) throw new LabloomError({ kind: "attachment-unavailable" });
     const value = data.get(pageId).attributes[attributeId];
@@ -197,6 +200,50 @@ export function importFile(path: string, pageId?: string, source?: HistorySource
     }));
 }
 
+export function importPaths(paths: string[], source: HistorySource, pageId?: string, pdfOnly = !pageId): PaperImportBatch {
+    workspace.requireWorkspace();
+    type Entry = { path: string; error?: ReturnType<typeof toFailureInfo>; page?: string };
+    const entries: Entry[] = paths.map(path => ({ path }));
+    for (const entry of entries) {
+        try {
+            const { path } = entry;
+            if (!isAbsolute(path) || !statSync(path).isFile()) throw new LabloomError({ kind: "import-regular-file" });
+            accessSync(path, constants.R_OK);
+            const pdf = extname(path).toLowerCase() === ".pdf";
+            if (pdfOnly && !pdf) throw new LabloomError({ kind: "import-pdf-only" });
+            if (pageId && pdf) attachmentFiles.checkLocalPDF(path);
+            if (!pageId) entry.page = importFile(path, undefined, source).pageId;
+        }
+        catch (error) {
+            entry.error = toFailureInfo(error);
+        }
+    }
+    const accepted = entries.filter(entry => !entry.error);
+    if (pageId && accepted.length) {
+        try {
+            paper(pageId, true);
+            attachmentFiles.importing(store => commit.run({ history: false }, () => {
+                const files: Attachment[] = [];
+                for (const entry of accepted) {
+                    try {
+                        files.push(store(entry.path));
+                    }
+                    catch (error) {
+                        entry.error = toFailureInfo(error);
+                    }
+                }
+                if (files.length) append(pageId, "paper_files", files, source);
+            }));
+            for (const entry of accepted) if (!entry.error) entry.page = pageId;
+        }
+        catch (error) {
+            for (const entry of accepted) entry.error ??= toFailureInfo(error);
+        }
+    }
+    return { pages: entries.flatMap(entry => entry.page ? [entry.page] : []),
+        failures: entries.flatMap(entry => entry.error ? [{ name: basename(entry.path), error: entry.error }] : []) };
+}
+
 export function read(id: string): Uint8Array {
     workspace.requireWorkspace();
     if (!validUUID(id)) throw new LabloomError({ kind: "attachment-invalid-id" });
@@ -221,19 +268,20 @@ export function externalPath(id: string): string {
     return attachmentPath(workspace.root(), file.storedName);
 }
 
-function annotationData(page: PageRecord): PaperAnnotation {
-    const a = page.attributes, localPosition = a.annotation_position;
-    if (page.kind !== "annotation" || typeof a.annotation_file !== "string" || !record(localPosition) || !Number.isInteger(localPosition.page) || !Array.isArray(localPosition.rects) || typeof a.annotation_color !== "string" || !Object.hasOwn(annotationColors, a.annotation_color)) throw new LabloomError({ kind: "annotation-invalid-position" });
+function annotationData(id: string, a: Record<string, AttributeValue>, excerpt: string): PaperAnnotation {
+    const localPosition = a.annotation_position;
+    if (typeof a.annotation_file !== "string" || !record(localPosition) || !Number.isInteger(localPosition.page) || !Array.isArray(localPosition.rects) || typeof a.annotation_color !== "string" || !Object.hasOwn(annotationColors, a.annotation_color)) throw new LabloomError({ kind: "annotation-invalid-position" });
     return {
-        id: page.id, fileId: a.annotation_file, pageNumber: Number(localPosition.page), rectangles: localPosition.rects as PaperAnnotation["rectangles"],
-        quote: String(a.annotation_quote), context: String(a.annotation_context), extractorVersion: String(a.annotation_extractor), color: a.annotation_color as AnnotationColor, hasText: !!page.excerpt.trim()
+        id, fileId: a.annotation_file, pageNumber: Number(localPosition.page), rectangles: localPosition.rects as PaperAnnotation["rectangles"],
+        quote: String(a.annotation_quote), context: String(a.annotation_context), extractorVersion: String(a.annotation_extractor), color: a.annotation_color as AnnotationColor, excerpt, hasText: !!excerpt.trim()
     };
 }
 
 async function getAnnotation(id: string): Promise<PaperAnnotation> {
     const session = workspace.requireWorkspace(), page = data.get(id);
     if (page.attributes.deleted) throw new LabloomError({ kind: "page-deleted" });
-    const annotation = annotationData(page);
+    if (page.kind !== "annotation") throw new LabloomError({ kind: "annotation-invalid-position" });
+    const annotation = annotationData(id, page.attributes, page.excerpt);
     if (annotation.extractorVersion === PDF_EXTRACTOR_VERSION) return annotation;
     const extracted = await pageText(annotation.fileId, annotation.pageNumber).catch(error => {
         if (workspace.isCurrent(session)) throw error; return null;
@@ -243,28 +291,52 @@ async function getAnnotation(id: string): Promise<PaperAnnotation> {
     if (!workspace.isCurrent(session)) return annotation;
     const quote = extractText(characters, annotation.rectangles);
     // The page may have changed while PDF extraction was awaiting a worker.
-    const current = data.get(id), next = annotationData(current);
+    const current = data.get(id), next = annotationData(id, current.attributes, current.excerpt);
     if (current.attributes.deleted) throw new LabloomError({ kind: "page-deleted" });
     if (next.fileId !== annotation.fileId || JSON.stringify(next.rectangles) !== JSON.stringify(annotation.rectangles) || next.pageNumber !== annotation.pageNumber) return getAnnotation(id);
     edits.cacheAttributes(id, { annotation_quote: quote, annotation_context: quote, annotation_extractor: PDF_EXTRACTOR_VERSION });
     return { ...next, quote, context: quote, extractorVersion: PDF_EXTRACTOR_VERSION };
 }
 
-export async function resources(pageId: string): Promise<PaperResources> {
+export function annotationPaper(id: string): AnnotationPaper | null {
+    if (data.header(id).kind !== "annotation") throw new LabloomError({ kind: "annotation-unavailable" });
+    const owner = data.statement(`SELECT p.id,knowledge_text(b.type,b.content) AS title,d.value AS recycled
+        FROM link_refs l CROSS JOIN pages p ON p.id=l.source_id AND p.kind='paper'
+        JOIN blocks b ON b.id=p.title_block_id JOIN page_attrs d ON d.page_id=p.id AND d.attr_id='deleted'
+        WHERE l.target_kind='page' AND l.target_id=? AND l.source_kind='page' AND l.source_field='paper_annotations'`).get(id) as
+        { id: string; title: string; recycled: number } | undefined;
+    return owner ? { ...owner, recycled: !!owner.recycled } : null;
+}
+
+export async function resources(pageId: string, fileId?: string): Promise<PaperResources> {
     const session = workspace.requireWorkspace();
-    const page = paper(pageId), localFiles = paperFiles(pageId), available = new Set(localFiles.filter(file => file.mediaType === "application/pdf").map(file => file.id));
+    const page = paper(pageId), localFiles = files(page.attributes.paper_files as string[]);
+    const available = localFiles.filter(file => file.mediaType === "application/pdf" && (!fileId || file.id === fileId)).map(file => file.id);
+    const members = page.attributes.paper_annotations as string[];
+    if (!members.length || !available.length) return { files: localFiles, annotations: [] };
+    const stored = data.statement(`SELECT a.id, a.children, d.value AS deleted FROM json_each(?) j JOIN pages a ON a.id=j.value AND a.kind='annotation'
+        JOIN page_attrs d ON d.page_id=a.id AND d.attr_id='deleted'
+        JOIN page_attrs f ON f.page_id=a.id AND f.attr_id='annotation_file'
+        LEFT JOIN page_attrs r ON r.page_id=a.id AND r.attr_id='recycle_reason'
+        WHERE f.value IN (SELECT value FROM json_each(?)) AND (d.value=0 OR (?=1 AND r.value='unreachable'))
+        ORDER BY j.key`).all(JSON.stringify(members), JSON.stringify(available), Number(!!page.attributes.deleted)) as { id: string; children: string; deleted: number }[];
+    const values = data.valuesFor(stored.map(row => row.id));
+    const excerpts = data.bodyExcerpts(stored.map(row => ({ id: row.id, children: JSON.parse(row.children) as string[] })));
     const annotations: PaperAnnotation[] = [];
-    for (const id of page.attributes.paper_annotations as string[]) {
+    for (const { id, deleted } of stored) {
         if (!workspace.isCurrent(session)) return { files: localFiles, annotations };
-        if (!data.statement("SELECT 1 FROM pages WHERE id=? AND kind='annotation'").get(id) || data.flags(id).deleted) continue;
-        const record = data.get(id);
-        if (!available.has(String(record.attributes.annotation_file))) continue;
+        const entry = annotationData(id, values.get(id)!, excerpts.get(id) ?? "");
+        if (deleted || entry.extractorVersion === PDF_EXTRACTOR_VERSION) {
+            annotations.push(entry);
+            continue;
+        }
         try {
             annotations.push(await getAnnotation(id));
         }
         catch (error) {
             if (!workspace.isCurrent(session)) return { files: localFiles, annotations };
-            if (["pdf-password-required", "pdf-password-incorrect"].includes(toFailureInfo(error).kind)) annotations.push({ ...annotationData(record), quote: "", context: "" });
+            if (["pdf-password-required", "pdf-password-incorrect"].includes(toFailureInfo(error).kind)) annotations.push({ ...entry, quote: "", context: "" });
+            else if (toFailureInfo(error).kind === "page-deleted" || toFailureInfo(error).kind === "page-unavailable") continue;
             else throw error;
         }
     }
@@ -337,12 +409,7 @@ export function annotate(pageId: string, input: AnnotationInput, source: History
 export function position(pageId: string, fileId: string, position: ReadingPosition): void {
     workspace.requireWorkspace();
     commit.run({ history: false, updateModified: false }, context => {
-        const page = paper(pageId);
-        // The reader can report its last position after undo has already recycled the paper.
-        if (page.attributes.deleted) {
-            context.skip();
-            return;
-        }
+        const page = paper(pageId, true);
         if (!paperFiles(pageId).some(file => file.id === fileId && file.mediaType === "application/pdf") || !record(position) || !Number.isInteger(position.page) || position.page < 1 || ![0, 90, 180, 270].includes(position.rotation) || !Number.isFinite(position.left) || !Number.isFinite(position.top) || !(typeof position.scale === "number" && position.scale > 0 && position.scale <= 10 || ["auto", "page-width", "page-fit", "page-actual"].includes(String(position.scale)))) throw new LabloomError({ kind: "paper-invalid-position" });
         edits.writeAttributes(pageId, { reading_position: { ...(record(page.attributes.reading_position) ? page.attributes.reading_position : {}), [fileId]: position as unknown as AttributeValue } }, true);
         context.change({ pages: [pageId] });

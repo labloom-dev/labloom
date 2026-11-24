@@ -1,3 +1,4 @@
+import { type AnnotationInput } from "../../../shared/types/papers";
 
 export type ReaderSource = {
     kind: "data";
@@ -27,3 +28,5 @@ export type ReaderFindStatus =
     | { kind: "found"; current: number; total: number; wrapped: boolean }
     | { kind: "not-found" }
     | { kind: "no-text" };
+export type ReaderAnchor = Pick<AnnotationInput, "pageNumber" | "rectangles">;
+export type ReaderAnchorGeometry = { anchor: ReaderAnchor; target: DOMRect; viewport: DOMRect };

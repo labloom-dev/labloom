@@ -1,13 +1,13 @@
 <section class="workspace-page">
-    <header class="page-heading"><div><h1>偏好设置</h1><p>让这个小小的知识花园，更合你的心意。</p></div><span class="badge">保存在本机，所有工作区通用</span></header>
+    <header class="page-heading"><div><h1>偏好设置</h1><div data-paragraph>让这个小小的知识花园，更合你的心意。</div></div><span class="badge">保存在本机，所有工作区通用</span></header>
     <section class="paper-card settings-card">
         <h2><Icon name="settings-gear" size={20} />外观与阅读</h2>
-        <div class="setting-row"><div><label for="language">{t("language.label")}</label><p>{t("language.hint")}</p></div><select id="language" disabled={!appearance.loaded || appearance.saving} bind:value={appearance.language} onchange={saveAppearance}><option value="zh-CN">简体中文</option><option value="en">English</option></select></div>
-        <div class="setting-row"><div><strong>暖纸主题</strong><p>奶油色纸张、柔和配色与手绘小植物。</p></div><select aria-label="主题" disabled={!appearance.loaded || appearance.saving} bind:value={appearance.theme} onchange={saveAppearance}><option value="light">暖纸浅色</option><option value="dark">夜间花园</option><option value="system">跟随系统</option></select></div>
-        <div class="setting-row"><div><label for="reading-size">正文字号</label><p>应用于订阅摘要与页面编辑器。</p></div><select id="reading-size" disabled={!appearance.loaded || appearance.saving} bind:value={appearance.readingSize} onchange={saveAppearance}><option value={14}>小，14 px</option><option value={16}>标准</option><option value={18}>大，18 px</option></select></div>
-        <div class="setting-row"><div><label for="motion">轻量动效</label><p>按钮悬停的轻微位移。也会遵循系统的减少动态效果设置。</p></div><input id="motion" type="checkbox" disabled={!appearance.loaded || appearance.saving} bind:checked={appearance.motion} onchange={saveAppearance} /></div>
+        <div class="setting-row"><div><label for="language">{t("language.label")}</label><div data-paragraph>{t("language.hint")}</div></div><select id="language" disabled={!appearance.loaded || appearance.saving} bind:value={appearance.language} onchange={saveAppearance}><option value="zh-CN">简体中文</option><option value="en">English</option></select></div>
+        <div class="setting-row"><div><strong>暖纸主题</strong><div data-paragraph>奶油色纸张、柔和配色与手绘小植物。</div></div><select aria-label="主题" disabled={!appearance.loaded || appearance.saving} bind:value={appearance.theme} onchange={saveAppearance}><option value="light">暖纸浅色</option><option value="dark">夜间花园</option><option value="system">跟随系统</option></select></div>
+        <div class="setting-row"><div><label for="reading-size">正文字号</label><div data-paragraph>应用于订阅摘要与页面编辑器。</div></div><select id="reading-size" disabled={!appearance.loaded || appearance.saving} bind:value={appearance.readingSize} onchange={saveAppearance}><option value={14}>小，14 px</option><option value={16}>标准</option><option value={18}>大，18 px</option></select></div>
+        <div class="setting-row"><div><label for="motion">轻量动效</label><div data-paragraph>按钮悬停的轻微位移。也会遵循系统的减少动态效果设置。</div></div><input id="motion" type="checkbox" disabled={!appearance.loaded || appearance.saving} bind:checked={appearance.motion} onchange={saveAppearance} /></div>
         <div class="setting-row">
-            <div><label for="time-zone">时区</label><p>用于日期时间的显示、输入、搜索和日历分组。</p></div>
+            <div><label for="time-zone">时区</label><div data-paragraph>用于日期时间的显示、输入、搜索和日历分组。</div></div>
             <div class="zone-picker">
                 <input type="search" aria-label="筛选时区" placeholder="筛选时区" bind:value={zoneFilter} />
                 <select id="time-zone" disabled={!appearance.loaded || appearance.saving} bind:value={appearance.timeZone} onchange={changeZone}>
@@ -16,13 +16,13 @@
                 </select>
             </div>
         </div>
-        <div class="reading-preview"><p>一个好问题，是知识开始生长的地方。</p></div>
-        {#if appearance.saving}<p role="status">正在保存偏好设置…</p>{/if}
+        <div class="reading-preview"><div data-paragraph>一个好问题，是知识开始生长的地方。</div></div>
+        {#if appearance.saving}<div data-paragraph role="status">正在保存偏好设置…</div>{/if}
         {#if appearance.error}<div class="notice error" role="alert">{message(appearance.error)} <button class="button" disabled={appearance.saving} onclick={() => appearance.loaded ? saveAppearance() : loadAppearance()}>{t("dialog.retry")}</button></div>{/if}
     </section>
     <section class="paper-card settings-card">
         <h2><Icon name="library" size={20} />当前工作区</h2>
-        {#if workspace}<div class="setting-row"><div><strong>{workspace.name}</strong><p class="path">{workspace.path}</p></div><span class="badge">本地文件夹</span></div>{:else}<p class="notice" role="status">{workspaceError ? message(workspaceError) : "正在读取工作区信息…"}</p>{/if}
+        {#if workspace}<div class="setting-row"><div><strong>{workspace.name}</strong><div data-paragraph class="path">{workspace.path}</div></div><span class="badge">本地文件夹</span></div>{:else}<div data-paragraph class="notice" role="status">{workspaceError ? message(workspaceError) : "正在读取工作区信息…"}</div>{/if}
     </section>
 </section>
 
@@ -56,7 +56,7 @@
         font-size: 13px;
         font-weight: 800;
     }
-    p {
+    :where([data-paragraph]) {
         margin: 7px 0 0;
         color: var(--c-muted);
         font-size: 12px;
@@ -84,7 +84,7 @@
         border-radius: 10px;
         background: var(--c-cream);
     }
-    .reading-preview p {
+    .reading-preview :where([data-paragraph]) {
         color: var(--c-ink);
         font-size: var(--reading-font-size, 16px);
     }

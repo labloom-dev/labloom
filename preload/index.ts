@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { AppAPI, BridgeAPI } from "../shared/ipc";
 import type { Channels, InvokeKeys } from "../shared/ipc/contract";
 import { appChannels, beforeQuit, feedChanged, historyChanged, pagesChanged, settingsChanged, pagesChannels, attributesChannels, historyChannels, papersChannels, timersChannels, workspaceChannels, settingsChannels, startupChannels, feedChannels } from "../shared/ipc";
@@ -44,3 +44,4 @@ const api: BridgeAPI<AppAPI> = {
 };
 
 contextBridge.exposeInMainWorld("bridge", api);
+contextBridge.exposeInMainWorld("getPathForFile", (file: File) => webUtils.getPathForFile(file));

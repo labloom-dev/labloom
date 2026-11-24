@@ -80,9 +80,10 @@ export function createWindow(applicationLog: LogFile | null): void {
 
     contents.on("before-input-event", (event, input) => {
         const command = input.control || input.meta;
-        // Disable native reload/close shortcuts while keeping page key events.
+        const zoom = input.code === "Minus" || input.code === "Equal" || input.code === "NumpadAdd" || input.code === "NumpadSubtract";
+        // Keep native shortcuts from consuming the reader and tab key events.
         contents.setIgnoreMenuShortcuts(
-            command && (input.code === "KeyR" || input.code === "KeyW")
+            command && (input.code === "KeyR" || input.code === "KeyW" || zoom)
         );
 
         if (input.code === "F11") {
@@ -102,10 +103,7 @@ export function createWindow(applicationLog: LogFile | null): void {
             return;
         }
 
-        if (
-            (command && (input.code === "Minus" || (input.code === "Equal" && input.shift)))
-            || (app.isPackaged && input.code === "KeyI" && ((input.control && input.shift) || (input.meta && input.alt)))
-        ) {
+        if (app.isPackaged && input.code === "KeyI" && ((input.control && input.shift) || (input.meta && input.alt))) {
             event.preventDefault();
         }
     });

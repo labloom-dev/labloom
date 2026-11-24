@@ -183,13 +183,14 @@ test("last-reference cancellation rolls back just the deletion; confirmation com
         const typing = current.tr.insertText("Z", indexDoc(current.doc).get(a.id)![0].pos + 2);
         current = current.apply(typing);
         let redo: ReturnType<typeof inverse> = [];
-        await reviewEdit(input, async () => preview, async () => {
+        await reviewEdit(input, async () => {
             asks++;
             return consent;
         }, async (data, token) => {
             assert.deepEqual(data, input);
-            assert.equal(token, "test");
             commits++;
+            if (!token) return { status: "confirmation", preview };
+            assert.equal(token, "test");
             return { status: "saved", batch: 1, changed: { pages: [], blocks: [] } };
         }, () => {
             const undo = replay(current, inverse([remove]), typing.mapping);
@@ -201,7 +202,7 @@ test("last-reference cancellation rolls back just the deletion; confirmation com
                 current = current.apply(replay(current, redo, new Mapping()));
             });
         assert.equal(asks, 1);
-        assert.equal(commits, Number(consent));
+        assert.equal(commits, 1 + Number(consent));
         const edit = documentEdit(consent ? remove.doc : s.doc, current.doc);
         assert.equal(removesReference(edit, consent ? { ...p, blocks: { ...p.blocks, [a.id]: blockData(remove.doc.lastChild!) } } : p), false);
         assert.match(current.doc.textContent, /ZX/u);

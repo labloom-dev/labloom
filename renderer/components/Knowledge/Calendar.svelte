@@ -3,7 +3,7 @@
         <div>
 
             <h1>研究日历</h1>
-            <p>给重要的想法，留出专注的时间。</p>
+            <div data-paragraph>给重要的想法，留出专注的时间。</div>
         </div>
         <div class="actions">
             <label>日期属性
@@ -17,8 +17,8 @@
             <button class="button primary" disabled={!hasDate} onclick={createTask}>新建任务</button>
         </div>
     </header>
-    {#if definitions.length && params.start && !start}<p class="notice">找不到开始时间属性，日程将显示为全天。</p>{/if}
-    {#if definitions.length && params.status && !status}<p class="notice">找不到状态属性，日历仅显示日程。</p>{/if}
+    {#if definitions.length && params.start && !start}<div data-paragraph class="notice">找不到开始时间属性，日程将显示为全天。</div>{/if}
+    {#if definitions.length && params.status && !status}<div data-paragraph class="notice">找不到状态属性，日历仅显示日程。</div>{/if}
     {#if error}
         <div class="notice error">{message(error)}</div>
     {/if}
@@ -54,7 +54,7 @@
         <section class="paper-card agenda">
             <h2>{selected}</h2>
             {#if pending}
-                <p>正在读取日程…</p>
+                <div data-paragraph>正在读取日程…</div>
             {/if}
             {#each byDay[selected] ?? [] as page (page.id)}
                 <ContextActions items={calendarMenu(page)}><div class="agenda-item">
@@ -70,14 +70,14 @@
             {:else}
                 <div class="empty-state">
                     <Icon name="calendar" size={32} />
-                    <p>这一天还没有安排</p>
+                    <div data-paragraph>这一天还没有安排</div>
                 </div>
             {/each}
         </section>
     </div>
     <section class="paper-card notices">
         <h2>提醒</h2>
-        <p>在任意时间属性上点铃铛设置提醒。应用关闭期间到期的提醒会在下次运行时补发。</p>
+        <div data-paragraph>在任意时间属性上点铃铛设置提醒。应用关闭期间到期的提醒会在下次运行时补发。</div>
         {#each notices as notice (`${notice.pageId}:${notice.attrId}:${notice.leadSeconds}`)}
             <button class:unread={!notice.seen} onclick={() => read(notice)}>
                 <span>{notice.title} · {notice.attrName}</span>
@@ -85,7 +85,7 @@
                 <span>{notice.seen ? "已读" : "未读"}</span>
             </button>
         {:else}
-            <p>还没有提醒记录。在任意时间属性上点铃铛设置提醒。</p>
+            <div data-paragraph>还没有提醒记录。在任意时间属性上点铃铛设置提醒。</div>
         {/each}
     </section>
 </section>
@@ -107,7 +107,7 @@
     .agenda { padding: 22px; }
     .agenda-item { padding: 18px 0; border-bottom: 1px dashed var(--c-line); font-size: 12px; }
     .page-link { display: flex; flex-direction: column; gap: 8px; text-align: left; width: 100%; }
-    .agenda-item small, .agenda-item span, .notices p { color: var(--c-muted); font-size: 11px; }
+    .agenda-item small, .agenda-item span, .notices :where([data-paragraph]) { color: var(--c-muted); font-size: 11px; }
     .agenda-item > button:last-child { margin-top: 10px; }
     .notices { margin-top: 22px; padding: 22px; }
     .notices > button { display: flex; gap: 20px; justify-content: space-between; width: 100%; padding: 14px 0; border-bottom: 1px dashed var(--c-line); font-size: 12px; text-align: left; }

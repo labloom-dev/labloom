@@ -59,7 +59,8 @@ function copy(source: Node, target: Node, document: Document, base: string | und
             continue;
         }
         // Article headings sit below the item's own title.
-        const created = document.createElement(headings[name] ?? name);
+        const created = document.createElement(name === "p" ? "div" : headings[name] ?? name);
+        if (name === "p") created.setAttribute("data-paragraph", "");
         if (name === "a") {
             const href = address(element.getAttribute("href"), base);
             if (href) {

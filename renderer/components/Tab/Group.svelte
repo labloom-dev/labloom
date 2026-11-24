@@ -14,13 +14,10 @@
             bind:value={getActiveTab, setActiveTab}
         >
             <GroupHeader {group} />
-            <div class="group-content" {@attach element => {
-                const observer = new ResizeObserver(entries => element.style.setProperty("--pane-height", entries[0].contentRect.height + "px"));
-                observer.observe(element); return () => observer.disconnect();
-            }}>
+            <div class="group-content">
                 {#if !group.tabs.length}
                     <div class="empty-group"><img src={icon} alt="" />
-                        {#each ["newPage", "search", "settings"] as const as id (id)}<p>{commandLabel(id)} <kbd class="ui-shortcut">{commands[id].shortcut}</kbd></p>{/each}
+                        {#each ["newPage", "search", "settings"] as const as id (id)}<div data-paragraph>{commandLabel(id)} <kbd class="ui-shortcut">{commands[id].shortcut}</kbd></div>{/each}
                     </div>
                 {/if}
                 {#each group.tabs as tab (tab.id)}
@@ -86,7 +83,7 @@
         text-align: center;
     }
     .empty-group img { width: var(--ui-empty-logo-size); filter: grayscale(1); opacity: .22; margin-bottom: var(--ui-space-5); }
-    .empty-group p { margin: var(--ui-space-2) 0; color: var(--ui-text-secondary); font: var(--ui-font-body)/1.3 var(--ui-font-family); }
+    .empty-group :where([data-paragraph]) { margin: var(--ui-space-2) 0; color: var(--ui-text-secondary); font: var(--ui-font-body)/1.3 var(--ui-font-family); }
 </style>
 
 

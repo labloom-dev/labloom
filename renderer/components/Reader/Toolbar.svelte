@@ -1,164 +1,25 @@
-<div class="toolbar">
-    <div class="group">
-        <button aria-label="上一页" disabled={disabled || pageNumber <= 1} onclick={previousPage}>
-            <Icon name="chevron-up" size={16} />
-        </button>
-        <button aria-label="下一页" disabled={disabled || pageNumber >= pagesCount} onclick={nextPage}>
-            <Icon name="chevron-down" size={16} />
-        </button>
-        <input
-            class="page-input"
-            aria-label="页码"
-            inputmode="numeric"
-            {disabled}
-            value={pageDraft ?? (disabled ? "" : String(pageNumber))}
-            oninput={event => pageDraft = event.currentTarget.value}
-            onkeydown={onPageKeydown}
-            onblur={commitPage}
-        />
-        <span class="muted">/ {disabled ? "–" : pagesCount}</span>
-    </div>
-
-    <div class="group">
-        <button aria-label="缩小" {disabled} onclick={zoomOut}>
-            <Icon name="zoom-out" size={16} />
-        </button>
-        <select aria-label="缩放比例" {disabled} value={scaleOption} onchange={event => setScale(parseScale(event.currentTarget.value))}>
-            {#each presetOptions as option (option.value)}
-                <option value={option.value}>{option.label}</option>
-            {/each}
-            {#each percentOptions as percent (percent)}
-                <option value={String(percent / 100)}>{percent}%</option>
-            {/each}
-            {#if scaleOption === "custom"}
-                <option value="custom" disabled hidden>{Math.round(scale * 100)}%</option>
-            {/if}
-        </select>
-        <button aria-label="放大" {disabled} onclick={zoomIn}>
-            <Icon name="zoom-in" size={16} />
-        </button>
-        <button aria-label="旋转页面" {disabled} onclick={rotate}>
-            <Icon name="rotate-clockwise" size={16} />
-        </button>
-    </div>
-
-    <div class="group search">
-        <span class="icon">
-            <Icon name="search" size={16} />
-        </span>
-        <input
-            type="search"
-            placeholder="在文档中搜索"
-            aria-label="在文档中搜索"
-            {disabled}
-            value={query}
-            bind:this={searchInput}
-            oninput={onSearchInput}
-            onkeydown={onSearchKeydown}
-        />
-        <span class="muted find-status">
-            {findText}
-        </span>
-        <button aria-label="上一个匹配" disabled={disabled || findStatus.kind !== "found"} onclick={() => find(query, true)}>
-            <Icon name="chevron-up" size={16} />
-        </button>
-        <button aria-label="下一个匹配" disabled={disabled || findStatus.kind !== "found"} onclick={() => find(query)}>
-            <Icon name="chevron-down" size={16} />
-        </button>
-    </div>
-</div>
-
-
-<style>
-    .toolbar {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        flex-shrink: 0;
-        min-height: 45px;
-        padding-inline: 12px;
-        overflow-x: auto;
-        background-color: var(--c-reader-toolbar-background);
-        border-bottom: var(--border-width) solid var(--c-reader-toolbar-border);
-        font-size: 13px;
-    }
-    .group {
-        display: flex;
-        align-items: center;
-        gap: 2px;
-        flex-shrink: 0;
-    }
-    .search {
-        flex-shrink: 1;
-        min-width: 0;
-        margin-left: auto;
-    }
-    button {
-        display: grid;
-        place-items: center;
-        width: 28px;
-        height: 28px;
-        border-radius: 6px;
-        box-sizing: border-box;
-    }
-    button:hover:not(:disabled) {
-        background-color: var(--c-surface-hover);
-    }
-    button:disabled {
-        cursor: default;
-        opacity: .4;
-    }
-    .icon {
-        display: flex;
-        padding-inline: 4px;
-        color: var(--c-reader-muted-text);
-    }
-    input, select {
-        height: 24px;
-        padding-inline: 6px;
-        border: var(--border-width) solid var(--c-reader-input-border);
-        border-radius: 6px;
-        background-color: var(--c-surface);
-        font: inherit;
-    }
-    input:focus-visible, select:focus-visible, button:focus-visible {
-        outline: var(--focus-width) solid var(--c-border-focus);
-    }
-    .page-input {
-        width: 48px;
-        margin-left: 4px;
-        text-align: center;
-    }
-    input[type="search"] {
-        width: 180px;
-        min-width: 80px;
-        flex-shrink: 1;
-    }
-    .muted {
-        color: var(--c-reader-muted-text);
-        white-space: nowrap;
-    }
-    .find-status {
-        min-width: 48px;
-        text-align: center;
-    }
-</style>
-
-
 <script lang="ts">
-    import Icon from "../utils/Icon.svelte";
-    import type { ReaderFindStatus, ReaderScale } from "./defs";
+    import { type Snippet } from "svelte";
+    import { isComposingKey, readerShortcuts } from "../../../shared/content/commands";
+    import { t } from "../../i18n.svelte";
+    import IconButton from "../base/IconButton.svelte";
+    import Input from "../base/Input.svelte";
+    import Select from "../base/Select.svelte";
+    import { scalePresets, type ReaderFindStatus, type ReaderScale } from "./defs";
     import { isScalePreset } from "./pdfjs";
 
-    type Props = {
+    let {
+        disabled, pageNumber, pagesCount, scale, scaleValue, findStatus, query, extra,
+        goToPage, previousPage, nextPage, zoomIn, zoomOut, setScale, rotate, find, clearFind
+    }: {
         disabled: boolean;
         pageNumber: number;
         pagesCount: number;
         scale: number;
-        /** pdf.js' `currentScaleValue`: a preset name or a number as a string. */
         scaleValue: string;
         findStatus: ReaderFindStatus;
         query: string;
+        extra?: Snippet;
         goToPage: (pageNumber: number) => void;
         previousPage: () => void;
         nextPage: () => void;
@@ -168,73 +29,49 @@
         rotate: () => void;
         find: (query: string, previous?: boolean) => void;
         clearFind: () => void;
-    };
+    } = $props();
 
-    const {
-        disabled, pageNumber, pagesCount, scale, scaleValue, findStatus, query,
-        goToPage, previousPage, nextPage, zoomIn, zoomOut, setScale, rotate, find, clearFind
-    }: Props = $props();
-
-    const presetOptions = [
-        { value: "auto", label: "自动" },
-        { value: "page-actual", label: "实际大小" },
-        { value: "page-width", label: "适合宽度" },
-        { value: "page-fit", label: "适合页面" }
-    ];
     const percentOptions = [50, 75, 100, 125, 150, 200, 300, 400];
-
-    const scaleOption = $derived.by(() => {
-        if (isScalePreset(scaleValue)) return scaleValue;
-        const percent = Math.round(scale * 100);
-        return percentOptions.includes(percent) ? String(percent / 100) : "custom";
-    });
+    const percent = $derived(Math.round(scale * 100));
+    const scaleOption = $derived(isScalePreset(scaleValue) ? scaleValue : percentOptions.includes(percent) ? String(percent / 100) : "custom");
+    const options = $derived([
+        ...scalePresets.map(value => ({ value, label: t(`reader.scale.${value}`) })),
+        ...percentOptions.map(value => ({ value: String(value / 100), label: value + "%" })),
+        ...(scaleOption === "custom" ? [{ value: "custom", label: percent + "%", disabled: true }] : [])
+    ]);
 
     const findText = $derived.by(() => {
         switch (findStatus.kind) {
             case "pending": return "…";
-            case "found": return `${findStatus.current}/${findStatus.total}`;
-            case "not-found": return "无结果";
-            case "no-text": return "无可搜索文本";
+            case "found": return t("reader.matchCount", { current: findStatus.current, total: findStatus.total });
+            case "not-found": return t("reader.noMatches");
+            case "no-text": return t("reader.noText");
             default: return "";
         }
     });
-
     let pageDraft = $state<string | null>(null);
-    let searchInput = $state<HTMLInputElement | null>(null);
+    let searchInput = $state<HTMLInputElement>();
 
     export function focusSearch(): void {
         searchInput?.focus();
         searchInput?.select();
     }
-
-    function parseScale(value: string): ReaderScale {
-        return isScalePreset(value) ? value : Number(value);
-    }
-
     function commitPage(): void {
         if (pageDraft === null) return;
         const value = Number.parseInt(pageDraft, 10);
         pageDraft = null;
         if (Number.isFinite(value)) goToPage(value);
     }
-
-    function onPageKeydown(event: KeyboardEvent & { currentTarget: HTMLInputElement }): void {
-        if (event.key === "Enter") {
-            commitPage();
-        }
+    function pageKey(event: KeyboardEvent & { currentTarget: HTMLInputElement }): void {
+        if (isComposingKey(event)) return;
+        if (event.key === "Enter") commitPage();
         else if (event.key === "Escape") {
             pageDraft = null;
             event.currentTarget.blur();
         }
     }
-
-    function onSearchInput(event: Event & { currentTarget: HTMLInputElement }): void {
-        const value = event.currentTarget.value;
-        if (value) find(value);
-        else clearFind();
-    }
-
-    function onSearchKeydown(event: KeyboardEvent): void {
+    function searchKey(event: KeyboardEvent): void {
+        if (isComposingKey(event)) return;
         if (event.key === "Enter" && query) {
             event.preventDefault();
             find(query, event.shiftKey);
@@ -245,3 +82,47 @@
         }
     }
 </script>
+
+<div class="toolbar" role="toolbar" aria-label={t("reader.pdf")}>
+    {@render extra?.()}
+    <div class="group">
+        <IconButton icon="chevron-up" label={t("reader.previousPage")} disabled={disabled || pageNumber <= 1} onclick={previousPage} />
+        <IconButton icon="chevron-down" label={t("reader.nextPage")} disabled={disabled || pageNumber >= pagesCount} onclick={nextPage} />
+        <div class="page-input">
+            <Input label={t("reader.pageNumber")} {disabled} value={pageDraft ?? (disabled ? "" : String(pageNumber))} oninput={value => pageDraft = value}
+                onchange={commitPage} inputProps={{ inputmode: "numeric", onkeydown: pageKey }} />
+        </div>
+        <span class="muted">{t("reader.pageCount", { count: disabled ? "–" : pagesCount })}</span>
+    </div>
+    <div class="group" data-reader-transform>
+        <IconButton icon="zoom-out" label={t("reader.zoomOut")} shortcut={readerShortcuts.zoomOut} {disabled} onclick={zoomOut} />
+        <Select label={t("reader.zoom")} {options} value={scaleOption} {disabled}
+            onchange={value => {
+                if (value && value !== "custom") setScale(isScalePreset(value) ? value : Number(value));
+            }} />
+        <IconButton icon="zoom-in" label={t("reader.zoomIn")} shortcut={readerShortcuts.zoomIn} {disabled} onclick={zoomIn} />
+        <IconButton icon="rotate-clockwise" label={t("reader.rotate")} {disabled} onclick={rotate} />
+    </div>
+    <div class="group search">
+        <Input search label={t("reader.find")} clearLabel={t("reader.clearFind")} placeholder={t("reader.find")} {disabled}
+            value={query} bind:input={searchInput} oninput={value => value ? find(value) : clearFind()} inputProps={{ onkeydown: searchKey }} />
+        {#if findText}<span class="muted" aria-live="polite">{findText}</span>{/if}
+        <IconButton icon="chevron-up" label={t("reader.previousMatch")} disabled={disabled || findStatus.kind !== "found"} onclick={() => find(query, true)} />
+        <IconButton icon="chevron-down" label={t("reader.nextMatch")} disabled={disabled || findStatus.kind !== "found"} onclick={() => find(query)} />
+    </div>
+</div>
+
+<style>
+    .toolbar {
+        display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: var(--ui-space-2) var(--ui-space-4);
+        min-height: var(--ui-toolbar-height); padding: var(--ui-space-1) var(--ui-space-3);
+        background: var(--ui-surface-panel); border-bottom: var(--ui-stroke) solid var(--ui-divider); font-size: var(--ui-font-small);
+    }
+    .group { display: flex; align-items: center; gap: var(--ui-space-1); flex: none; }
+    .search { flex: 1 0 200px; min-width: 0; margin-inline-start: auto; }
+    .search :global(.ui-field) { min-width: 0; max-width: 240px; flex: 1; }
+    .search :global(input) { min-width: 0; }
+    .page-input { width: 46px; }
+    .page-input :global(input) { text-align: center; }
+    .muted { color: var(--ui-text-secondary); white-space: nowrap; }
+</style>

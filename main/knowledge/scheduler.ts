@@ -1,8 +1,10 @@
 import * as feed from "../feed/service";
 import * as workspace from "../workspace-state";
+import * as events from "./events";
 import * as data from "./records";
 import * as timers from "./timers";
 let interval: ReturnType<typeof setInterval> | undefined;
+let unsubscribe: (() => void) | undefined;
 export async function check(): Promise<void> {
     const session = workspace.requireWorkspace();
     for (const id of await timers.check()) {
@@ -16,13 +18,20 @@ export async function check(): Promise<void> {
     }
 }
 export function start(): void {
+    const session = workspace.requireWorkspace();
     const dispatch = (): void => {
+        if (!workspace.isCurrent(session)) return;
         void check().catch(error => console.error("Timer dispatch failed", error));
     };
+    unsubscribe = events.subscribe(event => {
+        if (event.type === "feed-due") queueMicrotask(dispatch);
+    });
     interval = setInterval(dispatch, 15000);
     interval.unref();
     if (data.statement("SELECT 1 FROM timers WHERE due_at IS NOT NULL LIMIT 1").get()) dispatch();
 }
 export function stop(): void {
     clearInterval(interval); interval = undefined;
+    unsubscribe?.();
+    unsubscribe = undefined;
 }

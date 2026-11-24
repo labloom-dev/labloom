@@ -32,7 +32,7 @@
 .editor-document [data-block-id] > [data-block-id] { margin-inline-start: var(--ui-editor-indent); }
 .editor-document [data-folded] > [data-block-id] { display: none; }
 
-.editor-document [data-body], .editor-document :is(td, th) p {
+.editor-document :is([data-body], [data-cell-line]) {
     margin: 0;
     line-height: var(--ui-editor-line-height);
     overflow-wrap: anywhere;
@@ -59,7 +59,9 @@
 .editor-document.ProseMirror-focused :is([data-body], [data-code-line]).empty-field::before { content: var(--editor-write); }
 .editor-document .empty-field::before {
     position: absolute;
+    margin-inline-start: var(--ui-space-1);
     pointer-events: none;
+    line-height: inherit;
     color: var(--ui-text-placeholder);
 }
 
@@ -98,13 +100,14 @@
 }
 .editor-document [data-kind="callout"] { border-inline-start: var(--ui-active-border) solid var(--ui-accent); }
 .editor-document [data-kind="code"] [data-code-line], .editor-document code {
-    font-family: var(--ui-font-mono);
-    font-size: var(--ui-editor-font-code);
+    font-family: var(--ui-font-code);
 }
+.editor-document [data-kind="code"] [data-code-line] { font-size: var(--ui-editor-font-code); }
 .editor-document code {
-    padding: var(--ui-space-1) var(--ui-space-2);
+    font-size: calc(13em / 15);
+    padding: calc(2em / 13) calc(4em / 13);
     margin: 0;
-    border-radius: var(--ui-radius-small);
+    border-radius: calc(2em / 13);
     background: var(--ui-hover);
 }
 .editor-document code[data-code-join-start] { padding-inline-start: 0; border-start-start-radius: 0; border-end-start-radius: 0; }
@@ -131,9 +134,18 @@
 }
 .editor-document .ProseMirror-selectednode {
     outline: var(--ui-stroke) solid var(--ui-focus);
+}
+.editor-document .ProseMirror-selectednode:not([data-block-id]) { background-color: var(--ui-text-selection); }
+.editor-document.ProseMirror-hideselection *::selection { background-color: transparent; }
+.editor-document :is(.range-single, .ProseMirror-selectednode[data-block-id]):not(.range-single *, .ProseMirror-selectednode *)::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+    border-radius: inherit;
     background-color: var(--ui-editor-block-selection);
 }
-.editor-document::selection, .editor-document *::selection { background: var(--ui-text-selection); color: var(--ui-text-selected); }
 
 .editor-reference-preview {
     position: fixed;
@@ -161,7 +173,7 @@
     font-weight: 600;
     overflow-wrap: anywhere;
 }
-.reference-card p { margin: var(--ui-space-2) 0 0; color: var(--ui-text-secondary); line-height: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
+.reference-card :where([data-paragraph]) { margin: var(--ui-space-2) 0 0; color: var(--ui-text-secondary); line-height: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
 .reference-card.missing { border-style: dashed; color: var(--ui-text-secondary); }
 .editor-backlinks {
     margin-block: calc(-1 * var(--ui-space-3)) var(--ui-space-4);
@@ -234,20 +246,6 @@
     will-change: transform;
 }
 .editor-drag-ghost[data-clipped] { mask-image: linear-gradient(to bottom, currentColor calc(100% - var(--ui-space-6)), transparent); }
-.editor-document .range-single, .editor-document .range-single [data-block-id] { background-color: var(--ui-text-selection); }
-.editor-document [data-folded]::before {
-    content: "";
-    position: absolute;
-    top: calc(var(--ui-editor-font-body) * var(--ui-editor-line-height) / 2);
-    right: 100%;
-    width: var(--ui-button-height);
-    height: var(--ui-button-height);
-    transform: translateY(-50%);
-    background: var(--ui-text-secondary);
-    clip-path: polygon(43% 33%, 64% 50%, 43% 67%);
-    cursor: pointer;
-}
-.editor-document :is([data-kind="ordered_list"], [data-kind="unordered_list"])[data-folded]::before { margin-inline-end: var(--ui-editor-indent); }
 .editor-document .code-controls { position: sticky; top: 0; height: 0; z-index: 1; }
 .editor-document [data-kind="code"] .code-content { overflow-x: auto; }
 .editor-document [data-kind="code"] [data-code-line] { white-space: pre; width: max-content; min-width: 100%; line-height: var(--ui-editor-line-height); overflow-wrap: normal; tab-size: 4; }

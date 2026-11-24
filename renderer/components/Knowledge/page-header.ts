@@ -10,7 +10,8 @@ import * as sessions from "./page-sessions";
 import type { PageSession } from "./page-session.svelte";
 
 export function toggleProperties(id: TabID, params: ViewParams["page"]): void {
-    tabs.setViewParams(id, { ...params, showProperties: !params.showProperties });
+    const paper = sessions.mountedSession(id, params.page.id)?.state.page?.kind === "paper";
+    tabs.setViewParams(id, { ...params, showProperties: !(params.showProperties ?? paper) });
 }
 
 export function toggleTrash(session: PageSession): void {
@@ -29,11 +30,19 @@ export function pageActions(shown: boolean, deleted: boolean | undefined, busy: 
 
 export function pageHeader(id: TabID, params: ViewParams["page"]): HeaderActions {
     const session = sessions.mountedSession(id, params.page.id), page = session?.state.page;
+    const shown = params.showProperties ?? page?.kind === "paper", toggle = (): void => toggleProperties(id, params);
     return pageActions(
-        !!params.showProperties, page ? !!page.attributes.deleted : undefined, activity.readingTabs.has(id),
-        () => toggleProperties(id, params),
+        shown, page ? !!page.attributes.deleted : undefined, activity.readingTabs.has(id), toggle,
         () => {
             if (session) toggleTrash(session);
         }
     );
+}
+
+export function toggleLibraryProperties(id: TabID, params: ViewParams["library"]): void {
+    tabs.setViewParams(id, { ...params, showProperties: params.showProperties === false });
+}
+export function libraryHeader(id: TabID, params: ViewParams["library"]): HeaderActions {
+    return { buttons: [{ icon: "layout-sidebar-right", label: i18n.t("editor.properties"), shortcut: shortcuts.commands.toggleProperties.shortcut,
+        pressed: params.showProperties !== false, onclick: () => toggleLibraryProperties(id, params) }], menu: [] };
 }

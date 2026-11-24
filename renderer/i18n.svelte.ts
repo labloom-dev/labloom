@@ -9,6 +9,7 @@ export function setLocale(value: Language): void {
     language = value;
     document.documentElement.lang = value;
 }
+export const currentLanguage = (): Language => language;
 export const t: Translate = (key, options) => instance.t(key, { ...options, lng: language });
 export const commandLabel = (id: Command): string => t(`command.${id}`);
 export type ErrorValue = FailureInfo | "";

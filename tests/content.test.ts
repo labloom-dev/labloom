@@ -9,6 +9,8 @@ import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { createWorkspace, openWorkspace } from "./support/session";
 import { fingerprint } from "../main/knowledge/attributes";
+import { blockList } from "../main/knowledge/block-list";
+import { EditChanges } from "../main/knowledge/changes";
 import * as settings from "../main/settings/store";
 import { builtinAttrs, builtinAttrsByPageKind } from "../shared/attrs/builtins";
 import { display } from "../shared/attrs/format";
@@ -136,6 +138,65 @@ test("library refresh reorders results without hydrating unchanged summaries, an
     assert.deepEqual(service.listUpdates(query, [b.id]).order, [b.id, a.id]);
     assert.deepEqual(service.list({ ids: [a.id, c.id], hasValue: "schedule_date" }).items.map(row => row.id), [a.id]);
     assert.deepEqual(service.list({ ids: [] }), { total: 0, items: [] });
+});
+
+test("recycled pages disappear from active listings, search, the picker and backlinks but remain resolvable", t => {
+    const { service } = fixture(t);
+    const note = service.create("editable", "Destination"), paper = service.create("paper", "Unique recycle filter", {
+        pinned: true, schedule_date: 0, links: [note.id]
+    });
+    assert.equal(service.backlinks(note.id)[0].sourceId, paper.id);
+    const result = service.trash([paper.id], workspaceHistory);
+    assert.equal(result.status, "confirmation");
+    service.trash([paper.id], workspaceHistory, result.preview.token);
+    assert.deepEqual(service.backlinks(note.id), []);
+    assert.equal(service.searchPages(paper.title).total, 0);
+    assert.equal(service.list({ ids: [paper.id] }).total, 0);
+    assert.equal(service.list({ pinned: true }).total, 0);
+    assert.equal(service.list({ hasValue: "schedule_date" }).total, 0);
+    assert.equal(service.list({ kind: "paper" }).total, 0);
+    assert.throws(() => blockList(paper.id), hasFailure("page-recycled-readonly"));
+    const sort = { column: "created_at", direction: "desc" } as const;
+    assert.deepEqual(service.libraryIndex({ language: "en", sort }).ids, [note.id]);
+    assert.deepEqual(service.libraryIndex({ deleted: true, kind: "paper", language: "en", sort }).ids, [paper.id]);
+    assert.equal(service.resolve({ kind: "page", id: paper.id })?.status, "recycled");
+    service.restore([paper.id], workspaceHistory);
+    assert.equal(service.backlinks(note.id)[0].sourceId, paper.id);
+});
+
+test("malformed block rows fail validation before body checks", t => {
+    const { service } = fixture(t), page = service.create("paper", "Paper");
+    const invalid = null as unknown as ContentBlock;
+    assert.throws(() => new EditChanges().putBlock(invalid), hasFailure("block-invalid-identity"));
+    assert.throws(() => service.commitEdit({ pageId: page.id, batch: 0, blocks: [invalid] }, pageHistory(page.id)), hasFailure("block-invalid-identity"));
+});
+
+test("a structural save writes once and a confirmation rolls back its attempted write", t => {
+    const { service } = fixture(t);
+    const parent = service.create("editable", "Parent"), child = service.create("editable", "Child", {}, parent.id);
+    const stored = service.get(parent.id), source = pageHistory(parent.id);
+    const added = { id: randomUUID(), type: "paragraph" as const, payload: payload("paragraph", "New paragraph"), children: [] };
+    const prototype = Object.getPrototypeOf(service.sql.prepare("SELECT 1"));
+    const original = prototype.run;
+    let writes = 0;
+    t.mock.method(prototype, "run", function (this: { source: string }, ...args: unknown[]) {
+        if (this.source.startsWith("UPDATE pages SET children=")) writes++;
+        return original.apply(this, args);
+    });
+    const children = [...stored.children, added.id];
+    assert.equal(service.commitEdit({ pageId: parent.id, batch: 1, blocks: [added], pageChildren: children }, source).status, "saved");
+    assert.equal(writes, 1);
+
+    const remove = { pageId: parent.id, batch: 2, blocks: [], pageChildren: parent.children };
+    const pending = service.commitEdit(remove, source);
+    assert.equal(pending.status, "confirmation");
+    assert.deepEqual(pending.preview.recycled.map(page => page.id), [child.id]);
+    assert.equal(writes, 2);
+    assert.deepEqual(service.get(parent.id).children, children);
+    assert.equal(service.get(child.id).attributes.deleted, false);
+    assert.equal(service.commitEdit(remove, source, pending.preview.token).status, "saved");
+    assert.equal(writes, 3);
+    assert.equal(service.get(child.id).attributes.deleted, true);
 });
 
 test("reference cycles lose retention together and only after the complete preview is confirmed", t => {
@@ -414,7 +475,9 @@ test("quick open ranks titles, follows the first shared match and pages through 
     assert.equal(edit(service, a, [], [nested.id]).status, "saved");
     assert.equal(edit(service, d, [], [block.id]).status, "saved");
     service.attributes.write(c.id, { paper_authors: "Author SIGNAL" });
-    service.attributes.write(removed.id, { deleted: true }, true);
+    const preview = service.trash([removed.id], workspaceHistory);
+    if (preview.status !== "confirmation") throw Error("Expected confirmation");
+    service.trash([removed.id], workspaceHistory, preview.preview.token);
     for (const [index, page] of [a, b, c, d].entries()) service.attributes.write(page.id, { modified_at: index + 1 }, true);
     const first = service.searchPages("  signal  ", 0, 2), next = service.searchPages("SIGNAL", 2, 2);
     assert.equal(first.total, 4);
@@ -426,4 +489,50 @@ test("quick open ranks titles, follows the first shared match and pages through 
     assert.deepEqual(next.items[0].match, { field: "attribute", id: "paper_authors", name: "作者", snippet: "Author SIGNAL" });
     assert.deepEqual(service.searchPages("signal", 4), { items: [], total: 4 });
     assert.deepEqual(service.list({ keyword: "signal" }).items.map(page => page.id), [d.id, c.id, b.id, a.id]);
+});
+
+test("library sorting uses displayed values, pinyin, empty-last and stable ties during search", t => {
+    const { service } = fixture(t);
+    const sample = ["赵", "艾", "", "艾"].map((author, i) => service.create("paper", "Survey " + i, { paper_authors: author }));
+    for (const [i, row] of sample.entries()) service.attributes.write(row.id, { modified_at: (i + 1) * 60 }, true);
+    const sort = (direction: "asc" | "desc"): string[] => service.libraryIndex({ keyword: "Survey", kind: "paper", language: "zh-CN", sort: { column: "paper_authors", direction } }).ids;
+    assert.deepEqual(sort("asc"), [3, 1, 0, 2].map(i => sample[i].id));
+    assert.deepEqual(sort("desc"), [0, 3, 1, 2].map(i => sample[i].id));
+    service.attributes.write(sample[3].id, { modified_at: 120 }, true);
+    assert.deepEqual(sort("asc").slice(0, 2), [sample[1].id, sample[3].id].sort());
+    const ids = sample.map(p => p.id), preview = service.trash(ids, workspaceHistory);
+    assert.ok(preview.status === "confirmation");
+    assert.deepEqual(preview.preview.direct.map(p => p.id), ids);
+    assert.equal(service.trash(ids, workspaceHistory, preview.preview.token).status, "saved");
+    assert.equal(service.libraryIndex({ deleted: true, language: "en", sort: { column: "created_at", direction: "desc" } }).ids.length, 4);
+});
+
+test("numeric library sorting keeps null and absent fields last and returns the ordered first batch", t => {
+    const { service } = fixture(t);
+    const column = "custom:" + randomUUID();
+    service.attributes.applyDefinition(column, { id: column, type: "number", name: "Count", metadata: {} });
+    const sample = ["A", "B", "C", "D", "E"].map(name => service.create("editable", name));
+    [12, -2, 12, null].forEach((value, index) => service.attributes.write(sample[index].id, { [column]: value }));
+    sample.forEach((page, index) => service.attributes.write(page.id, { modified_at: (index + 1) * 60 }, true));
+    for (const direction of ["asc", "desc"] as const) {
+        const numbers = direction === "asc" ? [1, 2, 0] : [2, 0, 1];
+        const index = service.libraryIndex({ language: "en", sort: { column, direction } }, [column]);
+        assert.deepEqual(index.ids, [...numbers, 4, 3].map(i => sample[i].id));
+        assert.deepEqual(index.initial?.map(page => page.id), index.ids);
+    }
+});
+
+test("bulk trash recalculates dependent pages before accepting a fast preview token", t => {
+    const { service } = fixture(t);
+    const a = service.create("paper", "A"), b = service.create("paper", "B"), ids = [a.id, b.id];
+    const fast = service.trash(ids, workspaceHistory);
+    assert.ok(fast.status === "confirmation");
+    assert.deepEqual(fast.preview.recycled, []);
+    const child = service.create("annotation", "C", { independent: false }, a.id);
+    const changed = service.trash(ids, workspaceHistory, fast.preview.token);
+    assert.ok(changed.status === "confirmation");
+    assert.deepEqual(changed.preview.recycled, [{ id: child.id, title: "C" }]);
+    assert.equal(service.get(a.id).attributes.deleted, false);
+    assert.equal(service.trash(ids, workspaceHistory, changed.preview.token).status, "saved");
+    assert.equal(service.get(child.id).attributes.deleted, true);
 });

@@ -3,7 +3,7 @@
         if (!menu && !picker && !gesture) handle = null;
         clearPreview();
     }}>
-    <Menu context bind:open={bodyOpen} items={bodyItems(editingCommand, !locked)} {portal} onrestore={restoreEditor}>
+    <Menu context bind:open={bodyOpen} items={bodyItems(editingCommand, !locked)} onrestore={restoreEditor}>
         {#snippet trigger({ props })}<div {...props} tabindex="-1" class="editor-column" bind:this={host} {@attach documentLabels}></div>{/snippet}
     </Menu>
     {#each bands as rect (rect.y)}
@@ -21,38 +21,45 @@
                     event.preventDefault(); event.stopPropagation(); setBlockMenu(true);
                 }} />
             {#if handle.children}
-                <IconButton icon={handle.folded ? "chevron-right" : "chevron-down"} label={t(handle.folded ? "editor.unfold" : "editor.fold")} shortcut={blockShortcuts.fold}
-                    style="--ui-hover: var(--ui-surface-clear)" onpointerdown={event => event.preventDefault()} onclick={() => act("fold")} />
+                <IconButton icon={handle.folded ? "chevron-right" : "chevron-down"} aria-expanded={!handle.folded}
+                    label={t(handle.folded ? "editor.unfold" : "editor.fold")} shortcut={blockShortcuts.fold}
+                    onpointerdown={event => event.preventDefault()} onclick={() => toggleFold()} />
             {/if}
-            <Menu align="start" bind:open={() => menu, setBlockMenu} anchor={handleAnchor} items={blockItems(handle, convert, act, pick, move, multiple)} {portal} onrestore={restoreEditor} />
+            <Menu align="start" bind:open={() => menu, setBlockMenu} anchor={handleAnchor} items={blockItems({ ...handle, ...groupFold }, convert, act, pick, move, !!groupFold)} onrestore={restoreEditor} />
         </div>
     {/if}
 </div>
 <span hidden bind:this={linkGlyph}><Icon name="link-external" size="1em" /></span>
 {#if slash && editor}
-    <SuggestionMenu items={suggestions} selected={suggestionIndex} onselect={insertSuggestion} bounds={caretBounds} label={t("editor.insertBlock")} />
+    <SuggestionMenu items={suggestions} selected={suggestionIndex} onselect={insertSuggestion} bounds={caretBounds} label={t("editor.insertBlock")} onclose={() => slash = null} />
 {/if}
 {#if picker}
     <TargetPicker mode={picker === "sync" ? "sync" : "reference"} position={picker === "inline" ? pickerPosition : undefined} onselect={choose} onclose={cancelPicker} />
 {/if}
 {#if preview}
-    <ReferencePreview anchor={preview.anchor}><ReferenceView {session} target={preview.target} /></ReferencePreview>
+    <ReferencePreview anchor={preview.anchor} onclose={() => preview = null}><ReferenceView {session} target={preview.target} /></ReferencePreview>
 {/if}
 {#if pasteChoice}
-    <Menu align="start" bind:open={() => !!pasteChoice, pasteOpen} {portal} first
+    <Menu align="start" bind:open={() => !!pasteChoice, pasteOpen} first
         anchor={{ getBoundingClientRect: () => new DOMRect(pasteChoice?.x, pasteChoice?.y, 0, 0) }}
         items={pasteItems(synced => void perform(() => paste(synced)))} onrestore={restoreEditor} />
 {/if}
 {#if editor}<Toolbar {editor} history={session.state.history} dirty={session.state.dirty} />{/if}
 
 <style>
-    .editor { position: relative; flex: 1; min-height: var(--ui-editor-min-height); }
+    .editor { --handle-gap: var(--ui-space-2); position: relative; flex: 1; min-height: var(--ui-editor-min-height); }
     .editor[data-gesture]::after { content: ""; position: absolute; inset: 0; z-index: 3; }
     .editor[data-gesture="drag"]::after { cursor: grabbing; }
     .editor[data-gesture="marquee"]::after { cursor: crosshair; }
-    .handle { cursor: default; display: flex; position: absolute; transform: translate(-100%, -50%); z-index: 2; color: var(--ui-text-secondary); }
-    .block-band { position: absolute; pointer-events: none; background: var(--ui-text-selection); }
-    .editor-column { position: relative; z-index: 1; }
+    .handle { cursor: default; display: flex; position: absolute; transform: translate(calc(-100% - var(--handle-gap)), -50%); z-index: 2; color: var(--ui-text-secondary); }
+    .block-band { position: absolute; z-index: 1; pointer-events: none; background: var(--ui-editor-block-selection); }
+    .editor-column {
+        position: relative;
+        z-index: 1;
+        /* Center the column when possible, reserving room for both buttons in narrow panes. */
+        margin-inline-start: max(0px, (100% - var(--ui-editor-content-width)) / 2,
+            2 * var(--ui-button-height) + var(--handle-gap) - var(--ui-editor-gutter));
+    }
     .marquee { position: absolute; z-index: 1; pointer-events: none; border: var(--ui-stroke) solid var(--ui-accent); background: color-mix(in srgb, var(--ui-text-selection) 45%, transparent); }
     .drop-line { position: absolute; inset: calc(var(--ui-active-border) / -2) auto auto 0; height: var(--ui-active-border); background: var(--ui-accent); z-index: 1; pointer-events: none; }
     .list-handle { margin-inline-start: calc(-1 * var(--ui-editor-indent)); }
@@ -72,6 +79,7 @@
     import { registerEditing, type EditingCommand } from "../layout/commands";
     import { openPage, openTarget } from "../layout/navigation";
     import Menu from "../base/Menu.svelte";
+    import { hasOpenLayer } from "../base/top-layer";
     import IconButton from "../base/IconButton.svelte";
     import Backlinks from "../Knowledge/Backlinks.svelte";
     import { block as blockItems, body as bodyItems, paste as pasteItems } from "./menus";
@@ -94,7 +102,7 @@
     import { moveBlocks, dropAt, relativeDrop, type Drop } from "./block-move";
     import { dragPreview } from "./drag-preview";
     import { trackPointer } from "./pointer-gesture";
-    import { blockPosition, clickPage, handleRowAtHeight, inMargin, intersectingBlocks } from "./page-pointer";
+    import { blockPosition, clickPage, followTextSelection, handleRowAtHeight, inMargin, intersectingBlocks } from "./page-pointer";
     import { blankBlock, blockData, blockJSON, canNest, documentEdit, indexDoc, kindOf, pageDocument, removesReference, subtree, type Location } from "./document";
     import { backlinkRow, documentLabels, documentViews } from "./document-view.svelte";
     import { clipboardRows, editing, located, remoteEdit, selectionIn, syncInsert } from "./transactions";
@@ -102,18 +110,17 @@
     import { borders, borderPlugin } from "./sync-border";
     import { inverse, patchDocument, replay } from "./reconcile";
     import { anchors } from "../Tab/anchors";
-    let { session, tabId, pageAnchor = false }: { session: PageSession; tabId: string; pageAnchor?: boolean } = $props();
+    let { session, tabId, pageAnchor = false, readOnly = false }: { session: PageSession; tabId: string; pageAnchor?: boolean; readOnly?: boolean } = $props();
     let root: HTMLDivElement, host: HTMLDivElement, editor = $state.raw<Editor | null>(null);
     let linkGlyph: HTMLSpanElement;
-    let portal = $state<HTMLElement>();
     let backlinkElement: HTMLDivElement | undefined;
     let workspaceId = "", pasting = $state(false);
     type PasteChoice = { clipboard: BlockClipboard; bookmark: SelectionBookmark; x: number; y: number };
     let pasteChoice = $state.raw<PasteChoice | null>(null), pendingPaste: PasteChoice | null = null;
-    const locked = $derived(pasting || !!pasteChoice || readingTabs.has(tabId) || session.state.loading || !!session.state.page?.attributes.deleted);
+    const locked = $derived(readOnly || pasting || !!pasteChoice || readingTabs.has(tabId) || session.state.loading || !!session.state.page?.attributes.deleted);
     type Handle = { id: string; pos: number; top: number; left: number; kind: ContentBlockKind; shared: boolean; folded: boolean; children: boolean };
     let handle = $state.raw<Handle | null>(null), menu = $state(false), picker = $state<"inline" | "reference" | "sync" | null>(null);
-    let multiple = $state(false);
+    let groupFold = $state.raw<Pick<Handle, "folded" | "children"> | null>(null);
     let pickerVersion = 0, menuOrigin: SelectionBookmark | null = null, bodyOpen = $state(false);
     let caret: SelectionBookmark | null = null, preview = $state.raw<{ target: Target; pos: number; anchor: HTMLElement } | null>(null);
     let pickerPosition = $state<{ x: number; y: number; left: number; right: number; bottom: number }>();
@@ -211,14 +218,14 @@
     }
     function setBlockMenu(value: boolean): void {
         if (value && (!editor || editor.view.composing)) return;
+        groupFold = null;
         if (value) {
             menuOrigin = editor!.state.selection.getBookmark();
             const loc = target();
             const places = loc ? selectedBlocks(loc) : [];
-            multiple = places.length > 1;
-            if (multiple && handle) {
+            if (places.length > 1) {
                 const parents = places.filter(p => p.node.type.name === "pageBlock" && p.node.childCount > 1);
-                handle = { ...handle, children: !!parents.length, folded: !!parents.length && parents.every(p => p.node.attrs.collapsed) };
+                groupFold = { children: !!parents.length, folded: !!parents.length && parents.every(p => p.node.attrs.collapsed) };
             }
         }
         menu = value;
@@ -331,20 +338,14 @@
             const first = view.nodeDOM($from.pos), last = view.nodeDOM($to.pos - $to.nodeBefore!.nodeSize);
             if (!(first instanceof HTMLElement) || !(last instanceof HTMLElement)) return [];
             const a = first.getBoundingClientRect(), b = last.getBoundingClientRect();
-            return [new DOMRect(a.left - bounds.left, a.top - bounds.top, a.width, b.bottom - a.top)];
+            const horizontal = $from.depth === 0 ? view.dom.getBoundingClientRect() : a;
+            return [new DOMRect(horizontal.left - bounds.left, a.top - bounds.top, horizontal.width, b.bottom - a.top)];
         });
     }
     let marquee = $state.raw<DOMRect | null>(null);
     function marginDown(event: PointerEvent): void {
         const instance = editor;
         if (!instance || event.button !== 0 || gesture || instance.view.composing) return;
-        const folded = event.target instanceof HTMLElement && event.target.closest<HTMLElement>("[data-folded]");
-        if (!locked && folded && event.target === folded && event.clientX < folded.getBoundingClientRect().left) {
-            event.preventDefault();
-            const pos = blockPosition(instance.view, folded), node = instance.state.doc.nodeAt(pos);
-            if (node) instance.view.dispatch(fold(instance.state.tr, { pos, node }));
-            return;
-        }
         const selected = wholeSelection(instance.state.selection);
         const block = event.target instanceof Element && event.target.closest<HTMLElement>("[data-block-id]");
         if (event.shiftKey && selected && block && block.dataset.kind !== "title") {
@@ -409,6 +410,7 @@
     function close(): void {
         pickerVersion++;
         menu = false;
+        groupFold = null;
         menuOrigin = null;
         picker = null;
         handle = null;
@@ -483,11 +485,12 @@
         if (node && node.attrs.blockId === el.dataset.blockId) placeHandle(el, { pos, node });
     }
     function placeHandle(el: HTMLElement, loc: { node: DocNode; pos: number }): void {
-        const line = el.querySelector<HTMLElement>("[data-body],td p,.reference-title") ?? el;
+        const line = el.querySelector<HTMLElement>("[data-body],[data-cell-line],.reference-title") ?? el;
         const rect = el.getBoundingClientRect(), first = line.getBoundingClientRect(), container = root.getBoundingClientRect();
         const height = parseFloat(getComputedStyle(line).lineHeight) || first.height;
+        const left = rect.left - container.left;
         handle = {
-            id: loc.node.attrs.blockId, pos: loc.pos, top: first.top - container.top + Math.min(first.height, height) / 2, left: rect.left - container.left,
+            id: loc.node.attrs.blockId, pos: loc.pos, top: first.top - container.top + Math.min(first.height, height) / 2, left,
             kind: kindOf(loc.node), shared: el.classList.contains("sync-block"), folded: !!loc.node.attrs.collapsed, children: loc.node.type.name === "pageBlock" && loc.node.childCount > 1
         };
     }
@@ -559,10 +562,22 @@
             instance.view.focus();
         });
     }
+    function toggleFold(collapse?: boolean): void {
+        const instance = editor, loc = target();
+        if (!instance || !loc || locked || instance.view.composing) return;
+        const tr = instance.state.tr;
+        const folded = collapse ?? !loc.node.attrs.collapsed;
+        for (const place of selectedBlocks(loc)) fold(tr, place, folded);
+        if (tr.docChanged) instance.view.dispatch(tr);
+        instance.view.focus();
+    }
     function act(action: "delete" | "fold" | "unsync" | "row" | "column"): void {
+        if (action === "fold") {
+            toggleFold(groupFold ? !groupFold.folded : undefined);
+            close(); return;
+        }
         const loc = target(), instance = editor;
         const places = loc ? selectedBlocks(loc) : [];
-        const collapse = !handle?.folded;
         close();
         if (!loc || !instance) return;
         const { node, pos } = loc;
@@ -572,16 +587,13 @@
             return;
         }
         if (places.length > 1) {
-            const tr = instance.state.tr;
-            if (action === "fold") for (const p of places) fold(tr, p, collapse);
-            if (tr.docChanged) instance.view.dispatch(tr);
             instance.view.focus(); return;
         }
         if (action === "row" || action === "column") {
             if (located(instance.state)?.pos !== pos) instance.commands.setTextSelection(pos + 4);
             if (action === "row") instance.commands.addRowAfter(); else instance.commands.addColumnAfter();
         }
-        else instance.view.dispatch(instance.state.tr.setNodeMarkup(pos, undefined, { ...node.attrs, ...(action === "fold" ? { collapsed: !node.attrs.collapsed } : { blockId: null }) }));
+        else instance.view.dispatch(instance.state.tr.setNodeMarkup(pos, undefined, { ...node.attrs, blockId: null }));
         instance.view.focus();
     }
     onMount(() => {
@@ -596,7 +608,6 @@
                 void unmount(component);
             };
         });
-        portal = root.closest<HTMLElement>(":popover-open") ?? undefined;
         const links = backlinkElement = document.createElement("div");
         const backlinks = pageAnchor ? mount(Backlinks, { target: links, props: {
             get links() {
@@ -626,6 +637,7 @@
                 attributes: { tabindex: "0", class: "editor-document" },
                 handleKeyDown(_view, event) {
                     if (isComposingKey(event) || instance.view.composing) return false;
+                    if (event.key === "Escape" && hasOpenLayer()) return false;
                     if (literal && event.key === "Backspace" && !locked && literal.after.doc === instance.state.doc && literal.after.selection.eq(instance.state.selection)) {
                         const previous = literal.before;
                         literal = null;
@@ -633,10 +645,6 @@
                         return true;
                     }
                     if (codeKeys(_view, event) || suggestionKey(event)) return true;
-                    if ((menu || bodyOpen) && event.key === "Escape") {
-                        menu = false; bodyOpen = false; event.preventDefault();
-                        restoreEditor(); return true;
-                    }
                     if (event.ctrlKey && !event.altKey && !event.shiftKey && event.key === "/") {
                         if (keyboardBlock()) {
                             event.preventDefault(); return true;
@@ -765,6 +773,8 @@
                 }
             },
             onTransaction({ editor: ed, transaction, appendedTransactions }) {
+                // Clipping a note can blur its editor synchronously during rendering.
+                if (!transaction.docChanged && !transaction.selectionSet && (transaction.getMeta("blur") || transaction.getMeta("focus"))) return;
                 if (gesture && transaction.docChanged) gesture();
                 if (transaction.selectionSet || transaction.docChanged) paintBands(ed.view);
                 if (literal && (transaction.docChanged || transaction.selectionSet)) literal = null;
@@ -777,9 +787,9 @@
                 else slash = null;
                 for (const tr of trs) {
                     if (handle && tr.docChanged) {
-                        const p = tr.mapping.mapResult(handle.pos, 1);
-                        if (tr.doc.nodeAt(p.pos)?.attrs.blockId !== handle.id) close();
-                        else handle = { ...handle, pos: p.pos };
+                        const pos = tr.mapping.map(handle.pos, 1), node = tr.doc.nodeAt(pos);
+                        if (!node || node.attrs.blockId !== handle.id) close();
+                        else handle = { ...handle, pos, folded: !!node.attrs.collapsed, children: node.type.name === "pageBlock" && node.childCount > 1 };
                     }
                     if (caret) caret = caret.map(tr.mapping);
                     if (brackets) brackets = brackets.map(tr.mapping);
@@ -856,12 +866,13 @@
         });
         geometry.observe(host);
         const offEditing = registerEditing(instance.view.dom, editingCommand);
+        const offTextSelection = followTextSelection(instance.view, root);
         const detachInput = session.input.attach(instance);
         if (!locked) session.input.replay();
-        if (!page.blocks[page.titleBlockId].payload.inline.length && !page.attributes.deleted &&
+        if (!readOnly && !page.blocks[page.titleBlockId].payload.inline.length && !page.attributes.deleted &&
             tabState.groups.find(group => group.id === tabState.focusedGroupId)?.activeTabId === tabId) instance.commands.focus("start", { scrollIntoView: false });
         function hold(event: Event): void {
-            if (!readingTabs.has(tabId) || page.attributes.deleted) return;
+            if (readOnly || !readingTabs.has(tabId) || page.attributes.deleted) return;
             if (event instanceof KeyboardEvent && isComposingKey(event)) return;
             if (event instanceof MouseEvent) {
                 const at = instance.view.posAtCoords({ left: event.clientX, top: event.clientY });
@@ -888,6 +899,7 @@
             off();
             geometry.disconnect(); gesture?.();
             offEditing();
+            offTextSelection();
             clearPreview();
             detachInput();
             for (const name of inputEvents) inputHost.removeEventListener(name, hold, true);

@@ -16,7 +16,7 @@
                 draft = { ...draft!, type, metadata: convertMetadata(draft!.type, type, draft!.metadata) };
             }} disabled={isBuiltin(draft.id)}>{#each attributeTypes.filter(type => type !== "recurrence" || draft?.type === "recurrence") as type (type)}<option value={type}>{t(`attributeType.${type}`)}</option>{/each}</select></label>
             {#if draft.type === "status" || draft.type === "select" || draft.type === "multiselect"}
-                <p class="muted">选项改名会保留原有选择；移除选项前会预览影响。</p>
+                <div data-paragraph class="muted">选项改名会保留原有选择；移除选项前会预览影响。</div>
                 <div bind:this={optionsRoot}>
                     {#each draft.metadata.options ?? [] as option (option.id)}
                         <div class="option"><input bind:value={option.name} aria-label="选项名称" disabled={isBuiltin(draft.id) && !editableBuiltinMetadata(draft.id)} />
@@ -27,7 +27,7 @@
                 <button class="text-button" disabled={isBuiltin(draft.id) && !editableBuiltinMetadata(draft.id)} onclick={addOption}><Icon name="add" size="1em" /> 添加选项</button>
             {/if}
             <footer><button class="button primary" disabled={busy} onclick={() => apply(draft)}>保存定义</button>{#if !isBuiltin(draft.id)}<button class="button" disabled={busy} onclick={() => apply(null)}>删除属性</button>{/if}</footer>
-            {#if error}<p class="error">{message(error)}</p>{/if}
+            {#if error}<div data-paragraph class="error">{message(error)}</div>{/if}
         {/if}
     </div>
 </section>

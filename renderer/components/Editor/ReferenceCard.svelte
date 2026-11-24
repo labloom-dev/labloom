@@ -6,7 +6,7 @@
             <Icon name="link-external" size="var(--ui-icon-normal)" />
             {value.status === "deleted" ? t("editor.deleted") : value.title || t(kind === "page" ? "shell.untitled" : "editor.emptyBlock")}{value.status === "recycled" ? t("editor.recycledSuffix") : ""}
         </button>
-        {#if expanded || kind === "page"}<p>{value.text}</p>{/if}
+        {#if expanded || kind === "page"}<div data-paragraph>{value.text}</div>{/if}
     {:else}
         <span>{t("editor.missingReference")}</span>
     {/if}

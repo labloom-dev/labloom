@@ -16,8 +16,68 @@ function nearest(container: HTMLElement, y: number): HTMLElement {
     const after = children[lo] as HTMLElement | undefined;
     if (!before) return container;
     const row = after && y - before.getBoundingClientRect().bottom > after.getBoundingClientRect().top - y ? after : before;
-    if (row.matches("section[data-block-id]:not([data-folded])") && row.children.length > 1) return nearest(row, y);
+    if (!row.hasAttribute("data-folded") && row.firstElementChild?.matches("[data-body]") && row.children.length > 1) return nearest(row, y);
     return row;
+}
+
+const textField = "[data-body], [data-code-line], [data-kind=title], [data-cell-line]";
+
+/** Resolve a text drag in a gutter or gap against the nearest visible text row. */
+export function followTextSelection(view: EditorView, root: HTMLElement): () => void {
+    let cancel: (() => void) | undefined;
+    function start(down: MouseEvent): void {
+        if (down.button !== 0 || down.detail !== 1 || down.defaultPrevented || down.ctrlKey || down.metaKey || view.composing) return;
+        cancel?.();
+        const movement = new AbortController();
+        let frame = 0, point = { x: down.clientX, y: down.clientY };
+        function adjust(): void {
+            frame = 0;
+            if (view.composing) return;
+            const { x, y } = point;
+            const hit = document.elementFromPoint(x, y), selection = document.getSelection();
+            if (!hit || !root.contains(hit) || hit.closest(textField) && view.dom.contains(hit) || !selection?.anchorNode ||
+                selection.isCollapsed || !view.dom.contains(selection.anchorNode)) return;
+            // Blink may map the indentation before a nested item to a later block.
+            const row = rowAtHeight(view, y);
+            const content = row.querySelector<HTMLElement>(":scope > .code-content");
+            const field = content ? nearest(content, y) : row.matches(textField) ? row : row.querySelector(":scope > [data-body]");
+            if (!field) return;
+            const bounds = field.getBoundingClientRect();
+            if (!bounds.width || !bounds.height) return;
+            const range = document.caretRangeFromPoint(
+                Math.max(bounds.left + 1, Math.min(x, bounds.right - 1)),
+                Math.max(bounds.top + 1, Math.min(y, bounds.bottom - 1))
+            );
+            if (!range || !field.contains(range.startContainer) ||
+                selection.focusNode === range.startContainer && selection.focusOffset === range.startOffset) return;
+            selection.setBaseAndExtent(selection.anchorNode, selection.anchorOffset, range.startContainer, range.startOffset);
+        }
+        function move(event: PointerEvent): void {
+            if (event.pointerType !== "mouse" || !(event.buttons & 1)) return;
+            point = { x: event.clientX, y: event.clientY };
+            if (!frame) frame = requestAnimationFrame(adjust);
+        }
+        function finish(): void {
+            const pending = frame;
+            cancel?.();
+            if (pending) adjust();
+        }
+        cancel = () => {
+            movement.abort();
+            cancelAnimationFrame(frame);
+            cancel = undefined;
+        };
+        const options = { capture: true, signal: movement.signal };
+        window.addEventListener("pointermove", move, options);
+        window.addEventListener("pointerup", finish, options);
+        window.addEventListener("pointercancel", cancel, options);
+        window.addEventListener("blur", cancel, options);
+    }
+    view.dom.addEventListener("mousedown", start);
+    return () => {
+        view.dom.removeEventListener("mousedown", start);
+        cancel?.();
+    };
 }
 
 export function rowAtHeight(view: EditorView, y: number): HTMLElement {

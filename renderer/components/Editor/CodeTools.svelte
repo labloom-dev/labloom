@@ -6,6 +6,7 @@
     import Button from "../base/Button.svelte";
     import IconButton from "../base/IconButton.svelte";
     import Popover from "../base/Popover.svelte";
+    import Tooltip from "../base/Tooltip.svelte";
     import SearchList from "../globalSearch/SearchList.svelte";
     import { tick } from "svelte";
 
@@ -23,8 +24,12 @@
     }
 </script>
 <div class="code-tools" contenteditable="false">
-    <Button variant="text" class="code-language" aria-label={t("editor.language")} title={t("editor.language") + " (" + blockShortcuts.language + ")"}
-        aria-haspopup="listbox" aria-expanded={open} onpointerdown={e => e.preventDefault()} onclick={toggle}>{t(`codeLanguage.${language ?? "plain"}`)}</Button>
+    <Tooltip text={t("editor.language")} shortcut={blockShortcuts.language}>
+        {#snippet trigger({ props })}
+            <Button {...props} variant="text" class="code-language" aria-label={t("editor.language")}
+                aria-haspopup="listbox" aria-expanded={open} onpointerdown={e => e.preventDefault()} onclick={toggle}>{t(`codeLanguage.${language ?? "plain"}`)}</Button>
+        {/snippet}
+    </Tooltip>
     <IconButton label={t("editor.copyCode")} icon="copy" onpointerdown={e => e.preventDefault()} onclick={copy} />
 </div>
 {#if open}

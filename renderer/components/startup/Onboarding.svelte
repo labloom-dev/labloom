@@ -8,19 +8,19 @@
 
         <div class="welcome-art"><Bloom /></div>
         <h1>{t(state ? "startup.welcome" : "startup.opening")}</h1>
-        <p class="intro">{t("startup.intro")}</p>
+        <div data-paragraph class="intro">{t("startup.intro")}</div>
 
         {#if state?.status === "needs-workspace"}
             {#if state.notice}
-                <p class="message notice" role="status">{t("startup.configBackup", { path: state.notice.path })}</p>
+                <div data-paragraph class="message notice" role="status">{t("startup.configBackup", { path: state.notice.path })}</div>
             {/if}
             {#if state.error}
                 <div class="message error" role="alert">
                     <strong>{t("startup.failed")}</strong>
-                    <p>{message(state.error)}</p>
-                    {#if state.error.diagnostic}<details><summary>{t("dialog.details")}</summary><p>{state.error.diagnostic}</p></details>{/if}
+                    <div data-paragraph>{message(state.error)}</div>
+                    {#if state.error.diagnostic}<details><summary>{t("dialog.details")}</summary><div data-paragraph>{state.error.diagnostic}</div></details>{/if}
                     {#if state.attemptedPath || state.lastWorkspace}
-                        <p class="path">{state.attemptedPath ?? state.lastWorkspace?.path}</p>
+                        <div data-paragraph class="path">{state.attemptedPath ?? state.lastWorkspace?.path}</div>
                     {/if}
                     <button class="retry" disabled={pending} onclick={onretry}>{t("startup.retry")}</button>
                 </div>
@@ -39,7 +39,7 @@
             </div>
         {/if}
 
-        <p class="status" role="status">{t(pending ? "startup.pending" : "startup.localHint")}</p>
+        <div data-paragraph class="status" role="status">{t(pending ? "startup.pending" : "startup.localHint")}</div>
     </div>
 </main>
 
@@ -89,7 +89,7 @@
         font-size: 32px;
         font-weight: 900;
     }
-    p {
+    :where([data-paragraph]) {
         line-height: 1.6;
     }
     .intro {
@@ -166,7 +166,7 @@
         white-space: pre-wrap;
         user-select: text;
     }
-    .message p {
+    .message :where([data-paragraph]) {
         margin: 8px 0;
     }
     .notice {

@@ -8,6 +8,7 @@
 <script lang="ts">
     import { commands, menus } from "../../../shared/content/commands";
     import { isBuiltin } from "../../../shared/attrs/builtins";
+    import { onMount } from "svelte";
     import { commandLabel, t, failure, message, type ErrorValue } from "../../i18n.svelte";
     import { kindIcons } from "../Knowledge/labels";
     import SearchList from "./SearchList.svelte";
@@ -24,7 +25,17 @@
     let pages = $state.raw<PageOption[]>([]), selected = $state(0), shown = $state("");
     let pending = $state(false), more = $state(false), error = $state<ErrorValue>("");
     let offset = 0;
-    const lookup = $derived<Lookup>({ keyword: query.trim(), status: "waiting" });
+    let recycleRevision = $state(0);
+    const lookup = $derived.by((): Lookup => {
+        void recycleRevision;
+        return { keyword: query.trim(), status: "waiting" };
+    });
+    onMount(() => window.api?.pages.onChanged(change => {
+        if (!change.recycledPages?.length && !change.purged?.length) return;
+        const changed = new Set([...(change.recycledPages ?? []), ...(change.purged ?? [])]);
+        pages = pages.filter(page => !changed.has(page.id));
+        recycleRevision++;
+    }));
     const commandMode = $derived(!onpage && query.startsWith(">"));
     const needle = $derived(commandMode ? query.slice(1).trim() : shown);
     const options = $derived(commandMode ? commandIds.map(id => ({

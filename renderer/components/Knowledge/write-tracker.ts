@@ -19,7 +19,7 @@ export class WriteReceipts {
     take(id: string | undefined): boolean {
         return id !== undefined && this.ids.delete(id);
     }
-    async submit(send: (id: string) => Promise<CommitResult>): Promise<CommitResult> {
+    async submit<T extends CommitResult>(send: (id: string) => Promise<T>): Promise<T> {
         const id = crypto.randomUUID();
         this.ids.add(id);
         try {

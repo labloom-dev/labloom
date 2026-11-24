@@ -3,14 +3,14 @@ import { changedUses, references, validateBlock } from "../../shared/content/blo
 import { isTimeType } from "../../shared/content/time";
 import { LabloomError } from "../../shared/failure";
 import { type AttributeDefinition, type AttributeValue } from "../../shared/types/attributes";
-import { type Changed, type ContentBlock, type LinkTarget, type Target } from "../../shared/types/content";
+import { bodylessPageKinds, type Changed, type ContentBlock, type LinkTarget, type Target } from "../../shared/types/content";
 import * as workspace from "../workspace-state";
 import * as attributes from "./attributes";
 import * as data from "./records";
 import { decodeBlock, type BlockRow, type LinkRow } from "./records";
 
 export type ValueRow = { value: string | number | null };
-export type PagePatch = { creation?: true; children?: string[]; values?: Record<string, ValueRow | null> };
+export type PagePatch = { manualDeleted?: boolean; children?: string[]; values?: Record<string, ValueRow | null> };
 export type StoredState = Record<string, BlockRow | PagePatch | null>;
 export type RowChanges = { before: StoredState; after: StoredState };
 export type TimerChange = { pageId: string; fields: string[] };
@@ -26,13 +26,12 @@ export class EditChanges {
     private readonly highlightPages = new Set<string>();
     readonly causes = new Set<string>();
     readonly direct = new Set<string>();
-    readonly seeds: Target[] = [];
+    readonly seeds = new Map<string, Target>();
+    readonly dependencies = new Set<string>();
     readonly touches = new Set<string>();
-    readonly recycleSources = new Set<string>();
     private readonly links = new Map<string, { source: Target; field: string; targets: LinkTarget[] }>();
-    private readonly containers = new Map<string, { source: Target; before: string[]; after: string[] }>();
+    private readonly containers = new Map<string, { source: Target; before: string[]; after: string[]; added: string[] }>();
     private readonly ownersCache = new Map<string, string[]>();
-    private readonly flagCache = new Map<string, { deleted: boolean; independent: boolean }>();
     private readonly schedules = new Map<string, Set<string>>();
 
     constructor() {
@@ -56,18 +55,26 @@ export class EditChanges {
         return this.containers.get(key(source))?.after ?? data.children(source);
     }
 
+    seed(target: Target): void {
+        this.seeds.set(key(target), target);
+    }
+
     private markTargets(target: LinkTarget): void {
         if (target.kind === "page") this.direct.add(target.id);
         else if (target.kind === "block") for (const id of data.owners(target.id)) this.direct.add(id);
     }
 
     private setChildren(source: Target, before: string[], after: string[]): void {
-        this.containers.set(key(source), { source, before, after });
+        const added: string[] = [];
+        this.containers.set(key(source), { source, before, after, added });
         this.ownersCache.clear();
         for (const [id, delta] of changedUses(before, after)) {
             this.blocks.add(id);
-            if (delta > 0) continue;
-            this.seeds.push({ kind: "block", id });
+            this.seed({ kind: "block", id });
+            if (delta > 0) {
+                added.push(id);
+                continue;
+            }
             this.causes.add(id);
             if (source.kind === "block") this.causes.add(source.id);
             // The removed occurrence may itself be a reference or contain one.
@@ -75,36 +82,48 @@ export class EditChanges {
         }
     }
 
-    setLinks(source: Target, field: string, targets: LinkTarget[], previousRows = data.outgoing(source)): void {
+    setLinks(source: Target, field: string, targets: LinkTarget[], previousRows = data.outgoing(source), persist = true): void {
         const unique = new Map(targets.map(t => [key(t), t]));
-        this.links.set(key(source) + ":" + field, { source, field, targets: [...unique.values()] });
-        const existing = new Set<string>();
+        const existing = new Set<string>(), linkKey = key(source) + ":" + field;
         for (const row of previousRows) {
             if (row.sourceField !== field) continue;
             const previous = targetOf(row);
             existing.add(key(previous));
+            if (previous.kind === "page") this.dependencies.add(key(previous));
             if (!unique.has(key(previous))) {
-                if (previous.kind === "page") this.backlinkPages.add(previous.id);
-                if (previous.kind !== "file") this.seeds.push(previous as Target);
+                if (previous.kind === "page") {
+                    this.backlinkPages.add(previous.id);
+                    this.seed({ kind: "page", id: previous.id });
+                }
                 this.markTargets(previous);
                 this.causes.add(source.kind === "block" ? source.id : "attribute:" + field);
             }
         }
-        for (const [id, target] of unique) if (target.kind === "page" && !existing.has(id)) this.backlinkPages.add(target.id);
+        for (const [id, target] of unique) if (target.kind === "page") {
+            this.dependencies.add(id);
+            if (!existing.has(id)) {
+                this.backlinkPages.add(target.id);
+                this.seed({ kind: "page", id: target.id });
+            }
+        }
+        if (persist && (this.links.has(linkKey) || existing.size !== unique.size || [...unique.keys()].some(id => !existing.has(id)))) {
+            this.links.set(linkKey, { source, field, targets: [...unique.values()] });
+        }
     }
 
-    putBlock(value: ContentBlock, stored?: BlockRow): void {
+    putBlock(value: ContentBlock, stored?: BlockRow): BlockRow | null {
         validateBlock(value);
-        if (value.children.length && data.owners(value.id).some(id => data.header(id).kind === "feed")) throw new LabloomError({ kind: "feed-body-forbidden" });
+        if (value.children.length && data.owners(value.id).some(id => bodylessPageKinds.includes(data.header(id).kind))) throw new LabloomError({ kind: "page-body-forbidden" });
         const id = "block:" + value.id;
         const before = data.blockRow(value.id);
         const after: BlockRow = stored ?? { id: value.id, type: value.type, content: JSON.stringify(value.payload), children: value.children };
-        if (same(before, after)) return;
+        if (same(before, after)) return before;
         this.rows.before[id] = before;
         this.rows.after[id] = after;
         this.blocks.add(value.id);
         if (!same(before?.children ?? [], value.children)) this.setChildren({ kind: "block", id: value.id }, before?.children ?? [], value.children);
         this.setLinks({ kind: "block", id: value.id }, "payload", references(value));
+        return before;
     }
 
     private pageChanges(side: "before" | "after", id: string): PagePatch {
@@ -112,9 +131,18 @@ export class EditChanges {
         return (rows[object] ??= {}) as PagePatch;
     }
 
+    markManual(id: string, manual: boolean): void {
+        const previous = data.statement("SELECT manual_deleted FROM pages WHERE id=?").pluck().get(id) === 1;
+        if (manual === previous) return;
+        this.pageChanges("before", id).manualDeleted = previous;
+        this.pageChanges("after", id).manualDeleted = manual;
+        this.pages.add(id);
+        this.seed({ kind: "page", id });
+    }
+
     pageChildren(id: string, children: string[]): void {
-        if (children.length && data.header(id).kind === "feed") throw new LabloomError({ kind: "feed-body-forbidden" });
         if (!Array.isArray(children) || !children.every(validUUID)) throw new LabloomError({ kind: "page-invalid-children" });
+        if (children.length && bodylessPageKinds.includes(data.header(id).kind)) throw new LabloomError({ kind: "page-body-forbidden" });
         const source: Target = { kind: "page", id }, before = data.children(source);
         if (same(before, children)) return;
         this.pageChanges("before", id).children = before;
@@ -130,9 +158,11 @@ export class EditChanges {
     }
 
     setValue(pageId: string, id: string, value: ValueRow | null, def: AttributeDefinition): void {
+        if (id === "deleted" || id === "recycle_reason" || id === "recycled_at") throw new LabloomError({ kind: "attribute-readonly" });
         const before = this.readValue(pageId, id);
         if (same(before, value)) return;
-        if (isTimeType(def.type) || def.type === "status" || ["deleted", "feed_url", "feed_status", "feed_refresh"].includes(id)) {
+        if (id === "paper_annotations") this.highlightPages.add(pageId);
+        if (isTimeType(def.type) || def.type === "status" || ["feed_url", "feed_status", "feed_refresh"].includes(id)) {
             const fields = this.schedules.get(pageId) ?? new Set<string>();
             fields.add(id); this.schedules.set(pageId, fields);
         }
@@ -141,13 +171,13 @@ export class EditChanges {
         if (!Object.hasOwn(prev.values, id)) prev.values[id] = before;
         (next.values ??= {})[id] = value;
         this.pages.add(pageId);
-        this.flagCache.delete(pageId);
         if (attributeTargetKind(def.type)) this.setLinks({ kind: "page", id: pageId }, id, attributeTargets(def.type, value ? decodeValue(def, value.value) : null));
-        if ((id === "deleted" && value?.value === 1) || (id === "independent" && value?.value === 0 && before?.value === 1)) {
-            this.seeds.push({ kind: "page", id: pageId });
-            this.direct.add(pageId);
-            this.causes.add("attribute:" + id);
-            if (id === "deleted") this.recycleSources.add(pageId);
+        if (id === "independent") {
+            this.seed({ kind: "page", id: pageId });
+            if (value?.value === 0) {
+                this.direct.add(pageId);
+                this.causes.add("attribute:" + id);
+            }
         }
     }
 
@@ -162,16 +192,11 @@ export class EditChanges {
         return [...changes].map(([pageId, fields]) => ({ pageId, fields: [...fields] }));
     }
 
-    flags(id: string): { deleted: boolean; independent: boolean } {
-        let flags = this.flagCache.get(id);
-        if (!flags) {
-            flags = data.flags(id);
-            const values = (this.rows.after["page:" + id] as PagePatch | undefined)?.values;
-            if (values?.deleted) flags.deleted = values.deleted.value === 1;
-            if (values?.independent) flags.independent = values.independent.value === 1;
-            this.flagCache.set(id, flags);
+    verifySync(): void {
+        for (const { added } of this.containers.values()) for (const id of added) {
+            const owners = data.owners(id);
+            if (owners.length && owners.every(owner => data.flags(owner).deleted)) throw new LabloomError({ kind: "block-sync-unavailable" });
         }
-        return flags;
     }
 
     parents(id: string): Target[] {
@@ -207,26 +232,6 @@ export class EditChanges {
         return owners;
     }
 
-    outgoing(source: Target): LinkTarget[] {
-        const rows = data.outgoing(source).filter(r => !this.links.has(key(source) + ":" + r.sourceField)).map(targetOf);
-        for (const change of this.links.values()) if (key(change.source) === key(source)) rows.push(...change.targets);
-        return rows;
-    }
-
-    incoming(t: Target): Target[] {
-        const result: Target[] = [];
-        for (const edge of data.incoming(t)) {
-            const source = { kind: edge.sourceKind, id: edge.sourceId };
-            if (!this.links.has(key(source) + ":" + edge.sourceField)) result.push(source);
-        }
-        for (const change of this.links.values()) if (change.targets.some(v => key(v) === key(t))) result.push(change.source);
-        return result;
-    }
-
-
-
-
-
     verifyContainment(): void {
         for (const { source, before, after } of this.containers.values()) {
             if (source.kind !== "block") continue;
@@ -241,10 +246,7 @@ export class EditChanges {
         }
     }
 
-    persist(): void {
-        for (const id of this.pages) if (data.header(id).kind === "annotation") {
-            for (const link of data.incoming({ kind: "page", id })) if (link.sourceKind === "page" && link.sourceField === "paper_annotations") this.highlightPages.add(link.sourceId);
-        }
+    persist(preview = false): void {
         for (const [id, value] of Object.entries(this.rows.after)) {
             if (!value) continue;
             if ("content" in value) {
@@ -258,6 +260,7 @@ export class EditChanges {
             else {
                 const pageId = id.slice(5);
                 if (value.children) data.statement("UPDATE pages SET children=? WHERE id=?").run(JSON.stringify(value.children), pageId);
+                if (value.manualDeleted !== undefined) data.statement("UPDATE pages SET manual_deleted=? WHERE id=?").run(Number(value.manualDeleted), pageId);
                 for (const [attrId, attr] of Object.entries(value.values ?? {})) {
                     if (attr) data.statement("INSERT INTO page_attrs(page_id,attr_id,value) VALUES (?,?,?) ON CONFLICT(page_id,attr_id) DO UPDATE SET value=excluded.value").run(pageId, attrId, typeof attr.value === "number" && Number.isSafeInteger(attr.value) ? BigInt(attr.value) : attr.value);
                     else data.statement("DELETE FROM page_attrs WHERE page_id=? AND attr_id=?").run(pageId, attrId);
@@ -268,6 +271,7 @@ export class EditChanges {
             data.statement("DELETE FROM link_refs WHERE source_kind=? AND source_id=? AND source_field=?").run(source.kind, source.id, field);
             for (const t of targets) data.statement("INSERT INTO link_refs(source_kind,source_id,source_field,target_kind,target_id) VALUES (?,?,?,?,?)").run(source.kind, source.id, field, t.kind, t.id);
         }
+        if (preview) return;
         const now = workspace.seconds();
         for (const id of this.touches) data.statement("UPDATE page_attrs SET value=CAST(? AS INTEGER) WHERE page_id=? AND attr_id='modified_at' AND value IS NOT CAST(? AS INTEGER)").run(now, id, now);
     }

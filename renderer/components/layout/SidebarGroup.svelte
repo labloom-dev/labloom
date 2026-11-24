@@ -15,12 +15,12 @@
         aria-disabled={pending} onclick={() => {
             if (!pending) void load(false);
         }}>{t("shell.more")}</Button>{/if}
-    {#if error}<p role="alert">{message(error)}</p>{/if}
+    {#if error}<div data-paragraph role="alert">{message(error)}</div>{/if}
 </PanelGroup>
 
 <style>
     :global(.panel-rows .more) { width: 100%; height: var(--ui-row-height); justify-content: flex-start; padding-inline-start: var(--ui-space-6); color: var(--ui-text-secondary); }
-    p { padding-inline: var(--ui-space-3); color: var(--ui-danger); font-size: var(--ui-font-small); }
+    :where([data-paragraph]) { padding-inline: var(--ui-space-3); color: var(--ui-danger); font-size: var(--ui-font-small); }
 </style>
 <script lang="ts">
     import { failure, message, t, type ErrorValue } from "../../i18n.svelte";

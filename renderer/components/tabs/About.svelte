@@ -3,11 +3,11 @@
         <img src={icon} alt="Labloom 标志" />
 
         <h1>知织 <span>Labloom</span></h1>
-        <p class="tagline">Where ideas take root.</p>
-        <p>追踪研究动态，阅读论文，记录想法。<br />把散落的知识，编织成自己的世界。</p>
+        <div data-paragraph class="tagline">Where ideas take root.</div>
+        <div data-paragraph>追踪研究动态，阅读论文，记录想法。<br />把散落的知识，编织成自己的世界。</div>
         <div class="principles"><span>本地工作区</span><span>专注研究</span><span>持续生长</span></div>
         <div class="bloom"><Bloom /></div>
-        <p class="version">Labloom，MIT License</p>
+        <div data-paragraph class="version">Labloom，MIT License</div>
     </div>
 </section>
 
@@ -34,7 +34,7 @@
     h1 span {
         margin-left: 8px;
     }
-    p {
+    :where([data-paragraph]) {
         margin: 15px 0;
         color: var(--c-muted);
         font-size: 13px;

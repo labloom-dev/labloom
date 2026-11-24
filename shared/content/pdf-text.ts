@@ -39,8 +39,8 @@ export function extractText(characters: readonly PdfCharacter[], rectangles: rea
     return text;
 }
 
-/** A hit must be inside a real cell unless dragging explicitly requests nearest. */
-export function hitTest(characters: readonly PdfCharacter[], x: number, y: number, nearest = false): number {
+/** Find the closest cell within the given distance in PDF units. */
+export function hitTest(characters: readonly PdfCharacter[], x: number, y: number, radius = 0): number {
     let closest = -1, distance = Infinity;
     for (let index = 0; index < characters.length; index++) {
         const character = characters[index];
@@ -54,7 +54,7 @@ export function hitTest(characters: readonly PdfCharacter[], x: number, y: numbe
  closest = index; distance = current;
 }
     }
-    return nearest || distance === 0 ? closest : -1;
+    return distance <= radius * radius ? closest : -1;
 }
 
 function sameBaseline(a: PdfCharacter, b: PdfCharacter): boolean {

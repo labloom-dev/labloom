@@ -117,22 +117,15 @@ export function fallbackFields(input: EditCommit, causes: Set<string>, stored: P
     }
     return { safe, restore, proposed };
 }
-// The proposed deletion stays out of the autosave queue until its preview is resolved.
-export async function reviewEdit(input: EditCommit, preview: (input: EditCommit) => Promise<ChangePreview | null>,
-    ask: (preview: ChangePreview) => Promise<boolean>, commit: (input: EditCommit, token: string) => Promise<CommitResult>,
+// A write that requires consent returns its preview with the database transaction rolled back.
+export async function reviewEdit(input: EditCommit, ask: (preview: ChangePreview) => Promise<boolean>,
+    commit: (input: EditCommit, token?: string) => Promise<CommitResult>,
     rollback: () => void, accept: (saved: boolean) => void): Promise<void> {
-    let impact = await preview(input);
-    if (!impact) {
-        accept(false);
-        return;
+    let result = await commit(input);
+    if (result.status === "confirmation") rollback();
+    while (result.status === "confirmation") {
+        if (!await ask(result.preview)) return;
+        result = await commit(input, result.preview.token);
     }
-    rollback();
-    while (await ask(impact)) {
-        const result = await commit(input, impact.token);
-        if (result.status === "saved") {
-            accept(true);
-            return;
-        }
-        impact = result.preview;
-    }
+    accept(true);
 }

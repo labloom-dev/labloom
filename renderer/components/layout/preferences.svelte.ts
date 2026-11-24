@@ -21,10 +21,13 @@ function values(): Appearance {
     return { theme: appearance.theme, readingSize: appearance.readingSize, motion: appearance.motion, timeZone: appearance.timeZone, language: appearance.language };
 }
 
-let frameColors = "";
+let frameColors = "", appliedAppearance = "";
 function apply(): void {
     const dark = appearance.theme === "dark"
         || (appearance.theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    const signature = JSON.stringify([dark, appearance.motion, appearance.readingSize, appearance.language]);
+    if (signature === appliedAppearance) return;
+    appliedAppearance = signature;
     document.documentElement.dataset.theme = dark ? "dark" : "light";
     document.documentElement.dataset.motion = appearance.motion ? "on" : "off";
     document.documentElement.style.setProperty("--reading-font-size", `${appearance.readingSize}px`);

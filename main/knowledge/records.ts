@@ -1,18 +1,22 @@
 import type Database from "better-sqlite3";
 import { resolveAttributeDefinition } from "../../shared/attrs/definitions";
-import { search } from "../../shared/attrs/format";
-import { decodeValue, emptyValue, encodeValue, nullable, record, validUUID } from "../../shared/attrs/values";
+import { unsearchableBuiltinValues } from "../../shared/attrs/builtins";
+import { libraryText, search } from "../../shared/attrs/format";
+import { attributeTargetKind, decodeValue, emptyValue, encodeValue, nullable, record, validUUID } from "../../shared/attrs/values";
 import { blockText, payload, validateBlock, validTarget } from "../../shared/content/blocks";
 import { matchRanges } from "../../shared/content/matches";
-import { resolveTimeZone } from "../../shared/content/time";
+import { isTimeType, resolveTimeZone } from "../../shared/content/time";
 import { LabloomError } from "../../shared/failure";
 import { type AttributeDefinition, type AttributeValue } from "../../shared/types/attributes";
 import { pageKinds, type Backlink, type ContentBlock, type LinkTarget, type PageKind, type PageList, type PageObjects, type PageQuery, type PageRecord, type PageSummary, type PageSearchResult, type ResolvedTarget, type Target } from "../../shared/types/content";
 import { type blocks, type pages } from "../storage/tables";
 import * as workspace from "../workspace-state";
 
+import { libraryBatchSize, type LibraryIndex, type LibraryQuery } from "../../shared/workspace/library";
+import { createI18n, type Translate } from "../../shared/i18n";
+
 export type BlockRow = typeof blocks.$inferSelect;
-export type PageRow = typeof pages.$inferSelect;
+type PageRow = typeof pages.$inferSelect;
 export type LinkRow = { sourceKind: Target["kind"]; sourceId: string; sourceField: string; targetKind: LinkTarget["kind"]; targetId: string };
 export type Use = { kind: Target["kind"]; id: string; slot: string; position: number };
 const linkColumns = "source_kind AS sourceKind, source_id AS sourceId, source_field AS sourceField, target_kind AS targetKind, target_id AS targetId";
@@ -74,12 +78,19 @@ export function statement(sql: string): Database.Statement {
     return localStatement;
 }
 
-export function header(id: string): Omit<PageRow, "children"> {
+type PageHeader = Pick<PageRow, "id" | "kind" | "titleBlockId">;
+export function header(id: string): PageHeader {
     workspace.requireWorkspace();
     if (!validUUID(id)) throw new LabloomError({ kind: "page-invalid-id" });
-    const row = statement("SELECT id, kind, title_block_id AS titleBlockId FROM pages WHERE id = ?").get(id) as Omit<PageRow, "children"> | undefined;
+    const row = statement("SELECT id, kind, title_block_id AS titleBlockId FROM pages WHERE id = ?").get(id) as PageHeader | undefined;
     if (!row || !pageKinds.includes(row.kind as PageKind)) throw new LabloomError({ kind: "page-unavailable" });
     return row;
+}
+
+export function writable(id: string): ReturnType<typeof header> {
+    const page = header(id);
+    if (flags(id).deleted) throw new LabloomError({ kind: "page-recycled-readonly" });
+    return page;
 }
 
 export function children(target: Target): string[] {
@@ -204,10 +215,17 @@ function excerpt(ids: string[], blocks: Record<string, ContentBlock>): string {
     return text.slice(0, 240);
 }
 
+export function bodyExcerpts(rows: { id: string; children: string[] }[]): Map<string, string> {
+    const blocks = Object.fromEntries(readBatch([...new Set(rows.flatMap(row => row.children))]).map(block => [block.id, block]));
+    return new Map(rows.map(row => [row.id, excerpt(row.children, blocks)]));
+}
+
 // The same formatted attribute value can belong to many pages (tags, dates, options).
 // Format each distinct value once, then use page_attrs_by_value to find its pages.
 const attributeHits = `distinct_values AS MATERIALIZED (
-    SELECT attr_id, value FROM page_attrs WHERE value IS NOT NULL GROUP BY attr_id, value
+    SELECT attr_id, value FROM page_attrs WHERE attr_id IN (
+        SELECT id FROM attrs_meta WHERE id NOT IN (${unsearchableBuiltinValues.map(id => "'" + id + "'").join(",")})
+    ) AND value IS NOT NULL GROUP BY attr_id, value
 ), matched_values AS MATERIALIZED (
     SELECT v.attr_id, v.value FROM distinct_values v JOIN attrs_meta a ON a.id=v.attr_id
     WHERE instr(knowledge_lower(${attributeText()}), @keyword)>0
@@ -217,11 +235,12 @@ const attributeHits = `distinct_values AS MATERIALIZED (
 )`;
 
 function attributeText(): string {
-    return `knowledge_search(a.id,a.type,a.name,a.metadata,v.value,@zone,
+    // Searchable strings and URLs already contain their exact display text in SQLite.
+    return `CASE WHEN a.type IN ('string','url') THEN v.value ELSE knowledge_search(a.id,a.type,a.name,a.metadata,v.value,@zone,
         CASE WHEN a.type IN ('file','files') THEN (
             SELECT json_group_object(f.id,f.original_name) FROM attachments f
             JOIN json_each(CASE a.type WHEN 'file' THEN json_array(v.value) ELSE v.value END) j ON j.value=f.id
-        ) END)`;
+        ) END) END`;
 }
 
 const blockHits = `block_hits(id) AS MATERIALIZED (
@@ -234,13 +253,7 @@ const searchMatches = `WITH RECURSIVE ${blockHits}, ${attributeHits}, matches(id
     SELECT id FROM owners WHERE kind='page' UNION SELECT id FROM attribute_hits
 ) `;
 
-function listRows(query: PageQuery): { selected: ListRow[]; total: number } {
-    if (!record(query) || (query.kind && !pageKinds.includes(query.kind)) || (query.keyword !== undefined && typeof query.keyword !== "string") ||
-        (query.pinned !== undefined && typeof query.pinned !== "boolean") || (query.deleted !== undefined && typeof query.deleted !== "boolean") ||
-        (query.sort && !["modified", "created", "title"].includes(query.sort)) || (query.tags && (!Array.isArray(query.tags) || !query.tags.every(t => typeof t === "string"))) ||
-        (query.attributes && !record(query.attributes))) throw new LabloomError({ kind: "page-invalid-query" });
-    const offset = query.offset ?? 0, limit = query.limit ?? 50;
-    if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1) throw new LabloomError({ kind: "page-invalid-range" });
+function listFilter(query: Omit<PageQuery, "sort">, bindings: Record<string, string> = {}): { from: string; filter: string; cte: string; params: unknown[]; keyword?: string } | null {
     const where = ["d.value = ?"], params: unknown[] = [Number(!!query.deleted)];
     if (query.ids !== undefined) {
         if (!Array.isArray(query.ids) || !query.ids.every(validUUID)) throw new LabloomError({ kind: "page-invalid-ids" });
@@ -251,7 +264,7 @@ function listRows(query: PageQuery): { selected: ListRow[]; total: number } {
         where.push("p.kind = ?"); params.push(query.kind);
     }
     if (query.pinned !== undefined) {
-        where.push("(SELECT value FROM page_attrs WHERE page_id=p.id AND attr_id='pinned') = ?");
+        where.push("p.id IN (SELECT page_id FROM page_attrs WHERE attr_id='pinned' AND value=?)");
         params.push(Number(query.pinned));
     }
     for (const tag of query.tags ?? []) {
@@ -260,7 +273,7 @@ function listRows(query: PageQuery): { selected: ListRow[]; total: number } {
     }
     if (query.hasValue !== undefined) {
         const attr = definition(query.hasValue);
-        if (!attr) return { selected: [], total: 0 };
+        if (!attr) return null;
         const compare = nullable(attr.type);
         where.push("EXISTS (SELECT 1 FROM page_attrs a WHERE a.page_id=p.id AND a.attr_id=?" + (compare ? " AND a.value IS NOT ?" : "") + ")");
         params.push(attr.id);
@@ -268,8 +281,8 @@ function listRows(query: PageQuery): { selected: ListRow[]; total: number } {
     }
     for (const [id, value] of Object.entries(query.attributes ?? {})) {
         const attr = definition(id);
-        if (!attr) return { selected: [], total: 0 };
-        where.push("EXISTS (SELECT 1 FROM page_attrs a WHERE a.page_id=p.id AND a.attr_id=? AND a.value IS ?)");
+        if (!attr) return null;
+        where.push("p.id IN (SELECT page_id FROM page_attrs WHERE attr_id=? AND value IS ?)");
         params.push(id, encodeValue(attr, value));
     }
     const keyword = query.keyword?.trim().toLocaleLowerCase();
@@ -277,24 +290,38 @@ function listRows(query: PageQuery): { selected: ListRow[]; total: number } {
     if (keyword) {
         cte = searchMatches;
         where.push("p.id IN (SELECT id FROM matches)");
-        params.unshift({ keyword, zone: resolveTimeZone(workspace.timeZone()) });
+        bindings.keyword = keyword;
+        bindings.zone = resolveTimeZone(workspace.timeZone());
     }
+    if (Object.keys(bindings).length) params.unshift(bindings);
     const from = " FROM pages p JOIN page_attrs d ON d.page_id=p.id AND d.attr_id='deleted'";
     const filter = " WHERE " + where.join(" AND ");
+    return { from, filter, cte, params, keyword };
+}
+
+function listRows(query: PageQuery): { selected: ListRow[]; total: number } {
+    if (!record(query) || (query.kind && !pageKinds.includes(query.kind)) || (query.keyword !== undefined && typeof query.keyword !== "string") ||
+        (query.pinned !== undefined && typeof query.pinned !== "boolean") || (query.deleted !== undefined && typeof query.deleted !== "boolean") ||
+        (query.sort && !["modified", "created", "title"].includes(query.sort)) || (query.tags && (!Array.isArray(query.tags) || !query.tags.every(t => typeof t === "string"))) ||
+        (query.attributes && !record(query.attributes))) throw new LabloomError({ kind: "page-invalid-query" });
+    const offset = query.offset ?? 0, limit = query.limit ?? 50;
+    if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1) throw new LabloomError({ kind: "page-invalid-range" });
+    const parts = listFilter(query);
+    if (!parts) return { selected: [], total: 0 };
+    const { cte, from, filter, params, keyword } = parts;
     const order = query.sort === "title" ? "knowledge_text(b.type,b.content) COLLATE NOCASE ASC" : "s.value DESC";
     const join = query.sort === "title" ? " JOIN blocks b ON b.id=p.title_block_id" :
         " JOIN page_attrs s ON s.page_id=p.id AND s.attr_id='" + (query.sort === "created" ? "created_at" : "modified_at") + "'";
     // Materialize keyword hits once. The window count precedes pagination.
     const count = keyword ? ", count(*) OVER() AS total" : "";
-    const simple = query.hasValue === undefined && !query.ids && !keyword && !query.kind && query.pinned === undefined && !query.tags?.length && !Object.keys(query.attributes ?? {}).length && query.sort !== "title";
+    const dateOrdered = query.hasValue === undefined && !query.ids && !keyword && query.pinned === undefined && !query.tags?.length && !Object.keys(query.attributes ?? {}).length && query.sort !== "title";
     const dateId = query.sort === "created" ? "created_at" : "modified_at";
-    const selected = (simple ? statement(`SELECT p.id, p.kind, p.title_block_id AS titleBlockId, p.children
-        FROM page_attrs s INDEXED BY page_attrs_order CROSS JOIN pages p ON p.id=s.page_id
-        JOIN page_attrs d ON d.page_id=p.id AND d.attr_id='deleted'
-        WHERE s.attr_id=? AND d.value=? ORDER BY s.value DESC,s.page_id LIMIT ? OFFSET ?`).all(dateId, Number(!!query.deleted), limit, offset)
+    const selected = (dateOrdered ? statement(`SELECT p.id, p.kind, p.title_block_id AS titleBlockId, p.children
+        FROM page_attrs s INDEXED BY page_attrs_order CROSS JOIN pages p ON p.id=s.page_id AND s.attr_id=?
+        JOIN page_attrs d ON d.page_id=p.id AND d.attr_id='deleted'${filter} ORDER BY s.value DESC,s.page_id LIMIT ? OFFSET ?`).all(dateId, ...params, limit, offset)
         : statement(cte + "SELECT p.id, p.kind, p.title_block_id AS titleBlockId, p.children" + count + from + join + filter +
             " ORDER BY " + order + ", p.id LIMIT ? OFFSET ?").all(...params, limit, offset)) as ListRow[];
-    const total = simple ? statement("SELECT count(*) FROM page_attrs WHERE attr_id='deleted' AND value=?").pluck().get(Number(!!query.deleted)) as number : selected[0]?.total ?? (keyword && !offset ? 0 : statement(cte + "SELECT count(*)" + from + filter).pluck().get(...params) as number);
+    const total = dateOrdered && !query.kind ? statement("SELECT count(*) FROM page_attrs WHERE attr_id='deleted' AND value=?").pluck().get(Number(!!query.deleted)) as number : selected[0]?.total ?? (keyword && !offset ? 0 : statement(cte + "SELECT count(*)" + from + filter).pluck().get(...params) as number);
     return { selected, total };
 }
 
@@ -375,11 +402,96 @@ function matchSnippet(text: string, keyword: string): string {
     return (start ? "…" : "") + text.slice(start, end) + (end < text.length ? "…" : "");
 }
 
-export function listUpdates(query: PageQuery, unchanged: string[]): PageList & { order: string[] } {
+function targetNames(entries: Iterable<[AttributeDefinition, AttributeValue]>): Record<string, string> {
+    const pages = new Set<string>(), files = new Set<string>();
+    for (const [def, value] of entries) {
+        const kind = attributeTargetKind(def.type);
+        if (!kind) continue;
+        const ids = kind === "page" ? pages : files;
+        for (const id of Array.isArray(value) ? value : [value]) if (typeof id === "string") ids.add(id);
+    }
+    const names: Record<string, string> = {};
+    if (pages.size) {
+        const rows = statement("SELECT p.id, knowledge_text(b.type,b.content) AS name FROM pages p JOIN blocks b ON b.id=p.title_block_id WHERE p.id IN (SELECT value FROM json_each(?))").all(JSON.stringify([...pages])) as { id: string; name: string }[];
+        for (const row of rows) names[row.id] = row.name;
+    }
+    if (files.size) {
+        const rows = statement("SELECT id, original_name AS name FROM attachments WHERE id IN (SELECT value FROM json_each(?))").all(JSON.stringify([...files])) as { id: string; name: string }[];
+        for (const row of rows) names[row.id] = row.name;
+    }
+    return names;
+}
+
+const libraryLocale = createI18n("zh-CN");
+function orderedLibraryRows(query: LibraryQuery): { id: string; title: string }[] {
+    const { column, direction } = query.sort, def = definition(column);
+    const sortAttr = def && !def.hidden && column !== "modified_at";
+    const parts = listFilter(query, sortAttr ? { column } : {});
+    if (!parts) return [];
+    const { from, filter, cte, params } = parts;
+    const source = from + " JOIN blocks b ON b.id=p.title_block_id JOIN page_attrs m ON m.page_id=p.id AND m.attr_id='modified_at'" +
+        (sortAttr ? " LEFT JOIN page_attrs s ON s.page_id=p.id AND s.attr_id=@column" : "") + filter;
+    const valueColumn = sortAttr ? "s.value" : "m.value";
+    if (column !== "title" && column !== "kind" && (!def || def.hidden || isTimeType(def.type) || def.type === "number")) {
+        const order = valueColumn + (direction === "asc" ? " ASC" : " DESC") + " NULLS LAST" + (sortAttr ? ", m.value DESC" : "") + ", p.id";
+        return statement(cte + "SELECT p.id,knowledge_text(b.type,b.content) AS title" + source + " ORDER BY " + order).all(...params) as { id: string; title: string }[];
+    }
+    const zone = resolveTimeZone(workspace.timeZone());
+    const t: Translate = (key, options) => libraryLocale.t(key, { ...options, lng: query.language });
+    const collator = new Intl.Collator(query.language === "zh-CN" ? "zh-CN-u-co-pinyin" : query.language, { numeric: true });
+    const rows = statement(cte + "SELECT p.id, p.kind, knowledge_text(b.type,b.content) AS title, m.value AS modified, " + valueColumn + " AS value" + source).all(...params) as {
+            id: string; kind: PageKind; title: string; modified: number; value: unknown; key?: string | null;
+        }[];
+    const kindLabels = Object.fromEntries(pageKinds.map(kind => [kind, t(`library.${kind}`)]));
+    const decoded = new Map<unknown, AttributeValue>();
+    if (sortAttr) for (const row of rows) {
+        if (row.value != null && !decoded.has(row.value)) decoded.set(row.value, decodeValue(def, row.value));
+    }
+    const names = def && attributeTargetKind(def.type) ? targetNames(Array.from(decoded.values(), v => [def, v])) : {};
+    const labels = new Map(Array.from(decoded, ([raw, value]) => [raw, libraryText(def!, value, query.language, zone, t, names)]));
+    for (const row of rows) {
+        if (column === "title") row.key = row.title || null;
+        else if (column === "kind") row.key = kindLabels[row.kind];
+        else row.key = labels.get(row.value) || null;
+    }
+    const sign = direction === "desc" ? -1 : 1;
+    rows.sort((a, b) => {
+        const x = a.key, y = b.key;
+        if ((x == null) !== (y == null)) return x == null ? 1 : -1;
+        const diff = x != null && y != null ? collator.compare(x, y) : 0;
+        return sign * diff || b.modified - a.modified || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+    });
+    return rows;
+}
+
+export function libraryIndex(query: LibraryQuery, initialColumns?: string[]): LibraryIndex & { initial?: PageSummary[] } {
+    const rows = orderedLibraryRows(query);
+    const filterLinks: [AttributeDefinition, AttributeValue][] = [];
+    for (const [id, value] of Object.entries(query.attributes ?? {})) {
+        const attr = definition(id);
+        if (attr && attributeTargetKind(attr.type)) filterLinks.push([attr, value]);
+    }
+    const index = { ids: rows.map(row => row.id), titles: rows.map(row => row.title), ...(filterLinks.length ? { names: targetNames(filterLinks) } : {}) };
+    if (!initialColumns || !index.ids.length) return index;
+    // These IDs have already been filtered and ordered. Read just their headers for the first viewport.
+    const heads = statement(`SELECT p.id,p.kind,p.title_block_id AS titleBlockId,p.children FROM json_each(?) j
+        CROSS JOIN pages p ON p.id=j.value ORDER BY j.key`).all(JSON.stringify(index.ids.slice(0, libraryBatchSize))) as ListRow[];
+    const initial = summaries(heads);
+    return { ...index, initial, names: { ...index.names, ...summaryNames(initial, initialColumns) } };
+}
+
+function summaryNames(items: PageSummary[], columns?: string[]): Record<string, string> | undefined {
+    const links = columns?.map(definition).filter(def => def && attributeTargetKind(def.type)) as AttributeDefinition[] | undefined;
+    return links?.length ? targetNames(items.flatMap(row => links.map((def): [AttributeDefinition, AttributeValue] => [def, row.attributes[def.id]]))) : undefined;
+}
+
+export function listUpdates(query: PageQuery, unchanged: string[], labelColumns?: string[]): PageList & { order: string[]; names?: Record<string, string> } {
     workspace.requireWorkspace();
     if (!Array.isArray(unchanged) || !unchanged.every(validUUID)) throw new LabloomError({ kind: "page-invalid-ids" });
     const { selected, total } = listRows(query), keep = new Set(unchanged);
-    return { order: selected.map(row => row.id), items: summaries(selected.filter(row => !keep.has(row.id))), total };
+    const items = summaries(selected.filter(row => !keep.has(row.id)));
+    const names = summaryNames(items, labelColumns);
+    return { order: selected.map(row => row.id), items, total, ...(names ? { names } : {}) };
 }
 
 export function resolve(target: Target): ResolvedTarget | null {
@@ -389,7 +501,7 @@ export function resolve(target: Target): ResolvedTarget | null {
         const row = blockRow(target.id), block = row ? decodeBlock(row) : null, owned = owners(target.id);
         if (!block || !owned.length) return { status: "deleted", title: "", text: "" };
         const text = blockText(block);
-        return { status: owned.every(id => flags(id).deleted) ? "recycled" : "ok", title: text, text, block };
+        return { status: "ok", title: text, text, block, ownerId: owned.find(id => !flags(id).deleted) ?? owned[0] };
     }
     if (!statement("SELECT 1 FROM pages WHERE id=?").get(target.id)) return null;
     const page = get(target.id);
@@ -400,12 +512,19 @@ export function backlinks(id: string): Backlink[] {
     workspace.requireWorkspace();
     header(id);
     const result = new Map<string, Backlink>();
+    const hidden = new Set<string>();
     for (const edge of incoming({ kind: "page", id })) {
         const block = edge.sourceKind === "block";
         for (const owner of block ? owners(edge.sourceId) : [edge.sourceId]) {
-            const before = result.get(owner), fields = [...new Set([...(before?.sourceFields ?? []), ...block ? [] : [edge.sourceField]])];
+            const before = result.get(owner);
+            if (hidden.has(owner)) continue;
+            if (!before && flags(owner).deleted) {
+                hidden.add(owner);
+                continue;
+            }
+            const fields = [...new Set([...(before?.sourceFields ?? []), ...block ? [] : [edge.sourceField]])];
             const anchor = before?.sourceBlockId ?? (block ? edge.sourceId : undefined);
-            result.set(owner, { sourceId: owner, ...(anchor ? { sourceBlockId: anchor } : {}), pageKind: before?.pageKind ?? header(owner).kind, title: before?.title ?? title(owner, ""), sourceKind: block || before?.sourceKind === "reference" ? "reference" : "attribute", ...(fields.length ? { sourceFields: fields } : {}), deleted: flags(owner).deleted });
+            result.set(owner, { sourceId: owner, ...(anchor ? { sourceBlockId: anchor } : {}), pageKind: before?.pageKind ?? header(owner).kind, title: before?.title ?? title(owner, ""), sourceKind: block || before?.sourceKind === "reference" ? "reference" : "attribute", ...(fields.length ? { sourceFields: fields } : {}), deleted: false });
         }
     }
     return [...result.values()];

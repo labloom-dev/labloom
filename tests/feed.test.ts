@@ -55,7 +55,7 @@ test("feed pages own settings and timers while refresh preserves item state and 
     assert.equal(knowledge.list({ kind: "feed" }).total, 2);
     assert.equal(knowledge.list({ keyword: "Saved feed" }).total, 1);
     assert.throws(() => knowledge.commitEdit({ pageId: source.id, batch: 0, blocks: [], attributes: { feed_refresh: { every: 5, unit: "minute" } } }, pageHistory(source.id)), hasFailure("feed-invalid-interval"));
-    assert.throws(() => knowledge.commitEdit({ pageId: source.id, batch: 0, blocks: [], pageChildren: [source.titleBlockId] }, pageHistory(source.id)), hasFailure("feed-body-forbidden"));
+    assert.throws(() => knowledge.commitEdit({ pageId: source.id, batch: 0, blocks: [], pageChildren: [source.titleBlockId] }, pageHistory(source.id)), hasFailure("page-body-forbidden"));
     assert.deepEqual(database.pragma("foreign_key_check"), []);
 });
 
@@ -190,17 +190,57 @@ test("feed settings, recycling and restoration maintain a single timer and enfor
     assert.equal(knowledge.commitEdit({ pageId: id, batch: 0, blocks: [], attributes: { feed_refresh: null } }, pageHistory(id)).status, "saved"); assert.equal(count(), 0);
     assert.equal(history.apply(pageHistory(id), "undo").status, "saved"); assert.equal(count(), 1);
     const page = knowledge.get(id), child = { id: randomUUID(), type: "paragraph" as const, payload: payload("paragraph", "Forbidden"), children: [] };
-    assert.throws(() => knowledge.commitEdit({ pageId: id, batch: 0, blocks: [child], pageChildren: [child.id] }, pageHistory(id)), hasFailure("feed-body-forbidden"));
-    assert.throws(() => knowledge.commitEdit({ pageId: id, batch: 0, blocks: [{ ...page.blocks[page.titleBlockId], children: [child.id] }] }, pageHistory(id)), hasFailure("feed-body-forbidden"));
-    assert.throws(() => knowledge.place({ position: { pageId: id, containerId: id, index: 0, blockId: page.titleBlockId }, action: "insert" }, pageHistory(id)), hasFailure("feed-body-forbidden"));
+    assert.throws(() => knowledge.commitEdit({ pageId: id, batch: 0, blocks: [child], pageChildren: [child.id] }, pageHistory(id)), hasFailure("page-body-forbidden"));
+    assert.throws(() => knowledge.commitEdit({ pageId: id, batch: 0, blocks: [{ ...page.blocks[page.titleBlockId], children: [child.id] }] }, pageHistory(id)), hasFailure("page-body-forbidden"));
+    assert.throws(() => knowledge.place({ position: { pageId: id, containerId: id, index: 0, blockId: page.titleBlockId }, action: "insert" }, pageHistory(id)), hasFailure("page-body-forbidden"));
     const preview = knowledge.trash([id], workspaceHistory); if (preview.status === "confirmation") knowledge.trash([id], workspaceHistory, preview.preview.token);
-    assert.equal(count(), 0); assert.equal(feed.getState({}).sources.length, 0);
-    await assert.rejects(feed.saveSource({ name: "B", url: "https://example.org/feed" }), hasFailure("feed-duplicate"));
+    assert.equal(feed.getState({}).sources.length, 0);
+    const replacement = await feed.saveSource({ name: "B", url: "https://example.org/feed" });
+    assert.notEqual(replacement, id);
+    assert.throws(() => knowledge.restore([id], workspaceHistory), hasFailure("feed-duplicate"));
+    assert.equal(knowledge.get(id).attributes.deleted, true);
+    const pending = knowledge.trash([replacement], workspaceHistory);
+    assert.equal(pending.status, "confirmation");
+    knowledge.trash([replacement], workspaceHistory, pending.preview.token);
     knowledge.restore([id], workspaceHistory); assert.equal(count(), 1);
     const title = knowledge.get(id).blocks[page.titleBlockId];
     knowledge.commitEdit({ pageId: id, batch: 0, blocks: [{ ...title, payload: payload("title", "B") }] }, pageHistory(id));
     assert.equal(feed.getState({}).sources[0].name, "B");
     assert.ok(knowledge.list({ keyword: "B", kind: "feed" }).items.some(page => page.id === id));
+});
+
+test("recycled feeds keep their deadline and refresh on restoration only when due", { timeout: 10000 }, async t => {
+    let now = Date.UTC(2026, 10, 13), requests = 0;
+    const restored = Promise.withResolvers<void>();
+    createWorkspace(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "feed-restore-")), {
+        clock: () => now,
+        loadFeed: async request => {
+            if (++requests === 2) restored.resolve();
+            return { title: "", url: request.url, entries: [], etag: null, lastModified: null };
+        }
+    });
+    t.after(() => session.close());
+    const feed = feedServices(), knowledge = knowledgeServices();
+    const id = await feed.saveSource({ name: "A", url: "https://example.org/feed", intervalMinutes: 60 });
+    function trash(): void {
+        const preview = knowledge.trash([id], workspaceHistory);
+        assert.equal(preview.status, "confirmation");
+        knowledge.trash([id], workspaceHistory, preview.preview.token);
+    }
+    const deadline = feed.getState({}).sources[0].nextRefresh;
+    trash();
+    now += 1800000;
+    knowledge.restore([id], workspaceHistory);
+    assert.equal(feed.getState({}).sources[0].nextRefresh, deadline);
+    await feed.checkDue();
+    assert.equal(requests, 1);
+    trash();
+    now += 2700000;
+    await feed.checkDue();
+    assert.equal(requests, 1);
+    knowledge.restore([id], workspaceHistory);
+    await restored.promise;
+    assert.equal(requests, 2);
 });
 
 test("permanently deleting a source cascades its entries without deleting imported paper pages", async t => {

@@ -34,7 +34,7 @@
     import Onboarding from "../startup/Onboarding.svelte";
     import { initializeAppearance } from "./preferences.svelte";
     import Dialogs from "../Knowledge/Dialogs.svelte";
-    import { closeSession, saveAll } from "../Knowledge/page-sessions";
+    import { syncInspected, closeSession, saveAll } from "../Knowledge/page-sessions";
     import { knowledgeState } from "../Knowledge/feedback.svelte";
     import { tabState } from "../Tab/state.svelte";
     import { tabLifecycle } from "../Tab/lifecycle";
@@ -115,6 +115,7 @@
         };
         const stopChanges = window.api.pages.onChanged(change => {
             visits.changed(change);
+            syncInspected(change.pages);
             knowledgeState.change = { ...change, seq: knowledgeState.change.seq + 1 };
         });
         function blur(): void {

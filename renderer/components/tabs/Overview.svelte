@@ -1,6 +1,6 @@
 <section class="workspace-page overview">
     <header class="page-heading">
-        <div><h1>我的花园</h1><p>收集好奇，连接想法。今天也让知识长大一点。</p></div>
+        <div><h1>我的花园</h1><div data-paragraph>收集好奇，连接想法。今天也让知识长大一点。</div></div>
         <span class="date"><Icon name="calendar" size={16} />{date}</span>
     </header>
 
@@ -8,14 +8,14 @@
         <div class="welcome-copy">
             <span class="welcome-label">给好奇心留一块地方</span>
             <h2>每个想法，都值得<span>生根发芽。</span></h2>
-            <p>从一篇论文、一段阅读或一个小小的灵感开始，<br />慢慢编织属于你的知识世界。</p>
+            <div data-paragraph>从一篇论文、一段阅读或一个小小的灵感开始，<br />慢慢编织属于你的知识世界。</div>
             <div class="welcome-actions"><button class="button primary" onclick={() => openDestination("papers")}><Icon name="book" size={15} />开始阅读</button><button class="text-button" onclick={() => createPage()}>记下一个想法 <Icon name="arrow-right" size={16} /></button></div>
         </div>
         <div class="hero-art"><span class="art-label">a little idea, a little bloom</span><Bloom /><span class="art-caption">GROW AT YOUR OWN PACE</span></div>
     </div>
 
     {#if error}<div class="notice error" role="alert">{message(error)} <button class="text-button" onclick={load}>{t("dialog.retry")}</button></div>{/if}
-    {#if missingStatus}<p class="notice">找不到用于统计待办的状态属性。</p>{/if}
+    {#if missingStatus}<div data-paragraph class="notice">找不到用于统计待办的状态属性。</div>{/if}
     <div class="stats" aria-busy={pending}>
         {#each stats as stat (stat.label)}
             <button class="stat-card" onclick={() => openDestination(stat.destination)}>
@@ -30,9 +30,9 @@
         <section class="paper-card feed-card">
             <header class="card-heading"><h2><span class="heading-icon"><Icon name="rss" size={18} /></span>新知来信</h2><button class="text-button" onclick={() => openDestination("feed")}>全部动态 <Icon name="arrow-right" size={14} /></button></header>
             {#if pending}
-                <div class="empty-state" role="status"><strong>正在整理你的来信…</strong><p>读取已保存在工作区的订阅内容。</p></div>
+                <div class="empty-state" role="status"><strong>正在整理你的来信…</strong><div data-paragraph>读取已保存在工作区的订阅内容。</div></div>
             {:else if error}
-                <div class="empty-state"><Icon name="rss" size={30} /><strong>暂时没能读到订阅</strong><p>已有内容仍保留在工作区，可以重试加载。</p><button class="button" onclick={load}>{t("dialog.retry")}</button></div>
+                <div class="empty-state"><Icon name="rss" size={30} /><strong>暂时没能读到订阅</strong><div data-paragraph>已有内容仍保留在工作区，可以重试加载。</div><button class="button" onclick={load}>{t("dialog.retry")}</button></div>
             {:else if feedState?.items.length}
                 <div class="latest-list">
                     {#each feedState.items.slice(0, 3) as item (item.id)}
@@ -43,7 +43,7 @@
                     {/each}
                 </div>
             {:else}
-                <div class="empty-state letters"><span class="letter-icon"><Icon name="rss" size={30} /></span><strong>第一封新知来信，还在路上</strong><p>订阅你喜欢的论文方向或实验室博客，<br />让值得阅读的内容在这里相遇。</p><button class="button" onclick={() => openDestination("feed")}><Icon name="add" size={14} />添加我的第一个订阅</button></div>
+                <div class="empty-state letters"><span class="letter-icon"><Icon name="rss" size={30} /></span><strong>第一封新知来信，还在路上</strong><div data-paragraph>订阅你喜欢的论文方向或实验室博客，<br />让值得阅读的内容在这里相遇。</div><button class="button" onclick={() => openDestination("feed")}><Icon name="add" size={14} />添加我的第一个订阅</button></div>
             {/if}
         </section>
         <section class="paper-card start-card">
@@ -53,10 +53,10 @@
                 <button onclick={() => openDestination("papers")}><span class="step-number sage">02</span><span><strong>给阅读留一点时间</strong><small>打开 PDF，专心读一篇论文</small></span><Icon name="arrow-right" size={15} /></button>
                 <button onclick={() => openDestination("settings")}><span class="step-number lilac">03</span><span><strong>让阅读更合心意</strong><small>调整主题、字号与动效</small></span><Icon name="arrow-right" size={15} /></button>
             </div>
-            <div class="little-note"><p>知识不必一次成林。<br /><strong>今天种下一颗种子就很好。</strong></p></div>
+            <div class="little-note"><div data-paragraph>知识不必一次成林。<br /><strong>今天种下一颗种子就很好。</strong></div></div>
         </section>
     </div>
-    <section class="paper-card recent-pages"><header class="card-heading"><h2>最近整理</h2><button class="text-button" onclick={() => openDestination("library")}>全部页面 <Icon name="arrow-right" size={14} /></button></header>{#each recent as page (page.id)}<button class="recent-page" onclick={() => openPage(page.id)}><strong>{page.title || "未命名"}</strong><span>{page.excerpt || "还没有正文"}</span></button>{:else}<p>从一篇笔记开始，让想法慢慢生长。</p>{/each}</section>
+    <section class="paper-card recent-pages"><header class="card-heading"><h2>最近整理</h2><button class="text-button" onclick={() => openDestination("library")}>全部页面 <Icon name="arrow-right" size={14} /></button></header>{#each recent as page (page.id)}<button class="recent-page" onclick={() => openPage(page.id)}><strong>{page.title || "未命名"}</strong><span>{page.excerpt || "还没有正文"}</span></button>{:else}<div data-paragraph>从一篇笔记开始，让想法慢慢生长。</div>{/each}</section>
     <footer class="page-footer"><span>知织，你的知识，慢慢生长</span><span>Where ideas take root.</span></footer>
 </section>
 
@@ -65,7 +65,7 @@
     .recent-pages { margin-top: 22px; padding: 22px; }
     .recent-page { display: flex; justify-content: space-between; gap: 20px; width: 100%; padding: 14px 0; text-align: left; border-bottom: 1px dashed var(--c-line); font-size: 12px; }
     .recent-page span { color: var(--c-muted); max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .recent-pages > p { color: var(--c-muted); font-size: 12px; }
+    .recent-pages > :where([data-paragraph]) { color: var(--c-muted); font-size: 12px; }
     .date {
         display: flex;
         align-items: center;
@@ -117,7 +117,7 @@
         text-underline-offset: -2px;
         text-decoration-skip-ink: none;
     }
-    .welcome-copy p {
+    .welcome-copy :where([data-paragraph]) {
         margin: 0;
         color: var(--c-muted);
         font-size: 12px;
@@ -338,7 +338,7 @@
         border-radius: 8px;
         background: var(--c-cream);
     }
-    .little-note p {
+    .little-note :where([data-paragraph]) {
         margin: 0;
         color: var(--c-muted);
         font-size: var(--font-min);

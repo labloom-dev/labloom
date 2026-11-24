@@ -12,7 +12,7 @@ export function confirmationText(preview: ChangePreview, t: Translate = defaultT
         if (!impact.length) return t("dialog.deleteExcerpt", { excerpt });
         return t(positions ? "dialog.excerptImpact" : "dialog.deleteImpact", { excerpt, impact: impact.join(t("dialog.join")) });
     });
-    const pages = new Map([...preview.direct, ...preview.recycled].map(page => [page.id, page.title]));
+    const pages = new Map([...preview.direct, ...preview.recycled].map(page => [page.id, page.title || t("shell.untitled")]));
     if (pages.size) lines.push(t("dialog.recycle", { titles: [...pages.values()].join(t("dialog.listJoin")) }));
     return lines.join("\n");
 }

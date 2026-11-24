@@ -11,10 +11,10 @@ declare global {
 }
 
 const title = Node.create({ name: "pageTitle", content: "inline*", addAttributes: () => ({ blockId: {} }),
-    renderHTML: ({ node }) => ["h1", { "data-block-id": node.attrs.blockId }, 0] });
-const paragraph = Node.create({ name: "blockBody", content: "inline*", renderHTML: () => ["p", 0] });
+    renderHTML: ({ node }) => ["h1", { "data-block-id": node.attrs.blockId, "data-kind": "title" }, 0] });
+const paragraph = Node.create({ name: "blockBody", content: "inline*", renderHTML: () => ["div", { "data-body": "" }, 0] });
 const block = Node.create({ name: "pageBlock", content: "blockBody pageBlock*", addAttributes: () => ({ blockId: {}, kind: {} }),
-    renderHTML: ({ node }) => ["section", { "data-block-id": node.attrs.blockId, "data-kind": node.attrs.kind }, 0] });
+    renderHTML: ({ node }) => ["div", { "data-block-id": node.attrs.blockId, "data-kind": node.attrs.kind }, 0] });
 
 const viewport = document.querySelector<HTMLElement>("#viewport")!, status = document.querySelector<HTMLElement>("#status")!;
 const start = document.querySelector<HTMLButtonElement>("#start")!;
@@ -53,7 +53,7 @@ async function run(): Promise<void> {
     const samples: Sample[] = [];
     let current: Sample | undefined;
     function position(): void {
-        const el = editor.view.dom.children[sections[section]].querySelector("p")!;
+        const el = editor.view.dom.children[sections[section]].querySelector("[data-body]")!;
         el.scrollIntoView({ block: "center", behavior: "instant" });
         editor.commands.setTextSelection(editor.view.posAtDOM(el, 0) + 1);
         editor.view.focus();
