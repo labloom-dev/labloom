@@ -39,7 +39,9 @@ export function check(): Promise<string[]> {
     const pending = (async () => {
         if (!workspace.isCurrent(session)) return [];
         const now = workspace.seconds(), feeds: string[] = [];
-        const due = data.statement("SELECT page_id AS pageId,attr_id AS attrId,lead_seconds AS leadSeconds,due_at AS dueAt,fired_at AS firedAt,seen FROM timers WHERE due_at<=? ORDER BY due_at,page_id,attr_id,lead_seconds").all(now) as TimerRow[];
+        const due = data.statement(`SELECT t.page_id AS pageId,t.attr_id AS attrId,t.lead_seconds AS leadSeconds,t.due_at AS dueAt,t.fired_at AS firedAt,t.seen
+            FROM timers t JOIN page_attrs d ON d.page_id=t.page_id AND d.attr_id='deleted' AND d.value=0
+            WHERE t.due_at<=? ORDER BY t.due_at,t.page_id,t.attr_id,t.lead_seconds`).all(now) as TimerRow[];
         for (const row of due) {
             if (!workspace.isCurrent(session)) return [];
             const saved = data.statement("SELECT due_at FROM timers WHERE page_id=? AND attr_id=? AND lead_seconds=?").pluck().get(row.pageId, row.attrId, row.leadSeconds);

@@ -1,8 +1,9 @@
 <script lang="ts">
     import { isComposingKey } from "../../../shared/content/commands";
-    import type { Backlink } from "../../../shared/types/content";
+    import { type Backlink } from "../../../shared/types/content";
     import { t } from "../../i18n.svelte";
     import Icon from "../utils/Icon.svelte";
+    import TextButton from "../base/TextButton.svelte";
     import { kindIcons } from "./labels";
 
     let { links, onopen }: { links: Backlink[]; onopen: (id: string, otherGroup: boolean, anchorId?: string) => void } = $props();
@@ -23,11 +24,13 @@
         <summary><Icon name="chevron-right" size="var(--ui-icon-small)" />{t("editor.backlinks", { count: links.length })}</summary>
         <ul>
             {#each links as link (link.sourceId)}
-                <li><button type="button" class="ui-control" onclick={event => onopen(link.sourceId, event.ctrlKey, link.sourceBlockId)}>
-                    <Icon name={kindIcons[link.pageKind]} size="var(--ui-icon-normal)" />
-                    {link.title || t("shell.untitled")}{#if link.deleted}<small>{t("editor.recycledSuffix")}</small>{/if}
-                </button></li>
+                <li><TextButton text={link.title || t("shell.untitled")} icon={kindIcons[link.pageKind]}
+                    onclick={event => onopen(link.sourceId, event.ctrlKey, link.sourceBlockId)} /></li>
             {/each}
         </ul>
     </details>
 {/if}
+
+<style>
+    .editor-backlinks, li { min-width: 0; }
+</style>

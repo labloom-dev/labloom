@@ -4,6 +4,7 @@ import { Document } from "@tiptap/extension-document";
 import { Text } from "@tiptap/extension-text";
 import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
 import { type Node as DocNode, type Schema } from "@tiptap/pm/model";
+import { Plugin } from "@tiptap/pm/state";
 import { payload, references } from "../../../shared/content/blocks";
 import { type ContentBlock, type ContentBlockKind, type InlineNode, type PageRecord, type RichNode } from "../../../shared/types/content";
 import bold from "./extensions/mark/bold";
@@ -30,14 +31,46 @@ const title = ExtensionNode.create({
     name: "pageTitle", content: "inline*", defining: true, addAttributes: blockAttrs,
     parseHTML: () => [{ tag: "h1[data-kind=title]" }], renderHTML: ({ node }) => ["h1", domAttrs(node), 0]
 });
+const bodyTags = { heading_1: "h1", heading_2: "h2", heading_3: "h3" } as const;
+function bodyAttributes(kind: string): { heading: "h1" | "h2" | "h3" } | null {
+    return Object.hasOwn(bodyTags, kind) ? { heading: bodyTags[kind as keyof typeof bodyTags] } : null;
+}
 const body = ExtensionNode.create({
-    name: "blockBody", content: "inline*", parseHTML: () => [{ tag: "p[data-body]" }],
-    renderHTML: () => ["p", { "data-body": "" }, 0]
+    name: "blockBody", content: "inline*",
+    addAttributes: () => ({ heading: { default: null, rendered: false } }),
+    parseHTML: () => [{ tag: "[data-body]", getAttrs: element => bodyAttributes(element.parentElement?.dataset.kind ?? "") }],
+    renderHTML: ({ node }) => {
+        const { heading } = node.attrs;
+        return [heading === "h1" || heading === "h2" || heading === "h3" ? heading : "div", { "data-body": "" }, 0];
+    }
 });
 const block = ExtensionNode.create({
     name: "pageBlock", group: "workspaceBlock", content: "blockBody workspaceBlock*", defining: true,
-    addAttributes: () => ({ ...blockAttrs(), kind: { default: "paragraph" } }), parseHTML: () => [{ tag: "section[data-kind]" }],
-    renderHTML: ({ node }) => ["section", domAttrs(node), 0]
+    addAttributes: () => ({ ...blockAttrs(), kind: { default: "paragraph" } }),
+    parseHTML: () => ["div[data-kind]:has(> [data-body])", "section[data-kind]"].map(tag => ({
+        tag, getAttrs: element => ({ kind: element.dataset.kind, collapsed: element.hasAttribute("data-folded") })
+    })),
+    renderHTML: ({ node }) => ["div", domAttrs(node), 0],
+    addProseMirrorPlugins() {
+        const blockType = this.type;
+        return [new Plugin({
+            appendTransaction(_transactions, previous, next) {
+                if (previous.doc === next.doc) return null;
+                const start = previous.doc.content.findDiffStart(next.doc.content);
+                if (start === null) return null;
+                const end = previous.doc.content.findDiffEnd(next.doc.content)?.b ?? next.doc.content.size;
+                const tr = next.tr;
+                // A conversion can reuse the old body. Normalize changed blocks without replacing their content.
+                next.doc.nodesBetween(Math.min(start, end), Math.max(start, end), (node, pos) => {
+                    if (node.type !== blockType) return false;
+                    const heading = bodyAttributes(node.attrs.kind)?.heading ?? null;
+                    if (node.firstChild!.attrs.heading !== heading) tr.setNodeAttribute(pos + 1, "heading", heading);
+                    return true;
+                });
+                return tr.docChanged ? tr : null;
+            }
+        })];
+    }
 });
 const codeLine = ExtensionNode.create({
     name: "codeLine", content: "(text | inlineReference)*", code: true, whitespace: "pre",
@@ -76,15 +109,15 @@ export const codeBlock = ExtensionNode.create<{ nodeView: NodeViewRenderer | nul
     name: "codeBlock", group: "workspaceBlock", content: "codeLine+", defining: true, code: true,
     addOptions: () => ({ nodeView: null }),
     addAttributes: () => ({ ...blockAttrs(), language: { default: null, rendered: false } }),
-    parseHTML: () => [{ tag: "section[data-kind=code]", priority: 60, preserveWhitespace: "full", getAttrs: el => ({ language: el.dataset.language || null }) }],
-    renderHTML: ({ node }) => ["section", { ...domAttrs(node), ...(node.attrs.language ? { "data-language": node.attrs.language } : {}) }, 0],
+    parseHTML: () => [{ tag: "[data-kind=code]", priority: 60, preserveWhitespace: "full", getAttrs: el => ({ language: el.dataset.language || null }) }],
+    renderHTML: ({ node }) => ["div", { ...domAttrs(node), ...(node.attrs.language ? { "data-language": node.attrs.language } : {}) }, 0],
     addNodeView() {
         return this.options.nodeView;
     }
 });
 const cellParagraph = ExtensionNode.create({
     name: "paragraph", group: "block", content: "(text | hardBreak)*",
-    parseHTML: () => [{ tag: "p" }], renderHTML: () => ["p", 0]
+    parseHTML: () => [{ tag: "[data-cell-line]" }, { tag: "p" }], renderHTML: () => ["div", { "data-cell-line": "" }, 0]
 });
 const table = ExtensionNode.create({
     name: "pageTable", group: "workspaceBlock", content: "table", defining: true, isolating: true,
@@ -143,7 +176,8 @@ export function blockJSON(b: ContentBlock, children: JSONContent[] = []): JSONCo
     if (b.type === "title") return { type: "pageTitle", attrs, content: b.payload.inline };
     if (b.type === "table") return { type: "pageTable", attrs, content: [b.payload.table ?? blankTable()] };
     if (b.type === "hr" || b.type === "blocked_reference") return { type: b.type, attrs: { ...attrs, target: b.payload.target } };
-    return { type: "pageBlock", attrs: { ...attrs, kind: b.type }, content: [{ type: "blockBody", content: b.payload.inline }, ...children] };
+    const body = { type: "blockBody", attrs: bodyAttributes(b.type) ?? undefined, content: b.payload.inline };
+    return { type: "pageBlock", attrs: { ...attrs, kind: b.type }, content: [body, ...children] };
 }
 export function subtree(id: string, blocks: PageRecord["blocks"]): JSONContent {
     const b = blocks[id];

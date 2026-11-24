@@ -1,15 +1,15 @@
 import { type HistorySource } from "../../shared/history/ipc";
 import { randomUUID } from "node:crypto";
 import { attributeTargets, decodeValue, record, validUUID } from "../../shared/attrs/values";
-import { blockText, payload, validateBlock } from "../../shared/content/blocks";
+import { blockText, payload } from "../../shared/content/blocks";
 import { nowSeconds } from "../../shared/content/time";
 import { LabloomError } from "../../shared/failure";
 import { type AttributeDefinition, type AttributeImpact, type AttributeValue } from "../../shared/types/attributes";
-import { pageKinds, type BlockDeletion, type ChangePreview, type CommitResult, type ContentBlock, type EditCommit, type PageKind, type PageRecord, type Placement, type Target } from "../../shared/types/content";
+import { bodylessPageKinds, pageKinds, type BlockDeletion, type ChangePreview, type CommitResult, type ContentBlock, type EditCommit, type PageKind, type PageRecord, type Placement, type Target } from "../../shared/types/content";
 import * as workspace from "../workspace-state";
 import * as attributes from "./attributes";
 import { fingerprint } from "./attributes";
-import { EditChanges } from "./changes";
+import { EditChanges, type PagePatch, type RowChanges } from "./changes";
 import * as commit from "./commit";
 import * as data from "./records";
 import * as retention from "./retention";
@@ -26,36 +26,38 @@ function putBlock(block: ContentBlock): void {
     plan.putBlock(block);
     plan.persist();
 }
-export function create(source: HistorySource, title = "", initial: Record<string, AttributeValue> = {}, parentId?: string): PageRecord {
+export function create(source: HistorySource, title = "", initial: Record<string, AttributeValue> = {}, parentId?: string, kind: "editable" | "paper" = "editable"): PageRecord {
     workspace.requireWorkspace();
     if (!record(initial)) throw new LabloomError({ kind: "page-invalid-attributes" });
     for (const id of Object.keys(initial)) if (attributes.definition(id).readonly || id === "deleted") throw new LabloomError({ kind: "page-create-readonly" });
-    return createPage("editable", title, initial, parentId, source);
+    return createPage(kind, title, initial, parentId, source);
 }
-function writable(id: string): ReturnType<typeof data["header"]> {
-    const page = data.header(id);
-    if (data.flags(id).deleted) throw new LabloomError({ kind: "page-recycled-readonly" });
-    return page;
-}
-
 function planEdit(input: EditCommit): EditChanges {
     if (!record(input) || !Number.isSafeInteger(input.batch) || input.batch < 0 || !Array.isArray(input.blocks) || !record(input.attributes ?? {}) ||
         !Array.isArray(input.detach ?? []) || input.detach?.some(id => typeof id !== "string")) throw new LabloomError({ kind: "edit-invalid-input" });
     if (input.sync !== undefined && (!Array.isArray(input.sync) || input.sync.some(id => !validUUID(id) || !syncBlock(id)))) throw new LabloomError({ kind: "block-sync-unavailable" });
-    const page = writable(input.pageId), plan = new EditChanges(), submitted = new Set<string>();
-    if (page.kind === "feed" && (input.pageChildren?.length || input.blocks.some(block => block.id !== page.titleBlockId || block.children.length))) throw new LabloomError({ kind: "feed-body-forbidden" });
+    const page = data.writable(input.pageId), plan = new EditChanges(), submitted = new Set<string>();
+    const bodyless = bodylessPageKinds.includes(page.kind);
+    if (bodyless && input.pageChildren?.length) throw new LabloomError({ kind: "page-body-forbidden" });
     for (const block of input.blocks) {
-        validateBlock(block);
+        let previous: ReturnType<EditChanges["putBlock"]>;
+        try {
+            previous = plan.putBlock(block);
+        }
+        catch (error) {
+            if (bodyless && error instanceof LabloomError && error.failure.kind === "block-invalid-title") throw new LabloomError({ kind: "page-body-forbidden" });
+            throw error;
+        }
+        if (bodyless && block.id !== page.titleBlockId) throw new LabloomError({ kind: "page-body-forbidden" });
         if (submitted.has(block.id)) throw new LabloomError({ kind: "edit-duplicate-block" });
         submitted.add(block.id);
-        const previous = data.blockRow(block.id);
         if (previous?.type === "title" && block.type !== "title" || block.id === page.titleBlockId && block.type !== "title") throw new LabloomError({ kind: "block-title-type" });
-        plan.putBlock(block);
     }
     if (input.pageChildren !== undefined) plan.pageChildren(page.id, input.pageChildren);
     for (const id of submitted) {
         if (!data.owners(id).includes(page.id) && !plan.owners(id).includes(page.id)) throw new LabloomError({ kind: "block-not-owned" });
     }
+    plan.verifySync();
     plan.verifyContainment();
     plan.attributes(page.id, input.attributes ?? {}, input.detach);
     plan.pages.add(page.id);
@@ -63,16 +65,11 @@ function planEdit(input: EditCommit): EditChanges {
     return plan;
 }
 
-export function previewEdit(input: EditCommit): ChangePreview | null {
-    workspace.requireWorkspace();
-    return workspace.native().transaction(() => commit.preview(planEdit(input), input))();
-}
-
 export function commitEdit(input: EditCommit, source: HistorySource | false, confirmation?: string, writeId?: string): CommitResult {
     workspace.requireWorkspace();
-    return commit.run({ history: source, confirmation, writeId }, () => {
+    return commit.edit({ history: source, directPage: input?.pageId, confirmation, writeId }, () => {
         const plan = planEdit(input);
-        return commit.finish(plan, input.pageId, input.batch, commit.preview(plan, input));
+        return commit.finish(plan, input.pageId, input.batch, { action: input });
     });
 }
 
@@ -90,7 +87,11 @@ function removeEverywhere(plan: EditChanges, id: string): ReturnType<typeof data
     const uses = data.uses(id);
     if (uses.some(u => u.slot === "title")) throw new LabloomError({ kind: "block-title-delete" });
     const containers = new Map(uses.map(u => [u.kind + ":" + u.id, u]));
-    for (const container of containers.values()) writeChildren(plan, container, plan.children(container).filter(child => child !== id));
+    for (const container of containers.values()) {
+        if (container.kind === "page") data.writable(container.id);
+        else if (data.owners(container.id).every(owner => data.flags(owner).deleted)) throw new LabloomError({ kind: "page-recycled-readonly" });
+        writeChildren(plan, container, plan.children(container).filter(child => child !== id));
+    }
     return uses;
 }
 
@@ -116,9 +117,9 @@ function deletionSubject(block: ContentBlock): string {
 
 export function deleteBlock(input: BlockDeletion, source: HistorySource, confirmation?: string, writeId?: string): CommitResult {
     workspace.requireWorkspace();
-    return commit.run({ history: source, confirmation, writeId }, () => {
+    return commit.edit({ history: source, confirmation, writeId }, () => {
         const { pageId } = input;
-        writable(pageId);
+        data.writable(pageId);
         const ids = [...new Set("blockId" in input ? [input.blockId] : input.blockIds)];
         if (!ids.length) throw new LabloomError({ kind: "block-delete-not-owned" });
         const plan = new EditChanges(), deleted: ChangePreview["deletedBlocks"] = [];
@@ -133,18 +134,17 @@ export function deleteBlock(input: BlockDeletion, source: HistorySource, confirm
             positions.push({ uses, links, pages: pages.sort() });
         }
         plan.touches.add(pageId);
-        const preview = commit.preview(plan, input, deleted, [], positions);
-        return commit.finish(plan, pageId, 0, preview);
+        return commit.finish(plan, pageId, 0, { action: input, deletedBlocks: deleted, positions });
     });
 }
 
 export function place(input: Placement, source: HistorySource, confirmation?: string, writeId?: string): CommitResult {
     workspace.requireWorkspace();
-    return commit.run({ history: source, confirmation, writeId }, () => {
+    return commit.edit({ history: source, confirmation, writeId }, () => {
         const { position, action } = input;
         if (!record(position) || !Number.isSafeInteger(position.index) || position.index < 0 || !validUUID(position.blockId)) throw new LabloomError({ kind: "block-invalid-position" });
         const { pageId, containerId, index } = position;
-        if (writable(pageId).kind === "feed") throw new LabloomError({ kind: "feed-body-forbidden" });
+        if (bodylessPageKinds.includes(data.writable(pageId).kind)) throw new LabloomError({ kind: "page-body-forbidden" });
         const container: Target = { kind: containerId === pageId ? "page" : "block", id: containerId };
         if (container.kind === "block" && !data.owners(containerId).includes(pageId)) throw new LabloomError({ kind: "block-container-not-owned" });
         const plan = new EditChanges(), children = [...plan.children(container)];
@@ -172,7 +172,7 @@ export function place(input: Placement, source: HistorySource, confirmation?: st
         plan.verifyContainment();
         plan.pages.add(pageId);
         plan.touches.add(pageId);
-        return commit.finish(plan, pageId, 0, commit.preview(plan, input));
+        return commit.finish(plan, pageId, 0, { action: input });
     });
 }
 
@@ -207,25 +207,52 @@ function selectPages(ids: string[]): string[] {
 export function trash(ids: string[], source: HistorySource, confirmation?: string, writeId?: string): CommitResult {
     workspace.requireWorkspace();
     return commit.run({ history: source, confirmation, writeId }, () => {
-        const selected = selectPages(ids), plan = new EditChanges();
+        if (!Array.isArray(ids) || !ids.length || !ids.every(validUUID)) throw new LabloomError({ kind: "page-invalid-selection" });
+        const selected = [...new Set(ids)], serialized = JSON.stringify(selected);
+        const recycledSelection = data.statement(`SELECT 1 FROM page_attrs WHERE attr_id='deleted' AND value=1
+            AND page_id IN (SELECT value FROM json_each(?)) LIMIT 1`).get(serialized);
+        if (recycledSelection) throw new LabloomError({ kind: "page-recycled-readonly" });
+        const summaries = data.statement(`SELECT p.id,knowledge_text(b.type,b.content) AS title FROM json_each(?) j
+            CROSS JOIN pages p ON p.id=j.value CROSS JOIN blocks b ON b.id=p.title_block_id
+            ORDER BY j.key`);
+        const direct = summaries.all(serialized) as ChangePreview["direct"];
+        if (direct.length !== selected.length) throw new LabloomError({ kind: "page-unavailable" });
+        const lost = retention.previewTrash(selected);
+        const token = fingerprint({ action: { trash: selected }, ids: lost });
+        const recycled = lost.length ? summaries.all(JSON.stringify(lost)) as ChangePreview["recycled"] : [];
+        const preview: ChangePreview = { direct, recycled, token, deletedBlocks: [], causes: ["attribute:deleted"] };
+        if (confirmation !== token) return { status: "confirmation", preview };
+        const plan = new EditChanges();
         for (const id of selected) {
-            plan.attributes(id, { deleted: true, recycle_reason: "manual_delete", recycled_at: nowSeconds() }, [], true);
+            plan.markManual(id, true);
             plan.touches.add(id);
         }
-        return commit.finish(plan, selected[0], 0, commit.preview(plan, { trash: selected }, [], selected));
+        return commit.finish(plan, selected[0], 0);
     });
+}
+
+export function restorePages(plan: EditChanges, selected: string[]): void {
+    const dependents: string[] = [];
+    for (const id of selected) {
+        const { independent, deleted } = data.flags(id);
+        if (!deleted) continue;
+        plan.markManual(id, false);
+        plan.seed({ kind: "page", id });
+        if (!independent) dependents.push(id);
+        plan.touches.add(id);
+    }
+    if (dependents.length) {
+        const unreachable = new Set(commit.forecast(plan, dependents).unreachable);
+        for (const id of dependents) if (unreachable.has(id)) plan.attributes(id, { independent: true }, [], true);
+    }
 }
 
 export function restore(ids: string[], source: HistorySource, writeId?: string): CommitResult {
     workspace.requireWorkspace();
-    return commit.run({ history: source, writeId }, () => {
+    return commit.run({ history: source, writeId, restoring: true }, () => {
         const selected = selectPages(ids), plan = new EditChanges();
-        for (const id of selected) {
-            plan.attributes(id, { deleted: false, recycle_reason: null, recycled_at: null }, [], true);
-            if (!retention.reachable(plan, { kind: "page", id }, new Set())) plan.attributes(id, { independent: true }, [], true);
-            plan.touches.add(id);
-        }
-        return commit.finish(plan, selected[0], 0, null);
+        restorePages(plan, selected);
+        return commit.finish(plan, selected[0], 0);
     });
 }
 
@@ -234,22 +261,32 @@ export function createPage(kind: PageKind = "editable", title = "", initial: Rec
     if (!pageKinds.includes(kind) || typeof title !== "string" || !record(initial)) throw new LabloomError({ kind: "page-invalid-create" });
     const changed = { pages: [] as string[], blocks: [] as string[] };
     const page = commit.run({ history }, context => {
-        if (parentId) writable(parentId);
+        if (parentId) data.writable(parentId);
         if (kind === "annotation" && initial.annotation_file != null) {
             if (!parentId || data.header(parentId).kind !== "paper") throw new LabloomError({ kind: "annotation-paper-required" });
             const files = data.get(parentId).attributes.paper_files as string[];
             if (!files.includes(String(initial.annotation_file))) throw new LabloomError({ kind: "paper-file-removed" });
         }
-        const id = randomUUID(), titleId = randomUUID(), bodyId = randomUUID(), plan = new EditChanges();
-        for (const block of [{ id: titleId, type: "title" as const, payload: payload("title", title), children: [] },
-        ...kind === "feed" ? [] : [{ id: bodyId, type: "paragraph" as const, payload: payload("paragraph"), children: [] }]]) putBlock(block);
-        data.statement("INSERT INTO pages(id,kind,title_block_id,children) VALUES (?,?,?,?)").run(id, kind, titleId, JSON.stringify(kind === "feed" ? [] : [bodyId]));
+        const id = randomUUID(), titleId = randomUUID(), children: string[] = [], plan = new EditChanges();
+        putBlock({ id: titleId, type: "title", payload: payload("title", title), children: [] });
+        if (!bodylessPageKinds.includes(kind)) {
+            const bodyId = randomUUID();
+            putBlock({ id: bodyId, type: "paragraph", payload: payload("paragraph"), children: [] });
+            children.push(bodyId);
+        }
+        data.statement("INSERT INTO pages(id,kind,title_block_id,children) VALUES (?,?,?,?)").run(id, kind, titleId, JSON.stringify(children));
         attributes.initializePage(id);
         const now = nowSeconds();
-        plan.attributes(id, { independent: kind !== "annotation", ...(kind === "feed" ? { feed_status: "enabled", feed_refresh: { every: 60, unit: "minute" } } : {}), ...initial, created_at: now, modified_at: now, deleted: false }, [], true);
+        plan.attributes(id, {
+            ...(kind === "feed" ? { feed_status: "enabled", feed_refresh: { every: 60, unit: "minute" } } : {}), ...initial,
+            independent: parentId ? false : initial.independent ?? kind !== "annotation",
+            created_at: now, modified_at: now
+        }, [], true);
+        plan.seed({ kind: "page", id });
         if (parentId && kind === "annotation") {
             if (data.header(parentId).kind !== "paper") throw new LabloomError({ kind: "annotation-paper-required" });
-            const current = data.get(parentId).attributes.paper_annotations as string[];
+            const current = (data.get(parentId).attributes.paper_annotations as string[]).filter(id =>
+                data.statement("SELECT 1 FROM pages WHERE id=?").get(id));
             plan.attributes(parentId, { paper_annotations: [...current, id] }, [], true);
             plan.touches.add(parentId);
         }
@@ -259,24 +296,26 @@ export function createPage(kind: PageKind = "editable", title = "", initial: Rec
             plan.pageChildren(parentId, [...data.children({ kind: "page", id: parentId }), reference]);
             plan.touches.add(parentId);
         }
-        if (!retention.reachable(plan, { kind: "page", id }, new Set())) throw new LabloomError({ kind: "page-retaining-reference-required" });
+        // A dependent creation is reversible by removing or restoring its retaining
+        // edge. The created content may already have other owners when it is undone.
+        const pageKey = "page:" + id;
+        let rows: RowChanges | undefined;
         if (history) {
-            const before = plan.rows.before["page:" + id] as import("./changes").PagePatch;
-            const after = plan.rows.after["page:" + id] as import("./changes").PagePatch;
-            after.values ??= {}; after.values.deleted = { value: 0 };
-            for (const blockId of kind === "feed" ? [titleId] : [titleId, bodyId]) {
-                const row = data.blockRow(blockId)!;
-                plan.rows.before["block:" + blockId] = structuredClone(row);
-                plan.rows.after["block:" + blockId] = structuredClone(row);
+            const { [pageKey]: _before, ...before } = plan.rows.before;
+            const { [pageKey]: _after, ...after } = plan.rows.after;
+            if (!parentId) {
+                const independence = (plan.rows.after[pageKey] as PagePatch | undefined)?.values?.independent;
+                before[pageKey] = { values: { independent: { value: 0 } } };
+                after[pageKey] = { values: { independent: independence ?? { value: 1 } } };
             }
-            // Non-independent creations (annotations and child pages) can survive via another reference.
-            if (!plan.flags(id).independent) before.creation = true;
-            before.values = { ...structuredClone(after.values), deleted: { value: 1 } };
+            rows = { before, after };
+            plan.dependencies.add(pageKey);
         }
-        context.persist(plan, parentId ?? id);
+        context.persist(plan, parentId ?? id, rows);
+        if (data.flags(id).deleted) throw new LabloomError({ kind: "page-retaining-reference-required" });
         if (!history && parentId && kind !== "annotation") context.invalidate(["page:" + parentId]);
         changed.pages = [...plan.pages];
-        changed.blocks = [titleId, ...kind === "feed" ? [] : [bodyId], ...plan.blocks];
+        changed.blocks = [titleId, ...children, ...plan.blocks];
         context.change(changed);
         return data.get(id);
     });
@@ -292,6 +331,7 @@ export function setDefinition(id: string, definition: AttributeDefinition | null
     try {
         commit.run({ history: false, confirmation: token }, context => {
             const impact = attributes.previewDefinition(id, definition);
+            for (const page of impact.pages) data.writable(page.id);
             const owners = data.statement("SELECT page_id AS pageId FROM page_attrs WHERE attr_id=?").all(id) as { pageId: string }[];
             const plan = new EditChanges();
             const old = data.statement("SELECT type FROM attrs_meta WHERE id=?").get(id) as { type: string } | undefined;
@@ -304,14 +344,15 @@ export function setDefinition(id: string, definition: AttributeDefinition | null
                 for (const { pageId } of owners) {
                     const value = plan.readValue(pageId, id)?.value;
                     const targets = next && value !== undefined ? attributeTargets(next.type, decodeValue(next, value)) : [];
-                    plan.setLinks({ kind: "page", id: pageId }, id, targets, previousLinks.get(pageId));
+                    plan.setLinks({ kind: "page", id: pageId }, id, targets, previousLinks.get(pageId), false);
                 }
             }
-            const ids = retention.lostPages(plan);
-            const combined: AttributeImpact = { ...impact, token: fingerprint({ impact: impact.token, ids }), recycled: ids.map(id => ({ id, title: data.title(id) })) };
-            if ((impact.pages.length || ids.length) && token !== combined.token) throw new DefinitionRollback(combined);
-            commit.recycle(plan, ids);
-            context.persist(plan);
+            let ids: string[] = [];
+            context.persist(plan, undefined, undefined, projected => {
+                ids = projected?.changes.filter(row => !row.deleted && row.reason !== null).map(row => row.id) ?? [];
+                const combined: AttributeImpact = { ...impact, token: fingerprint({ impact: impact.token, ids }), recycled: ids.map(id => ({ id, title: data.title(id) })) };
+                if ((impact.pages.length || ids.length) && token !== combined.token) throw new DefinitionRollback(combined);
+            });
             for (const { pageId } of owners) {
                 const before = previousValues.get(pageId), after = data.valuesFor([pageId]).get(pageId)?.[id];
                 if (completedOption(previous, before) !== completedOption(next, after)) timerState.recalculate(pageId);
@@ -332,6 +373,7 @@ export function setDefinition(id: string, definition: AttributeDefinition | null
 export function writeAttributes(pageId: string, values: Record<string, AttributeValue>, internal = false): void {
     workspace.requireWorkspace();
     commit.run({ history: false, updateModified: false }, context => {
+        data.writable(pageId);
         const plan = new EditChanges();
         plan.attributes(pageId, values, [], internal);
         context.persist(plan);
@@ -340,6 +382,7 @@ export function writeAttributes(pageId: string, values: Record<string, Attribute
 export function cacheAttributes(pageId: string, values: Record<string, AttributeValue>): void {
     workspace.requireWorkspace();
     commit.run({ history: false, updateModified: false }, context => {
+        data.writable(pageId);
         const previous = data.statement("SELECT last_modified_at FROM workspace_meta").pluck().get();
         const plan = new EditChanges();
         plan.attributes(pageId, values, [], true);

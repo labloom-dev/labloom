@@ -4,7 +4,7 @@
     {:else if definition.readonly || disabled}
         {#if (definition.type === "page-link" || definition.type === "page-links") && !empty}
             {#each (Array.isArray(value) ? value : [value]) as id (id)}
-                <Button variant="text" onclick={() => services.open(String(id))}>{t("property.linkedPage")}</Button>
+                <TextButton text={t("property.linkedPage")} onclick={() => services.open(String(id))} />
             {/each}
         {:else if definition.type === "boolean"}
             <Checkbox {label} checked={value === true} disabled hideLabel />
@@ -32,7 +32,7 @@
     {:else if definition.type === "page-link" || definition.type === "page-links"}
         <div class="options">
             {#each (Array.isArray(value) ? value : typeof value === "string" ? [value] : []) as id (id)}
-                <span class="inline"><Button variant="text" onclick={() => services.open(String(id))}>{t("property.openPage")}</Button>
+                <span class="inline"><TextButton text={t("property.openPage")} onclick={() => services.open(String(id))} />
                     <IconButton icon="close" label={t("property.removeItem", { name: t("shell.page") })} onclick={() => onchange(Array.isArray(value) ? value.filter(item => item !== id) : emptyValue(definition.type))} /></span>
             {/each}
             <Button variant="text" onclick={() => picker = true}>{t("editor.choosePage")}</Button>
@@ -93,6 +93,7 @@
     import { propertyControls } from "./property-controls";
     import { propertyName, propertyOption, propertyText } from "./attribute-labels";
     import Button from "../base/Button.svelte";
+    import TextButton from "../base/TextButton.svelte";
     import Checkbox from "../base/Checkbox.svelte";
     import Input from "../base/Input.svelte";
     import Select from "../base/Select.svelte";

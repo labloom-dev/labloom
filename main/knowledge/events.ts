@@ -8,6 +8,7 @@ export type Event =
     | { type: "history"; sources: HistorySource[] }
     | { type: "knowledge"; change: KnowledgeChange }
     | { type: "feed" }
+    | { type: "feed-due" }
     | { type: "reminder"; notice: Notice; body: string };
 const listeners = new Set<(event: Event) => void>();
 
@@ -40,6 +41,16 @@ export function expand(input: KnowledgeChange): KnowledgeChange {
             if (titles.length) change.titlePages = titles;
         }
         change.kinds = Object.fromEntries(rows.map(row => [row.id, row.kind]));
+        const highlights = new Set(change.highlightPages);
+        for (const id of change.recycledPages ?? []) if (change.kinds[id] === "paper") highlights.add(id);
+        const annotations = rows.filter(row => row.kind === "annotation").map(row => row.id);
+        if (annotations.length) {
+            const papers = data.statement(`SELECT DISTINCT l.source_id
+                FROM json_each(?) j CROSS JOIN link_refs l ON l.target_kind='page' AND l.target_id=j.value
+                WHERE l.source_kind='page' AND l.source_field='paper_annotations'`).pluck().all(JSON.stringify(annotations)) as string[];
+            for (const id of papers) highlights.add(id);
+        }
+        if (highlights.size) change.highlightPages = [...highlights];
     }
     return change;
 }
@@ -53,6 +64,9 @@ export function publish(change: KnowledgeChange, feed: boolean): void {
 export function feedChanged(): void {
     workspace.requireWorkspace();
     emit({ type: "feed" });
+}
+export function feedDue(): void {
+    emit({ type: "feed-due" });
 }
 export function reminder(notice: Notice, body: string): void {
     workspace.requireWorkspace();

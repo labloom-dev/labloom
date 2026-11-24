@@ -24,8 +24,9 @@ export function settings(pageId: string): Record<string, number[]> {
 
 export function set(pageId: string, attrId: string, leadSeconds: number, enabled: boolean): void {
     if (!Number.isSafeInteger(leadSeconds) || leadSeconds < 0 || typeof enabled !== "boolean") throw new LabloomError({ kind: "timer-invalid-settings" });
+    data.writable(pageId);
     const definition = attributes.definition(attrId);
-    if (!isTimeType(definition.type) || data.flags(pageId).deleted) throw new LabloomError({ kind: "timer-attribute-unavailable" });
+    if (!isTimeType(definition.type)) throw new LabloomError({ kind: "timer-attribute-unavailable" });
     if (!data.statement("SELECT 1 FROM page_attrs WHERE page_id=? AND attr_id=?").get(pageId, attrId)) throw new LabloomError({ kind: "timer-attribute-missing" });
     workspace.native().transaction(() => {
         if (!enabled) data.statement("DELETE FROM timers WHERE page_id=? AND attr_id=? AND lead_seconds=?").run(pageId, attrId, leadSeconds);
@@ -60,7 +61,8 @@ export function recalculate(pageId: string, fields?: string[], leadOnly?: number
         data.statement("UPDATE timers SET due_at=?,fired_at=NULL,seen=0 WHERE page_id=? AND attr_id=? AND lead_seconds=?")
             .run(due !== null && due > now() ? due : null, pageId, row.attrId, row.leadSeconds);
     }
-    if (page.kind === "feed" && fields?.some(id => ["deleted", "feed_url", "feed_status", "feed_refresh"].includes(id))) reconcileFeedTimer(workspace.database(), pageId, page.attributes, now(), fields.some(id => ["deleted", "feed_url", "feed_status"].includes(id)));
+    if (page.kind === "feed" && fields && feedChange) reconcileFeedTimer(workspace.database(), pageId, page.attributes, now(),
+        fields.some(id => id === "feed_url" || id === "feed_status"), fields.includes("deleted") && !page.attributes.deleted);
 }
 
 export function recalculateAll(): void {
@@ -84,5 +86,6 @@ export function notice(row: TimerRow): Notice {
 
 export function read(pageId: string, attrId: string, leadSeconds: number): void {
     if (!Number.isSafeInteger(leadSeconds) || leadSeconds < 0) throw new LabloomError({ kind: "timer-invalid-notice" });
+    data.writable(pageId);
     data.statement("UPDATE timers SET seen=1 WHERE page_id=? AND attr_id=? AND lead_seconds=?").run(pageId, attrId, leadSeconds);
 }

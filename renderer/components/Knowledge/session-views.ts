@@ -8,6 +8,10 @@ export class SessionViews implements TabView {
         this.views.set(view, { initialized: false, ids: new Set() });
         return () => this.views.delete(view);
     }
+    invalidate(view: TabView): void {
+        const state = this.views.get(view);
+        if (state) state.initialized = false;
+    }
     get size(): number {
         return this.views.size;
     }
@@ -35,11 +39,13 @@ export class SessionViews implements TabView {
             if (state.initialized && !state.ids.size) continue;
             const ids = [...state.ids];
             state.ids.clear();
+            const initial = !state.initialized;
+            state.initialized = true;
             try {
-                await view.read(ids, !state.initialized);
-                state.initialized = true;
+                await view.read(ids, initial);
             }
             catch (error) {
+                if (initial) state.initialized = false;
                 for (const id of ids) state.ids.add(id);
                 throw error;
             }

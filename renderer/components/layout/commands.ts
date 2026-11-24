@@ -3,16 +3,16 @@ import { tick } from "svelte";
 import { definitionFor } from "../Tab/views";
 import { visits } from "../Tab/activity.svelte";
 import { shortcutCommand, type Command } from "../../../shared/content/commands";
-import { toggleProperties } from "../Knowledge/page-header";
+import { toggleLibraryProperties, toggleProperties } from "../Knowledge/page-header";
 import { tabDirty } from "../Tab/dirty.svelte";
 import { workspaceHistory, type HistorySource } from "../../../shared/history/ipc";
-import { confirmed } from "../Knowledge/confirmation.svelte";
 import { perform } from "../Knowledge/feedback.svelte";
 import { write } from "../Knowledge/page-sessions";
 import { activateTab, closeGroup, focusGroup, removeTab } from "../Tab/api";
 import type { LayoutNode } from "../Tab/defs";
 import { tabState } from "../Tab/state.svelte";
-import { createPage, openDestination, openPage, splitCurrent } from "./navigation";
+import { createPage, openDestination, splitCurrent } from "./navigation";
+import { importPapers } from "../Knowledge/library-import.svelte";
 import { focusTabGroup } from "../Tab/interactions";
 import { shell, showSearch, togglePanel } from "./shell.svelte";
 
@@ -25,6 +25,8 @@ export function rememberFocus(): void {
 const unavailable = new SvelteMap<EditingCommand, boolean>();
 let contextRevision = 0;
 function historySource(active: HTMLElement | null): HistorySource {
+    const inspected = active?.closest<HTMLElement>("[data-history-page]")?.dataset.historyPage;
+    if (inspected) return { kind: "page", id: inspected };
     const groupId = active?.closest<HTMLElement>("[data-group-id]")?.dataset.groupId;
     const owner = tabState.groups.find(item => item.id === groupId);
     const tab = owner?.tabs.find(item => item.id === owner.activeTabId);
@@ -33,7 +35,7 @@ function historySource(active: HTMLElement | null): HistorySource {
 export function prepareCommands(origin: Element | null = document.activeElement): void {
     if (origin instanceof HTMLElement && !origin.closest(".menubar,[data-menubar-content],.search-popup")) lastFocus = origin;
     const active = lastFocus?.isConnected ? lastFocus : null;
-    const field = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement;
+    const field = (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) && !active.hasAttribute("data-library-keyboard");
     const editor = active?.closest<HTMLElement>(".tiptap");
     const selected = field ? active.selectionStart !== active.selectionEnd : !window.getSelection()?.isCollapsed;
     const writable = field ? !active.readOnly && !active.disabled : !!editor?.isContentEditable;
@@ -41,7 +43,7 @@ export function prepareCommands(origin: Element | null = document.activeElement)
     unavailable.set("copy", !selected);
     unavailable.set("paste", !writable);
     const revision = ++contextRevision;
-    if (field) {
+    if (field && !active?.closest("[data-history-page]")) {
         unavailable.set("undo", !document.queryCommandEnabled("undo"));
         unavailable.set("redo", !document.queryCommandEnabled("redo"));
         return;
@@ -62,7 +64,11 @@ export function registerEditing(element: HTMLElement, run: (command: EditingComm
 function editCommand(command: EditingCommand): void {
     const group = document.querySelector(`[data-group-id="${CSS.escape(tabState.focusedGroupId)}"]`);
     const active = lastFocus?.isConnected ? lastFocus : null;
-    if (active?.matches("input,textarea")) {
+    const inInspector = active?.closest("[data-history-page]");
+    if (inInspector && (command === "undo" || command === "redo") && active?.matches("input,textarea")) {
+        active.blur(); active.focus({ preventScroll: true });
+    }
+    else if (active?.matches("input:not([data-library-keyboard]),textarea")) {
         active.focus({ preventScroll: true });
         if (command !== "inlineReference") document.execCommand(command);
         return;
@@ -78,7 +84,7 @@ function editCommand(command: EditingCommand): void {
             await write(async () => {
                 const history = await window.api.history.state(source);
                 if (command === "undo" ? history.canUndo : history.canRedo) {
-                    await confirmed(token => window.api.history.apply(source, command, token));
+                    await window.api.history.apply(source, command);
                 }
             });
         });
@@ -101,7 +107,7 @@ async function focusActive(id: string): Promise<void> {
 export function commandDisabled(id: Command): boolean {
     const group = tabState.groups.find(item => item.id === tabState.focusedGroupId);
     const current = group?.tabs.find(tab => tab.id === group.activeTabId);
-    if (id === "toggleProperties") return current?.view.type !== "page";
+    if (id === "toggleProperties") return current?.view.type !== "page" && current?.view.type !== "library";
     if (id === "blockMenu") return !group || !current || !document.querySelector(`[data-tabs-content][data-value="${CSS.escape(current.id)}"] .tiptap[contenteditable=true]`);
     if (id === "mergeGroup") return tabState.groups.length < 2;
     if (id === "closeTab") return !group?.activeTabId;
@@ -115,6 +121,7 @@ export function runCommand(id: Command): void {
     if (id === "toggleProperties") {
         const tab = group.tabs.find(item => item.id === group.activeTabId);
         if (tab?.view.type === "page") toggleProperties(tab.id, tab.view.params);
+        if (tab?.view.type === "library") toggleLibraryProperties(tab.id, tab.view.params);
     }
     else if (id === "blockMenu") {
         const activeEditor = lastFocus?.closest<HTMLElement>(".tiptap");
@@ -122,7 +129,10 @@ export function runCommand(id: Command): void {
         const editor = pane && (activeEditor && pane.contains(activeEditor) ? activeEditor : pane.querySelector<HTMLElement>(".tiptap"));
         if (editor) editors.get(editor)?.("blockMenu");
     }
-    else if (id === "newPage") createPage();
+    else if (id === "newPage") {
+        const view = group.tabs.find(tab => tab.id === group.activeTabId)?.view;
+        createPage({}, view?.type === "library" && (view.params.paperOnly || view.params.pageType?.type === "paper") ? "paper" : "editable");
+    }
     else if (id === "closeTab") {
         if (group.activeTabId) removeTab(group.activeTabId);
     }
@@ -152,8 +162,8 @@ export function runCommand(id: Command): void {
         }
     }
     else if (id === "importPDF") void perform(async () => {
-        const result = await write(() => window.api.papers.importPDF(workspaceHistory));
-        if (result) openPage(result.pageId);
+        const tab = group.tabs.find(item => item.id === group.activeTabId);
+        await importPapers(workspaceHistory, { tabId: tab?.view.type === "library" ? tab.id : undefined });
     });
     else if (["undo", "redo", "cut", "copy", "paste", "selectAll"].includes(id)) editCommand(id as EditingCommand);
     else openDestination(id as Parameters<typeof openDestination>[0]);
@@ -163,8 +173,14 @@ export function globalShortcut(event: KeyboardEvent): void {
     if (!id || (shell.search && id !== "commandPalette" && id !== "search")) return;
     const target = event.target instanceof Element ? event.target : null;
     if (id === "blockMenu" && !target?.closest(".tiptap[contenteditable=true]")) return;
-    if (["undo", "redo", "cut", "copy", "paste", "selectAll"].includes(id) && target?.closest("input,textarea,.tiptap,[contenteditable=true]")) return;
+    const historyCommand = id === "undo" || id === "redo";
+    const inspectorHistory = historyCommand && target?.closest("[data-history-page]");
+    const readOnlyHistory = historyCommand && target?.matches(".tiptap[contenteditable=false]");
+    if (!inspectorHistory && !readOnlyHistory && ["undo", "redo", "cut", "copy", "paste", "selectAll"].includes(id) && target?.closest("input:not([data-library-keyboard]),textarea,.tiptap,[contenteditable=true]")) return;
     event.preventDefault();
-    if (!shell.search) rememberFocus();
+    if (!shell.search) {
+        if (inspectorHistory && target instanceof HTMLElement) lastFocus = target;
+        else rememberFocus();
+    }
     runCommand(id);
 }

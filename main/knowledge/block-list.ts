@@ -32,7 +32,7 @@ function referenceTitles(targets: Target[]): Map<string, string> {
 }
 
 export function blockList(id: string): PageBlockList {
-    const page = records.header(id), roots = records.children({ kind: "page", id });
+    const page = records.writable(id), roots = records.children({ kind: "page", id });
     const blocks = new Map<string, ContentBlock>(), targets: Target[] = [];
     let pending = [...new Set([page.titleBlockId, ...roots])];
     while (pending.length) {

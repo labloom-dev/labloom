@@ -29,7 +29,9 @@ test("PDF drag ranges merge by baseline and retain separate columns and dense li
     assert.equal(extractText(chars, rectangles), "abcd");
     assert.equal(hitTest(chars, 12, 24), 0);
     assert.equal(hitTest(chars, 100, 100), -1);
-    assert.equal(hitTest(chars, 12, 100, true), 0);
+    assert.equal(hitTest(chars, 3, 24, 12), 0);
+    assert.equal(hitTest(chars, -3, 24, 12), -1);
+    assert.equal(hitTest(chars, 12, 100, Infinity), 0);
     assert.deepEqual(lineRange(chars, 1), [0, 2]);
 });
 
@@ -89,7 +91,7 @@ test("PDF 3000-character extraction and selection updates stay below 100ms P95",
         extractText(chars, rectangles);
         extraction.push(performance.now() - started);
         started = performance.now();
-        const end = hitTest(chars, 40 + iteration % 75 * 7, 760 - iteration % 40 * 16, true);
+        const end = hitTest(chars, 40 + iteration % 75 * 7, 760 - iteration % 40 * 16, Infinity);
         const selected = selectionRectangles(chars, 0, end);
         extractText(chars, selected);
         drag.push(performance.now() - started);

@@ -1,7 +1,7 @@
 import { desc, sql } from "drizzle-orm";
 import { check, customType, foreignKey, index, integer, primaryKey, sqliteTable, text, unique } from "drizzle-orm/sqlite-core";
 import type { FeedPosition } from "../../shared/types/feed";
-import { pageKinds, type ContentBlockKind } from "../../shared/types/content";
+import { bodylessPageKinds, pageKinds, type ContentBlockKind } from "../../shared/types/content";
 
 // Runtime mappings of the persisted rows. The generated SQL baseline also installs
 // STRICT table options and triggers; business/IPC models remain independent.
@@ -21,17 +21,21 @@ export const blocks = sqliteTable("blocks", {
     content: text("content"),
     children: text("children", { mode: "json" }).$type<string[]>().notNull().default([])
 }, table => [
-    check("blocks_children_array", sql`json_valid(${table.children}) AND json_type(${table.children}) = 'array'`)
+    check("blocks_children_array", sql`json_valid(${table.children}) AND json_type(${table.children}) = 'array'`),
+    check("blocks_title_children_empty", sql`${table.type} <> 'title' OR json_array_length(${table.children}) = 0`)
 ]);
 
 export const pages = sqliteTable("pages", {
     id: text("id").primaryKey().notNull(),
     kind: text("kind", { enum: pageKinds }).notNull(),
     titleBlockId: text("title_block_id").notNull().references(() => blocks.id),
-    children: text("children", { mode: "json" }).$type<string[]>().notNull().default([])
+    children: text("children", { mode: "json" }).$type<string[]>().notNull().default([]),
+    manualDeleted: integer("manual_deleted", { mode: "boolean" }).notNull().default(false)
 }, table => [
     check("pages_kind", sql`${table.kind} IN (${sql.raw(pageKinds.map(kind => "'" + kind + "'").join(", "))})`),
-    check("pages_children_array", sql`json_valid(${table.children}) AND json_type(${table.children}) = 'array'`)
+    check("pages_manual_deleted", sql`${table.manualDeleted} IN (0, 1)`),
+    check("pages_children_array", sql`json_valid(${table.children}) AND json_type(${table.children}) = 'array'`),
+    check("pages_body_forbidden", sql`${table.kind} NOT IN (${sql.raw(bodylessPageKinds.map(kind => "'" + kind + "'").join(", "))}) OR json_array_length(${table.children}) = 0`)
 ]);
 
 export const attrsMeta = sqliteTable("attrs_meta", {

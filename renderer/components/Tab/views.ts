@@ -15,7 +15,7 @@ import { t } from "../../i18n.svelte";
 import { type MenuItem } from "../base/Menu.svelte";
 import { type IconName } from "../utils/Icon.svelte";
 import { type TabID } from "./defs";
-import { pageHeader } from "../Knowledge/page-header";
+import { libraryHeader, pageHeader } from "../Knowledge/page-header";
 import { pageTitle } from "./page-titles";
 
 export type ViewProps<K extends keyof ViewParams> = {
@@ -38,7 +38,7 @@ const named = (key: Parameters<typeof t>[0]) => () => toStore(() => t(key));
 const standalone = (screen: Component): Component<{ tabId: string }> => (anchor, { tabId }) => Standalone(anchor, { tabId, screen });
 const views: { [K in keyof ViewParams]: Definition<K> } = {
     page: { component: PageView, header: pageHeader, title: p => pageTitle(p.page.id), history: p => ({ kind: "page", id: p.page.id }), keepMounted: true },
-    library: { component: Library, title: p => toStore(() => t(p.scope === "trash" ? "shell.trashView" : p.scope === "pinned" ? "shell.pinnedView" : p.pageType?.type === "paper" ? "command.papers" : "command.library")), history: workspace, keepMounted: true },
+    library: { component: Library, header: libraryHeader, title: p => toStore(() => t(p.scope === "trash" ? "shell.trashView" : p.scope === "pinned" ? "shell.pinnedView" : p.paperOnly ? "command.papers" : "command.library")), history: workspace, keepMounted: true },
     calendar: { component: Calendar, title: named("shell.calendarView"), history: workspace, keepMounted: true },
     overview: { component: Overview, title: named("shell.overviewView"), history: workspace, keepMounted: false },
     attributes: { component: AttributeManagement, title: named("command.attributes"), history: workspace, keepMounted: false },

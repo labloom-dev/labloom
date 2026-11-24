@@ -181,8 +181,8 @@ test("registered page handlers preserve long block text and attribute values on 
     blocks.push({ id: randomUUID(), type: "table", children: [], payload: { type: "table", schemaVersion: 1, inline: [], table: cell } });
     blocks.push({ id: randomUUID(), type: "paragraph", children: [], payload: { type: "paragraph", schemaVersion: 1, inline: [{ type: "inlineReference", attrs: { target: { kind: "page", id: page.id }, label: initial } }] } });
     const commit = { pageId: page.id, batch: 1, blocks, pageChildren: blocks.map(block => block.id), attributes: { [attr]: edited } };
-    assert.equal(await invoke(pagesChannels.previewEdit, commit), null);
-    await invoke(pagesChannels.commitEdit, commit, pageHistory(page.id));
+    const saved = await invoke(pagesChannels.commitEdit, commit, pageHistory(page.id)) as CommitResult;
+    assert.equal(saved.status, "saved");
     session.close();
     session.open(workspace, "open");
     const stored = await readPage();
@@ -190,6 +190,20 @@ test("registered page handlers preserve long block text and attribute values on 
     for (const block of blocks) assert.deepEqual(stored.blocks[block.id], block);
     const matches = await invoke(pagesChannels.list, { attributes: { [attr]: edited } }) as { total: number };
     assert.equal(matches.total, 1);
+});
+
+test("an unconfirmed page save returns its impact while leaving the stored pages unchanged", async t => {
+    session.open(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "ipc-confirm-save-")), "create");
+    const { call } = fixture(t);
+    const parent = await call<PageRecord>(pagesChannels.create, workspaceHistory, "Parent");
+    const child = await call<PageRecord>(pagesChannels.create, workspaceHistory, "Child", {}, parent.id);
+    const before = await call<PageRecord>(pagesChannels.get, parent.id);
+    const edit = { pageId: parent.id, batch: 1, pageChildren: [], blocks: [] };
+    const result = await call<CommitResult>(pagesChannels.commitEdit, edit, pageHistory(parent.id));
+    assert.equal(result.status, "confirmation");
+    assert.deepEqual(result.preview.recycled, [{ id: child.id, title: "Child" }]);
+    assert.deepEqual(await call(pagesChannels.get, parent.id), before);
+    assert.deepEqual(await call(pagesChannels.get, child.id), child);
 });
 
 test("picker lists repeated and nested blocks in order and batches live, recycled, untitled and missing target labels", async t => {
@@ -282,7 +296,7 @@ test("large layouts survive IPC storage and renderer restoration", async t => {
     const { call } = fixture(t);
     for (const count of [33, 41]) {
         const groups: SavedTabs["groups"] = Array.from({ length: count }, (_, i) => ({ id: String(i), tabs: [], activeTabId: null }));
-        groups[0].tabs.push({ id: "T".repeat(101), view: { type: "library", params: { scope: "all", sort: "title", tags: ["A".repeat(1000001)], filters: [] } } });
+        groups[0].tabs.push({ id: "T".repeat(101), view: { type: "library", params: { scope: "all", sort: { column: "title", direction: "asc" }, tags: ["A".repeat(1000001)], filters: [] } } });
         groups[0].activeTabId = groups[0].tabs[0].id;
         let layout: SavedTabs["layout"] = { type: "group", groupId: "0" };
         for (const group of groups.slice(1)) layout = { type: "split", direction: "horizontal", ratio: 0.5, children: [layout, { type: "group", groupId: group.id }] };

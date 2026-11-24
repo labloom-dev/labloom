@@ -21,7 +21,8 @@ CREATE TABLE `blocks` (
 	`type` text NOT NULL,
 	`content` text,
 	`children` text DEFAULT '[]' NOT NULL,
-	CONSTRAINT "blocks_children_array" CHECK(json_valid("blocks"."children") AND json_type("blocks"."children") = 'array')
+	CONSTRAINT "blocks_children_array" CHECK(json_valid("blocks"."children") AND json_type("blocks"."children") = 'array'),
+	CONSTRAINT "blocks_title_children_empty" CHECK("blocks"."type" <> 'title' OR json_array_length("blocks"."children") = 0)
 ) STRICT;
 --> statement-breakpoint
 CREATE TABLE `feed_items` (
@@ -83,9 +84,12 @@ CREATE TABLE `pages` (
 	`kind` text NOT NULL,
 	`title_block_id` text NOT NULL,
 	`children` text DEFAULT '[]' NOT NULL,
+	`manual_deleted` integer DEFAULT false NOT NULL,
 	FOREIGN KEY (`title_block_id`) REFERENCES `blocks`(`id`) ON UPDATE no action ON DELETE no action,
 	CONSTRAINT "pages_kind" CHECK("pages"."kind" IN ('editable', 'paper', 'annotation', 'feed')),
-	CONSTRAINT "pages_children_array" CHECK(json_valid("pages"."children") AND json_type("pages"."children") = 'array')
+	CONSTRAINT "pages_manual_deleted" CHECK("pages"."manual_deleted" IN (0, 1)),
+	CONSTRAINT "pages_children_array" CHECK(json_valid("pages"."children") AND json_type("pages"."children") = 'array'),
+	CONSTRAINT "pages_body_forbidden" CHECK("pages"."kind" NOT IN ('feed', 'paper') OR json_array_length("pages"."children") = 0)
 ) STRICT;
 --> statement-breakpoint
 CREATE TABLE `sync_refs` (

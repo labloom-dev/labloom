@@ -105,6 +105,25 @@ test("a scheduled reminder catches up after reopening and subsequent checks do n
     assert.equal(notices.length, 1);
 });
 
+test("recycled pages persist across reopening and their missed reminders are not made up", async t => {
+    const f = fixture(t), due = Math.floor(f.clock.now / 1000) + 60;
+    const page = f.knowledge.create("editable", "A", { schedule_start: due });
+    f.knowledge.timers.set(page.id, "schedule_start", 0, true);
+    const preview = f.knowledge.trash([page.id], workspaceHistory);
+    assert.equal(preview.status, "confirmation");
+    f.knowledge.trash([page.id], workspaceHistory, preview.preview.token);
+    f.clock.now += 86400000 * 365;
+    await f.check();
+    assert.deepEqual(f.delivered, []);
+    session.close();
+    openWorkspace(f.info.path);
+    assert.equal(f.knowledge.get(page.id).attributes.recycle_reason, "manual_delete");
+    f.knowledge.restore([page.id], workspaceHistory);
+    await f.check();
+    assert.deepEqual(f.delivered, []);
+    assert.deepEqual(f.knowledge.timers.notices(), []);
+});
+
 test("notification identity and title are derived from the current page, with no undo entries for settings or reading", async t => {
     const f = fixture(t), due = Math.floor(f.clock.now / 1000) + 1000, page = f.knowledge.create("editable", "A"), id = "custom:" + randomUUID();
     f.knowledge.setDefinition(id, { id, name: "结束", type: "hour", metadata: {} }); f.edit(page.id, { [id]: due });

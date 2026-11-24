@@ -25,7 +25,7 @@
     const group = $derived(tabState.groups.find(group => group.id === tabState.focusedGroupId));
     const activeView = $derived(group?.tabs.find(tab => tab.id === group.activeTabId)?.view);
     const currentPage = $derived(activeView?.type === "page" ? activeView.params.page.id : undefined);
-    const activeDestination = $derived((Object.keys(destinationViews) as Destination[]).find(id => sameView(activeView, destinationViews[id])));
+    const activeDestination = $derived(activeView?.type === "library" ? (activeView.params.paperOnly ? "papers" : "library") : (Object.keys(destinationViews) as Destination[]).find(id => sameView(activeView, destinationViews[id])));
     $effect(() => {
         const value = filter; const timer = setTimeout(() => applied = value, 200); return () => clearTimeout(timer);
     });

@@ -3,7 +3,7 @@
 </div>
 <span hidden bind:this={glyph}><Icon name="link-external" size="1em" /></span>
 {#if preview}
-    <ReferencePreview anchor={preview}><ReferenceCard kind="page" {value} onopen={openExcerpt} /></ReferencePreview>
+    <ReferencePreview anchor={preview} onclose={() => preview = null}><ReferenceCard kind="page" {value} onopen={openExcerpt} /></ReferencePreview>
 {/if}
 
 {#if editor}

@@ -1,8 +1,9 @@
 <div class="editor-reference-preview" popover="manual" inert {@attach position}>{@render children()}</div>
 
 <script lang="ts">
-    import type { Snippet } from "svelte";
-    let { anchor, children }: { anchor: HTMLElement; children: Snippet } = $props();
+    import { type Snippet } from "svelte";
+    import { showLayer } from "../base/top-layer";
+    let { anchor, children, onclose }: { anchor: HTMLElement; children: Snippet; onclose: () => void } = $props();
 
     function position(element: HTMLElement): () => void {
         function place(): void {
@@ -17,12 +18,13 @@
             element.style.left = Math.max(left, Math.min(rect.left, right - box.width)) + "px";
             element.style.top = Math.max(top, rect.bottom + gap + box.height <= bottom ? rect.bottom + gap : rect.top - gap - box.height) + "px";
         }
-        element.showPopover();
+        const hide = showLayer(element, onclose);
         place();
         const observer = new ResizeObserver(place);
         observer.observe(element);
         window.addEventListener("scroll", place, true);
         return () => {
+            hide();
             observer.disconnect();
             window.removeEventListener("scroll", place, true);
         };

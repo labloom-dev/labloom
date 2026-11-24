@@ -125,7 +125,7 @@ test("sync eligibility requires every root and is rechecked at commit; cycles an
     const cycle = EditorState.create({ schema, doc, selection: NodeSelection.create(doc, position), plugins: [identityPlugin()] });
     assert.throws(() => pasteBlocks(cycle, clipboard, current), hasFailure("block-cycle"));
     const feed = service.create("feed", "Feed");
-    assert.throws(() => service.commitEdit({ pageId: feed.id, batch: 0, blocks: [], pageChildren: clipboard.ids, sync: clipboard.ids }, pageHistory(feed.id)), hasFailure("feed-body-forbidden"));
+    assert.throws(() => service.commitEdit({ pageId: feed.id, batch: 0, blocks: [], pageChildren: clipboard.ids, sync: clipboard.ids }, pageHistory(feed.id)), hasFailure("page-body-forbidden"));
     confirm(token => service.trash([f.a.id], workspaceHistory, token));
     const before = service.get(f.b.id);
     assert.throws(() => service.commitEdit({ ...planned.edit, pageId: f.b.id, batch: 0, sync: clipboard.ids }, pageHistory(f.b.id)), hasFailure("block-sync-unavailable"));

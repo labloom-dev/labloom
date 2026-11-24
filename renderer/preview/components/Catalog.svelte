@@ -22,7 +22,6 @@
         { title: "图标与间距", names: metrics.filter(name => /--ui-(icon-|space-)/.test(name)) },
         { title: "圆角与描边", names: metrics.filter(name => /--ui-(radius-|stroke|focus-)/.test(name)) },
         { title: "字号", names: metrics.filter(name => /--ui-font-/.test(name)) },
-        { title: "弹层层级", names: metrics.filter(name => /--ui-z-/.test(name)) },
         { title: "动效时长", names: metrics.filter(name => /--ui-duration-/.test(name)) }
     ];
     $effect(() => {
@@ -38,7 +37,7 @@
 </script>
 
 <header class="catalog-header">
-    <div><p>知织 / 开发预览</p><h1>基础组件</h1></div>
+    <div><div data-paragraph>知织 / 开发预览</div><h1>基础组件</h1></div>
     <div class="theme-tools">
         <div class="theme-choice" role="group" aria-label="主题">
             <Button variant={dark ? "text" : "primary"} aria-pressed={!dark} onclick={() => dark = false}>浅色</Button>
@@ -133,7 +132,7 @@
                         <Button><Icon name="undo" {size} />撤销</Button>
                         <Button><Icon name="redo" {size} />重做</Button>
                     </div>
-                    <p><Icon name="bold" {size} /> 加粗 <Icon name="underline" {size} /> 下划线</p>
+                    <div data-paragraph><Icon name="bold" {size} /> 加粗 <Icon name="underline" {size} /> 下划线</div>
                 </div>
             {/each}
         </div>

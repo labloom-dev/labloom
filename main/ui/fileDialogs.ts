@@ -3,9 +3,9 @@ import type { StartupState, WorkspaceAction } from "../../shared/types/startup";
 import * as startup from "../startup/startup";
 import { t } from "./i18n";
 
-export async function selectPDF(window: BrowserWindow): Promise<string | undefined> {
-    const result = await dialog.showOpenDialog(window, { properties: ["openFile"], filters: [{ name: t("dialog.pdfFilter"), extensions: ["pdf"] }] });
-    return result.canceled ? undefined : result.filePaths[0];
+export async function selectPDF(window: BrowserWindow): Promise<string[]> {
+    const result = await dialog.showOpenDialog(window, { properties: ["openFile", "multiSelections"], filters: [{ name: t("dialog.pdfFilter"), extensions: ["pdf"] }] });
+    return result.canceled ? [] : result.filePaths;
 }
 export async function selectFiles(window: BrowserWindow, multiple: boolean): Promise<string[]> {
     const result = await dialog.showOpenDialog(window, { properties: multiple ? ["openFile", "multiSelections"] : ["openFile"] });

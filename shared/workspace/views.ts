@@ -3,15 +3,27 @@ import type { uuid } from "../types/uuid";
 import type { AttributeType, AttributeValue } from "../types/attributes";
 import type { PageKind } from "../types/content";
 
+import type { LibraryColumn, LibrarySort } from "./library";
+
 type ReferenceId = string & tags.MinLength<1>;
 type AttributeRef<T extends AttributeType> = { kind: "attribute"; type: T; id: ReferenceId };
 type NoParams = Record<string, never>;
 export type ViewParams = {
-    page: { page: { kind: "page"; id: uuid }; showProperties?: boolean };
+    page: {
+        page: { kind: "page"; id: uuid };
+        fileId?: uuid;
+        showProperties?: boolean;
+        infoWidth?: number & tags.Minimum<1>;
+        paperSidebar?: "info" | "annotations";
+    };
     library: {
         scope: "all" | "pinned" | "trash";
         pageType?: { kind: "page-type"; type: PageKind };
-        sort: "modified" | "created" | "title";
+        sort: LibrarySort;
+        paperOnly?: boolean;
+        columns?: LibraryColumn[];
+        showProperties?: boolean;
+        infoWidth?: number & tags.Minimum<1>;
         tags: string[];
         filters: { attribute: { kind: "attribute"; id: ReferenceId }; value: AttributeValue }[];
     };

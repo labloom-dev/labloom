@@ -39,6 +39,7 @@
     import { located } from "./transactions";
     import { TextSelection } from "@tiptap/pm/state";
     import { Toolbar } from "bits-ui";
+    import { showLayer } from "../base/top-layer";
     import Color from "./Color.svelte";
 
     import type { HistoryState } from "../../../shared/types/knowledge";
@@ -96,9 +97,18 @@
         let pointerSelection = selecting;
         let dismissed = false;
         let frame = 0;
+        let hideLayer: (() => void) | undefined;
 
         function hide(): void {
-            if (menu.matches(":popover-open")) menu.hidePopover();
+            hideLayer?.();
+            hideLayer = undefined;
+        }
+
+        function dismiss(): void {
+            if (instance?.view.composing) return;
+            dismissed = true;
+            if (menu.contains(document.activeElement)) instance?.view.focus();
+            hide();
         }
 
         function position(): void {
@@ -146,7 +156,7 @@
                 return;
             }
 
-            if (!menu.matches(":popover-open")) menu.showPopover();
+            hideLayer ??= showLayer(menu, dismiss);
             const bounds = (dom.closest(".annotation-popover") ?? dom.closest(".main-content") ?? dom.closest(".group-content") ?? dom).getBoundingClientRect();
             menu.style.maxWidth = Math.max(40, Math.min(bounds.width, viewport.width)) + "px";
             const { width, height } = menu.getBoundingClientRect();
@@ -176,7 +186,8 @@
         }
 
         function pointerDown(event: PointerEvent): void {
-            if (menu.contains(event.target as Node) || colorElement?.contains(event.target as Node) || event.target instanceof Element && event.target.closest(".menubar,[data-menubar-content],.ui-menu,.ui-popover,.target-picker,.handle,.group-header")) return;
+            const popup = event.target instanceof Element && event.target.closest(".menubar,[data-menubar-content],.ui-menu,.ui-popover,.target-picker,.handle,.group-header");
+            if (menu.contains(event.target as Node) || colorElement?.contains(event.target as Node) || popup && !popup.contains(dom)) return;
             const inside = dom.contains(event.target as Node);
             selecting = event.button === 0 && inside;
             pointerSelection = selecting;
@@ -210,13 +221,6 @@
                 menu.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true });
                 return;
             }
-            if (event.key !== "Escape" || event.defaultPrevented || event.repeat || colorOpen || !menu.matches(":popover-open")) return;
-            if (!dom.contains(event.target as Node) && !menu.contains(event.target as Node)) return;
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            dismissed = true;
-            if (menu.contains(document.activeElement)) instance?.view.focus();
-            hide();
         }
 
         function keyDown(event: KeyboardEvent): void {

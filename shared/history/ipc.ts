@@ -6,7 +6,7 @@ export type HistorySource = { kind: "page"; id: string } | { kind: "workspace" }
 export const workspaceHistory = { kind: "workspace" } as const;
 export type HistoryAPI = {
     state(source: HistorySource): Promise<HistoryState>;
-    apply(source: HistorySource, direction: "undo" | "redo", confirmation?: string, writeId?: string): Promise<CommitResult>;
+    apply(source: HistorySource, direction: "undo" | "redo", writeId?: string): Promise<Extract<CommitResult, { status: "saved" }>>;
     onChanged(listener: (sources: HistorySource[]) => void): () => void;
 };
 

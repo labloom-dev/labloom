@@ -16,11 +16,12 @@ import type { HistoryState } from "../shared/types/knowledge";
 import { knowledgeServices, session } from "./support/session";
 import { pageHistory, workspaceHistory } from "./support/history";
 import { fixture } from "./support/ipc";
+import { finish as recordHistory } from "../main/knowledge/history-state";
 
 type HistoryFixture = {
     path: string; call: ReturnType<typeof fixture>["call"];
     state(source: HistorySource): Promise<HistoryState>;
-    apply(source: HistorySource, direction: "undo" | "redo", token?: string): Promise<CommitResult>;
+    apply(source: HistorySource, direction: "undo" | "redo"): Promise<CommitResult>;
     read(id: string): Promise<PageRecord>; create(): Promise<PageRecord>;
     edit(page: PageRecord, text: string, source?: HistorySource): Promise<void>;
     text(page: PageRecord): Promise<string>; changed(...expected: HistorySource[]): void;
@@ -33,8 +34,8 @@ function setup(t: TestContext): HistoryFixture {
     const notifications: HistorySource[][] = [];
     contents.on(historyChanged, (sources: HistorySource[]) => notifications.push(sources));
     const state = (source: HistorySource): Promise<HistoryState> => call<HistoryState>(historyChannels.state, source);
-    const apply = (source: HistorySource, direction: "undo" | "redo", token?: string): Promise<CommitResult> =>
-        call<CommitResult>(historyChannels.apply, source, direction, token);
+    const apply = (source: HistorySource, direction: "undo" | "redo"): Promise<CommitResult> =>
+        call<CommitResult>(historyChannels.apply, source, direction);
     const read = (id: string): Promise<PageRecord> => call<PageRecord>(pagesChannels.get, id);
     const create = async (): Promise<PageRecord> => knowledgeServices().create();
     const edit = async (page: PageRecord, text: string, source = pageHistory(page.id)): Promise<void> => {
@@ -143,7 +144,8 @@ test("sidebar trash belongs to the workspace and the selected page, and truncati
     assert.equal((await f.read(b.id)).attributes.deleted, true);
     await f.apply(B, "undo");
     assert.equal((await f.read(b.id)).attributes.deleted, false);
-    await f.apply(B, "redo"); await f.apply(B, "redo");
+    await f.apply(B, "redo");
+    await f.apply(B, "redo");
     assert.equal((await f.read(b.id)).attributes.deleted, false);
     assert.equal((await f.read(c.id)).attributes.deleted, true);
 });
@@ -205,17 +207,98 @@ test("emptying trash removes shared deleted records while an unrelated edit stay
     await f.apply(B, "redo"); f.changed(B); assert.equal(await f.text(b), "keep");
 });
 
-test("undoing the last retaining link previews recycling and accepts only the current token", async t => {
+test("undo and redo recompute recycling from the remaining links without confirmation", async t => {
     const f = setup(t), a = await f.create(), b = await f.create(), B = pageHistory(b.id);
     const child = await f.call<PageRecord>(pagesChannels.create, workspaceHistory, "Child", { independent: false }, a.id);
     await f.call(pagesChannels.commitEdit, { pageId: b.id, batch: 0, blocks: [], attributes: { links: [child.id] } }, B);
     await f.call(pagesChannels.commitEdit, { pageId: a.id, batch: 0, blocks: [], pageChildren: a.children }, pageHistory(a.id));
-    const before = await f.state(B), preview = await f.apply(B, "undo");
-    assert.equal(preview.status, "confirmation");
-    assert.deepEqual(await f.state(B), before); assert.equal((await f.read(child.id)).attributes.deleted, false);
-    assert.equal((await f.apply(B, "undo", "stale")).status, "confirmation");
-    assert.equal((await f.apply(B, "undo", preview.preview.token)).status, "saved");
+    assert.equal((await f.apply(B, "undo")).status, "saved");
     assert.equal((await f.read(child.id)).attributes.deleted, true);
+    assert.equal((await f.apply(B, "redo")).status, "saved");
+    assert.equal((await f.read(child.id)).attributes.deleted, false);
+});
+
+test("creation and disabling independence can both be undone and redone across the recycle boundary", async t => {
+    const f = setup(t);
+    const created = await f.call<PageRecord>(pagesChannels.create, workspaceHistory, "New page");
+    const source = pageHistory(created.id);
+    await f.apply(source, "undo");
+    assert.equal((await f.read(created.id)).attributes.deleted, true);
+    await f.apply(source, "redo");
+    assert.equal((await f.read(created.id)).attributes.deleted, false);
+    assert.equal((await f.read(created.id)).title, "New page");
+
+    const change = { pageId: created.id, batch: 1, blocks: [], attributes: { independent: false } };
+    const pending = await f.call<CommitResult>(pagesChannels.commitEdit, change, source);
+    assert.equal(pending.status, "confirmation");
+    await f.call(pagesChannels.commitEdit, change, source, pending.preview.token);
+    assert.equal((await f.read(created.id)).attributes.deleted, true);
+    await f.apply(source, "undo");
+    assert.equal((await f.read(created.id)).attributes.independent, true);
+    assert.equal((await f.read(created.id)).attributes.deleted, false);
+    await f.apply(source, "redo");
+    assert.equal((await f.read(created.id)).attributes.independent, false);
+    assert.equal((await f.read(created.id)).attributes.deleted, true);
+});
+
+test("history of a body edit rolls back in both directions when its source or its edited page stays recycled", async t => {
+    const f = setup(t), service = knowledgeServices();
+    for (const [direction, fromRecycledSource] of [["undo", false], ["redo", false], ["undo", true], ["redo", true]] as const) {
+        const parent = await f.create(), child = service.create("editable", "Dependent", {}, parent.id);
+        const target = fromRecycledSource ? await f.create() : child;
+        const source = fromRecycledSource ? pageHistory(child.id) : workspaceHistory;
+        await f.edit(target, "Body", source);
+        if (direction === "redo") await f.apply(source, "undo");
+        const remove = { pageId: parent.id, batch: 0, blocks: [], pageChildren: parent.children };
+        const pending = service.commitEdit(remove, false);
+        assert.equal(pending.status, "confirmation");
+        assert.equal(service.commitEdit(remove, false, pending.preview.token).status, "saved");
+        assert.equal((await f.read(child.id)).attributes.deleted, true);
+        const state = await f.state(source), before = await f.read(target.id);
+        assert.equal(direction === "undo" ? state.canUndo : state.canRedo, true);
+        await assert.rejects(f.apply(source, direction), /page-recycled-readonly/);
+        assert.deepEqual(await f.read(target.id), before);
+        assert.deepEqual(await f.state(source), state);
+    }
+});
+
+test("a recycled source can restore itself by undoing a link removal, while unrelated replays still reject recycled targets", async t => {
+    const f = setup(t), service = knowledgeServices(), parent = await f.create(), live = await f.create();
+    const child = service.create("editable", "Dependent", {}, parent.id), C = pageHistory(child.id);
+    const remove = { pageId: parent.id, batch: 0, blocks: [], pageChildren: parent.children };
+    const pending = service.commitEdit(remove, pageHistory(parent.id));
+    assert.equal(pending.status, "confirmation");
+    assert.equal(service.commitEdit(remove, pageHistory(parent.id), pending.preview.token).status, "saved");
+    const readonly = /page-recycled-readonly/;
+    await f.apply(C, "undo");
+    assert.equal((await f.read(child.id)).attributes.deleted, false);
+    await f.apply(C, "redo");
+    assert.equal((await f.read(child.id)).attributes.deleted, true);
+
+    const rows = { before: { ["page:" + child.id]: { values: { pinned: { value: 0 } } } }, after: {} };
+    const source = pageHistory(live.id);
+    recordHistory([{ source, page: live.id, rows }], [], []);
+    await assert.rejects(f.apply(source, "undo"), readonly);
+    assert.equal((await f.state(source)).canUndo, true);
+    recordHistory([{ source, page: live.id, rows: { before: {}, after: rows.before } }], [], []);
+    await f.apply(source, "undo");
+    await assert.rejects(f.apply(source, "redo"), readonly);
+    assert.equal((await f.state(source)).canRedo, true);
+});
+
+test("undoing an explicit trash makes a child independent while its parent stays recycled", async t => {
+    const f = setup(t), service = knowledgeServices(), parent = await f.create();
+    const child = service.create("editable", "Dependent", {}, parent.id), source = pageHistory(child.id);
+    const pending = service.trash([child.id], source);
+    assert.equal(pending.status, "confirmation");
+    service.trash([child.id], source, pending.preview.token);
+    const parentTrash = service.trash([parent.id], workspaceHistory);
+    assert.equal(parentTrash.status, "confirmation");
+    assert.equal(service.trash([parent.id], workspaceHistory, parentTrash.preview.token).status, "saved");
+    assert.equal((await f.apply(source, "undo")).status, "saved");
+    assert.equal(service.get(child.id).attributes.deleted, false);
+    assert.equal(service.get(child.id).attributes.independent, true);
+    assert.equal(service.get(parent.id).attributes.deleted, true);
 });
 
 test("nested writes in a single commit retain the earliest before and latest after for each field", async t => {

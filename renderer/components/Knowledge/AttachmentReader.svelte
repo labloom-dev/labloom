@@ -1,9 +1,9 @@
-<dialog bind:this={dialog} class="attachment-reader" onclose={onclose} {@attach element => element.showModal()}>
+<dialog bind:this={dialog} class="attachment-reader" aria-label={file.originalName} onclose={onclose} {@attach showModal}>
     <header><strong>{file.originalName}</strong><Button onclick={() => dialog?.close()}>{t("dialog.close")}</Button></header>
     <div class="reader-body">
-        {#if error}<p class="error">{message(error)}<Button onclick={load}>{t("dialog.retry")}</Button></p>
+        {#if error}<div data-paragraph class="error">{message(error)}<Button onclick={load}>{t("dialog.retry")}</Button></div>
         {:else if source}<Reader {source} fileId={file.id} />
-        {:else}<p>{t("property.loadingFile")}</p>{/if}
+        {:else}<div data-paragraph>{t("property.loadingFile")}</div>{/if}
     </div>
 </dialog>
 <style>
@@ -12,10 +12,11 @@
     header { display: flex; align-items: center; justify-content: space-between; gap: var(--ui-space-4); height: var(--ui-toolbar-height); padding-inline: var(--ui-space-3); border-bottom: var(--ui-stroke) solid var(--ui-divider); font-size: var(--ui-font-small); }
     strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .reader-body { height: calc(100% - var(--ui-toolbar-height)); }
-    p { padding: var(--ui-space-4); color: var(--ui-text-secondary); }
+    :where([data-paragraph]) { padding: var(--ui-space-4); color: var(--ui-text-secondary); }
     .error { color: var(--ui-danger); }
 </style>
 <script lang="ts">
+    import { showModal } from "../base/top-layer";
     import { t, failure, message, type ErrorValue } from "../../i18n.svelte";
     import Button from "../base/Button.svelte";
     import { onMount } from "svelte";

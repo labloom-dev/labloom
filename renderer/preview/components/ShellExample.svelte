@@ -5,6 +5,7 @@
     import { commandLabel, t } from "../../i18n.svelte";
     import Button from "../../components/base/Button.svelte";
     import ListRow from "../../components/base/ListRow.svelte";
+    import Popover from "../../components/base/Popover.svelte";
     import NavBar from "../../components/layout/NavBar.svelte";
     import ActivityBar from "../../components/layout/ActivityBar.svelte";
     import SidePanel from "../../components/layout/SidePanel.svelte";
@@ -90,15 +91,17 @@
 </script>
 
 {#snippet palette()}
-    <div class="ui-popup example-picker"><GSPopover bind:query {search} recent={async () => pages.map((page, i) => ({ ...page, openedAt: Date.UTC(2026, 10, 20, 6 - i) }))}
-        {disabled} formatTime={ms => format.format(ms)} onchoose={choose} /></div>
+    <GSPopover bind:query {search} recent={async () => pages.map((page, i) => ({ ...page, openedAt: Date.UTC(2026, 10, 20, 6 - i) }))}
+        {disabled} formatTime={ms => format.format(ms)} onchoose={choose} />
 {/snippet}
 
 <div class="spec-shell">
-    <NavBar {collapsed} oncommand={command} {disabled}><SearchTrigger onclick={() => overlay = !overlay} /></NavBar>
-    {#if overlay}<div class="overlay" onkeydown={event => {
-        if (event.key === "Escape") overlay = false;
-    }} role="presentation">{@render palette()}</div>{/if}
+    <NavBar {collapsed} oncommand={command} {disabled}>
+        <Popover label={t("quickOpen.input")} bind:open={overlay} align="center" contentProps={{ class: "example-picker" }}>
+            {#snippet trigger({ props })}<SearchTrigger {...props} />{/snippet}
+            {@render palette()}
+        </Popover>
+    </NavBar>
     <div class="workbench">
         <ActivityBar active={activeDestination} onopen={openDestination} />
         {#if !collapsed}
@@ -139,7 +142,7 @@
         }}>{label}</Button>
     {/each}
 </div>
-{@render palette()}
+<div class="ui-popup example-picker">{@render palette()}</div>
 
 <style>
     .spec-shell { position: relative; border: var(--ui-stroke) solid var(--ui-divider); background: var(--ui-surface-window); margin-bottom: var(--ui-space-5); }
@@ -148,7 +151,7 @@
     .example-groups, .example-group { flex: 1; min-width: 0; }
     .example-group + .example-group { border-left: var(--ui-stroke) solid var(--ui-divider); }
     .example-groups.stacked { flex-direction: column; }
-    .overlay { position: absolute; top: var(--ui-space-1); left: 50%; transform: translateX(-50%); z-index: var(--ui-z-popover); width: min(var(--ui-search-width), 98%); }
     .example-picker { width: min(100%, var(--ui-search-width)); }
+    :global(.ui-popover.example-picker) { width: min(var(--ui-search-width), calc(100vw - 2 * var(--ui-space-3))); padding: 0; }
     .mode-choice { display: flex; gap: var(--ui-space-2); margin-bottom: var(--ui-space-2); }
 </style>

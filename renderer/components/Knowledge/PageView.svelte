@@ -1,4 +1,4 @@
-<section class="page-view">
+<section class="page-view" class:reader-page={page?.kind === "paper" && !gone}>
     <PageStatus recycled={!!page?.attributes.deleted && !gone} error={gone || missing ? "" : message(current.state.error)} busy={syncing} onrestore={() => toggleTrash(current)} />
     {#if gone || missing}
         <div class="missing-page">{t("editor.missingPage")}<Button onclick={() => picking = true}>{t("editor.choosePage")}</Button></div>
@@ -7,12 +7,11 @@
             current.release();
             onparams({ ...params, page: { kind: "page", id: target.id } });
         }} />{/if}
+    {:else if page?.kind === "paper"}
+        <PaperPanel {params} {onparams} {page} session={current} {tabId} {syncing} />
     {:else if page}
         <div class="page-body">
             <div class="main-content">
-                {#if page.kind === "paper"}
-                    <div inert={syncing}><PaperPanel {page} session={current} {tabId} /></div>
-                {/if}
                 {#if page.kind === "feed"}<FeedView sourcePageId={page.id}>
                     {#snippet belowTitle()}<Backlinks links={current.state.backlinks} onopen={(id, otherGroup, anchorId) => openPage(id, { currentGroup: true, otherGroup, anchorId })} />{/snippet}
                 </FeedView>{:else}<Editor session={current} {tabId} pageAnchor />{/if}
@@ -21,7 +20,7 @@
             {#if params.showProperties}
                 <aside inert={syncing}>
                     <Properties {page} session={current} definitions={current.state.definitions} disabled={current.state.loading}
-                        sourcePaper={current.state.backlinks.find(link => link.sourceFields?.includes("paper_annotations"))} onattr={current.attr} ondetach={current.detach} />
+                        onattr={current.attr} ondetach={current.detach} />
                 </aside>
             {/if}
         </div>
@@ -31,6 +30,7 @@
 </section>
 <style>
     .page-view { display: flex; flex-direction: column; min-height: 100%; background: var(--ui-surface-window); color: var(--ui-text); container-type: inline-size; }
+    .reader-page { height: 100%; min-height: 0; }
     .page-body { display: flex; min-width: 0; flex: 1; }
     .main-content { display: flex; flex-direction: column; min-width: 0; flex: 1; }
     aside { width: var(--ui-properties-width); flex-shrink: 0; border-left: var(--ui-stroke) solid var(--ui-divider); }
@@ -61,12 +61,18 @@
     $effect(() => {
         const dirty = current.state.dirty || current.state.saving;
         if (dirty) dirtyPages.set(tabId + ":" + pageId, tabId); else dirtyPages.delete(tabId + ":" + pageId);
-        return () => { dirtyPages.delete(tabId + ":" + pageId); };
+        return () => {
+            dirtyPages.delete(tabId + ":" + pageId);
+        };
     });
     const current = untrack(() => session(tabId, pageId, source));
     const page = $derived(current.state.page);
     const syncing = $derived(readingTabs.has(tabId));
     let gone = $state(false);
     const missing = $derived(!!current.state.error && current.state.error.kind === "page-unavailable");
-    $effect(() => { if (knowledgeState.change.purged?.includes(pageId)) { gone = true; current.release(); } });
+    $effect(() => {
+        if (knowledgeState.change.purged?.includes(pageId)) {
+            gone = true; current.release();
+        }
+    });
 </script>

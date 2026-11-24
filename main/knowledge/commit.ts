@@ -1,9 +1,9 @@
 import type { HistorySource } from "../../shared/history/ipc";
-import { type ChangePreview, type CommitResult, type KnowledgeChange } from "../../shared/types/content";
+import { type Changed, type ChangePreview, type CommitResult, type KnowledgeChange } from "../../shared/types/content";
 import * as attachments from "../attachments/service";
 import * as workspace from "../workspace-state";
 import { fingerprint } from "./attributes";
-import { EditChanges } from "./changes";
+import { type EditChanges, type RowChanges } from "./changes";
 import * as events from "./events";
 import * as history from "./history-state";
 import * as data from "./records";
@@ -12,8 +12,11 @@ import * as timers from "./timer-state";
 
 export type Options = {
     writeId?: string;
+    // The writer checks editability of its direct target while planning the write.
+    directPage?: string;
     history?: HistorySource | false;
     replay?: history.Replay;
+    restoring?: boolean;
     updateModified?: boolean;
     confirmation?: string;
     feed?: boolean;
@@ -23,12 +26,22 @@ export type Context = {
     change(change: Partial<KnowledgeChange>): void;
     after(action: () => void): void;
     invalidate(keys: string[], permanent?: boolean): void;
-    persist(plan: EditChanges, pageId?: string): void;
+    persist(plan: EditChanges, pageId?: string, rows?: RowChanges, check?: (projected?: Projection) => void): Changed;
     cleanup(): string[];
     skip(): void;
 };
+type Projection = ReturnType<typeof retention.project>;
+type Review = { action: unknown; deletedBlocks?: ChangePreview["deletedBlocks"]; positions?: unknown };
+class ConfirmationRollback extends Error {
+    constructor(readonly preview: ChangePreview) {
+        super("confirmation required");
+    }
+}
 let effects: (() => void)[] = [];
-const contexts: { options: Options; context: Context; captures: history.Capture[]; invalid: history.Invalidation[]; feed: boolean }[] = [];
+type Scope = {
+    options: Options; context: Context; captures: history.Capture[]; invalid: history.Invalidation[]; feed: boolean;
+};
+const contexts: Scope[] = [];
 export function release(): void {
     effects = [];
     contexts.length = 0;
@@ -62,12 +75,27 @@ export function run<T>(options: Options, action: (context: Context) => T): T {
             invalidate(keys, permanent = false) {
                 invalid.push({ keys, permanent });
             },
-            persist(plan, pageId) {
+            persist(plan, pageId, rows = plan.rows, check) {
                 if (options.updateModified === false) plan.touches.clear();
                 plan.persist();
-                for (const change of plan.timerChanges()) timers.recalculate(change.pageId, change.fields);
-                if (options.history && pageId) captures.push({ source: options.history, page: pageId, rows: plan.rows, replay: options.replay });
-                context.change(plan.changed());
+                const projected = plan.seeds.size ? retention.project([...plan.seeds.values()]) : undefined;
+                check?.(projected);
+                const result = plan.changed(), schedules = new Map(plan.timerChanges().map(change => [change.pageId, change.fields]));
+                if (projected) {
+                    const status = retention.apply(projected);
+                    result.pages = [...new Set([...result.pages, ...status.pages])];
+                    if (status.backlinks.length) result.backlinks = [...new Set([...(result.backlinks ?? []), ...status.backlinks])];
+                    for (const id of status.timers) schedules.set(id, [...(schedules.get(id) ?? []), "deleted"]);
+                    if (status.pages.length) context.change({ recycledPages: status.pages });
+                    if (status.restored.length && status.timers.length) context.after(() => {
+                        if (data.statement(`SELECT 1 FROM timers WHERE attr_id='feed_refresh' AND due_at<=?
+                            AND page_id IN (SELECT value FROM json_each(?)) LIMIT 1`).get(workspace.seconds(), JSON.stringify(status.restored))) events.feedDue();
+                    });
+                }
+                for (const [id, fields] of schedules) timers.recalculate(id, fields);
+                if (options.history && pageId) captures.push({ source: options.history, page: pageId, rows, dependencies: plan.dependencies, replay: options.replay });
+                context.change(result);
+                return result;
             },
             cleanup() {
                 // Internal assertion: only irreversible cleanup commits request filesystem collection.
@@ -78,9 +106,11 @@ export function run<T>(options: Options, action: (context: Context) => T): T {
                 publish = false;
             }
         };
-        const scope = { options, context, captures, invalid, feed: !!options.feed };
+        const scope: Scope = { options, context, captures, invalid, feed: !!options.feed };
         contexts.push(scope);
         try {
+            if (options.history && options.history.kind === "page" && options.history.id !== options.directPage && !options.replay && !options.restoring)
+                data.writable(options.history.id);
             const result = action(context);
             if (result && typeof result === "object" && "status" in result && result.status === "confirmation") publish = false;
             if (publish) {
@@ -94,7 +124,8 @@ export function run<T>(options: Options, action: (context: Context) => T): T {
                 else effects.push(() => {
                     if (options.writeId !== undefined) changed.writeId = options.writeId;
                     const change = events.expand(changed);
-                    history.finish(captures, invalid, change.summaryPages ?? change.pages);
+                    const pages = change.summaryPages ?? change.pages;
+                    history.finish(captures, invalid, change.highlightPages?.length ? [...new Set([...pages, ...change.highlightPages])] : pages);
                     events.publish(change, scope.feed);
                 });
             }
@@ -119,29 +150,50 @@ export function run<T>(options: Options, action: (context: Context) => T): T {
     }
     return result;
 }
-export function preview(plan: EditChanges, action: unknown, deletedBlocks: ChangePreview["deletedBlocks"] = [], manual: string[] = [], positions?: unknown): ChangePreview | null {
-    workspace.requireWorkspace();
-    const ids = retention.lostPages(plan);
-    if (!ids.length && !deletedBlocks.length && !manual.length) return null;
+export function forecast(plan: EditChanges, inspect: string[] = []): ReturnType<typeof retention.project> {
+    if (!plan.seeds.size) return retention.project([]);
+    // Use the same indexed graph as the real commit. Roll back the proposed rows
+    // before returning a confirmation and before any notifications or timers run.
+    const rollback = {};
+    let projection: ReturnType<typeof retention.project>;
+    try {
+        workspace.native().transaction(() => {
+            plan.persist(true);
+            projection = retention.project([...plan.seeds.values()], inspect);
+            throw rollback;
+        })();
+    }
+    catch (error) {
+        if (error !== rollback) throw error;
+    }
+    return projection!;
+}
+
+function changePreview(plan: EditChanges, { action, deletedBlocks = [], positions }: Review, projection?: Projection): ChangePreview | null {
+    const ids = projection?.changes.filter(row => !row.deleted && row.reason !== null).map(row => row.id) ?? [];
+    if (!ids.length && !deletedBlocks.length) return null;
     const name = (id: string): { id: string; title: string } => ({ id, title: data.title(id) });
     return {
         token: fingerprint({ action, ids, ...(positions ? { positions, deletedBlocks } : {}) }), recycled: ids.map(name),
-        direct: [...new Set([...manual, ...ids.filter(id => plan.direct.has(id))])].map(name), causes: [...plan.causes], deletedBlocks
+        direct: ids.filter(id => plan.direct.has(id)).map(name), causes: [...plan.causes], deletedBlocks
     };
 }
-export function recycle(plan: EditChanges, ids: string[]): void {
-    workspace.requireWorkspace();
-    for (const id of ids) {
-        plan.attributes(id, { deleted: true, recycle_reason: "unreachable", recycled_at: workspace.seconds() }, [], true);
-        plan.touches.add(id);
-    }
-}
-export function finish(plan: EditChanges, pageId: string, batch: number, preview: ChangePreview | null): CommitResult {
-    workspace.requireWorkspace();
-    const { options, context } = contexts[contexts.length - 1];
-    if (preview && options.confirmation !== preview.token) return { status: "confirmation", preview };
-    recycle(plan, preview?.recycled.map(page => page.id) ?? []);
-    context.persist(plan, pageId);
-    const changed = plan.changed();
+export function finish(plan: EditChanges, pageId: string, batch: number, review?: Review): Extract<CommitResult, { status: "saved" }> {
+    const context = current();
+    const changed = context.persist(plan, pageId, undefined, review && (projected => {
+        const preview = changePreview(plan, review, projected);
+        if (preview && contexts.at(-1)?.options.confirmation !== preview.token) throw new ConfirmationRollback(preview);
+    }));
     return { status: "saved", batch, changed, sharedUses: data.sharedUses(changed.blocks) };
+}
+
+/** A preview result has to escape the transaction before it can be returned. */
+export function edit(options: Options, action: () => CommitResult): CommitResult {
+    try {
+        return run(options, action);
+    }
+    catch (error) {
+        if (error instanceof ConfirmationRollback) return { status: "confirmation", preview: error.preview };
+        throw error;
+    }
 }

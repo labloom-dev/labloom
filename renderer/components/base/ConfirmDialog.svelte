@@ -1,6 +1,7 @@
 <script lang="ts">
     import { AlertDialog } from "bits-ui";
     import Button from "./Button.svelte";
+    import TopLayer from "./TopLayer.svelte";
 
     let { title, body, confirmLabel, cancelLabel, danger = false, open = $bindable(false), trigger, onconfirm, oncancel }: {
         title: string;
@@ -31,7 +32,7 @@
 
 <AlertDialog.Root bind:open={() => open, changeOpen}>
     <AlertDialog.Trigger child={trigger} />
-    <AlertDialog.Portal>
+    {#if open}<TopLayer>
         <AlertDialog.Overlay class="ui-scrim" />
         <AlertDialog.Content class="ui-popup ui-dialog" onkeydown={defaultAction} interactOutsideBehavior="close">
             <AlertDialog.Title class="ui-dialog-title">{title}</AlertDialog.Title>
@@ -45,5 +46,5 @@
                 </AlertDialog.Action>
             </div>
         </AlertDialog.Content>
-    </AlertDialog.Portal>
+    </TopLayer>{/if}
 </AlertDialog.Root>

@@ -287,7 +287,7 @@ export function makeSession(tabId: string, pageId: string, source: HistorySource
             const input = writes.input(edit);
             try {
                 let savedResult: Extract<CommitResult, { status: "saved" }> | undefined;
-                await reviewEdit(input, value => api.pages.previewEdit(value), prompt, async (value, token) => {
+                await reviewEdit(input, prompt, async (value, token) => {
                     const result = await receipts.submit(id => api.pages.commitEdit(value, source, token, id));
                     if (result.status === "saved") savedResult = result;
                     return result;
@@ -321,7 +321,10 @@ export function makeSession(tabId: string, pageId: string, source: HistorySource
             if (result.status === "saved") changed = result.changed;
             return result;
         });
-        if (!changed || !state.page) return;
+        if (changed) await rereadAction(changed);
+    }
+    async function rereadAction(changed: Changed): Promise<void> {
+        if (!state.page) return;
         const page = state.page;
         await reread([...changed.pages, ...changed.blocks].filter(id => id === pageId || Object.hasOwn(page.blocks, id)));
         if (!readingTabs.has(tabId) && !state.page?.attributes.deleted) input.replay();
@@ -331,7 +334,8 @@ export function makeSession(tabId: string, pageId: string, source: HistorySource
         return perform(() => write(async () => {
             const history = await api.history.state(source);
             if (direction === "undo" ? history.canUndo : history.canRedo) {
-                await applyAction((token, id) => api.history.apply(source, direction, token, id));
+                const result = await receipts.submit(id => api.history.apply(source, direction, id));
+                await rereadAction(result.changed);
             }
         }));
     }

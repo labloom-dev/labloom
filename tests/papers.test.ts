@@ -14,6 +14,7 @@ import { PDF_EXTRACTOR_VERSION } from "../shared/content/pdf-text";
 import { payload } from "../shared/content/blocks";
 import { type AnnotationInput } from "../shared/types/papers";
 import { knownCoordinatePdf } from "./fixtures/pdf-text";
+import { finish as recordHistory } from "../main/knowledge/history-state";
 
 function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { knowledge: Knowledge; papers: Papers; history: History } {
     const workspace = createWorkspace(mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "paper-")));
@@ -36,6 +37,9 @@ test("identical imports create independent papers, attachment rows and files, wi
     const path = join(info.path, "original.pdf"), id = importPDF(papers, path);
     const files = (await papers.resources(id)).files;
     assert.equal(files.length, 1);
+    const imported = knowledge.get(id);
+    assert.deepEqual(imported.children, []);
+    assert.deepEqual(Object.keys(imported.blocks), [imported.titleBlockId]);
     const other = papers.importFile(path);
     assert.notEqual(other.pageId, id);
     const second = (await papers.resources(other.pageId)).files[0];
@@ -55,6 +59,41 @@ test("identical imports create independent papers, attachment rows and files, wi
     assert.throws(() => papers.read(files[0].id), /attachment-size-changed/);
     assert.equal((await papers.resources(id)).files[0].id, files[0].id);
     assert.deepEqual(Buffer.from(papers.read(second.id)), readFileSync(path));
+});
+
+test("papers have only a title and reject body blocks, placements, and child pages", t => {
+    const { knowledge, database } = fixture(t);
+    const paper = knowledge.create("paper", "A");
+    const note = knowledge.create("editable", "B");
+    const body = note.children[0], source = pageHistory(paper.id), forbidden = hasFailure("page-body-forbidden");
+    const row = { id: randomUUID(), type: "paragraph" as const, payload: payload("paragraph", "Pasted"), children: [] };
+
+    assert.deepEqual(paper.children, []);
+    assert.deepEqual(Object.keys(paper.blocks), [paper.titleBlockId]);
+    assert.throws(() => knowledge.commitEdit({ pageId: paper.id, batch: 0, blocks: [row], pageChildren: [row.id] }, source), forbidden);
+    assert.throws(() => knowledge.commitEdit({ pageId: paper.id, batch: 0, blocks: [], pageChildren: [body], sync: [body] }, source), forbidden);
+    assert.throws(() => knowledge.commitEdit({ pageId: paper.id, batch: 0, blocks: [{ ...paper.blocks[paper.titleBlockId], children: [body] }] }, source), forbidden);
+    assert.throws(() => knowledge.place({ position: { pageId: paper.id, containerId: paper.id, index: 0, blockId: paper.titleBlockId }, action: "insert", blockId: body }, source), forbidden);
+    assert.throws(() => knowledge.create("editable", "C", {}, paper.id), forbidden);
+    assert.throws(() => database.prepare("UPDATE pages SET children=? WHERE id=?").run(JSON.stringify([body]), paper.id), /pages_body_forbidden/);
+    assert.throws(() => database.prepare("INSERT INTO pages(id, kind, title_block_id, children) VALUES (?, 'paper', ?, ?)").run(randomUUID(), paper.titleBlockId, JSON.stringify([body])), /pages_body_forbidden/);
+    assert.deepEqual(knowledge.get(paper.id).children, []);
+    assert.equal(knowledge.list({ kind: "editable" }).total, 1);
+});
+
+test("paper history cannot restore a body in either direction", t => {
+    const { knowledge, history } = fixture(t);
+    const note = knowledge.create("editable", "A");
+    for (const direction of ["undo", "redo"] as const) {
+        const paper = knowledge.create("paper", "B"), source = pageHistory(paper.id), key = "page:" + paper.id;
+        const invalid = { [key]: { children: note.children } }, valid = { [key]: { children: [] } };
+        recordHistory([{ source, page: paper.id, rows: { before: direction === "undo" ? invalid : valid, after: direction === "redo" ? invalid : valid } }], [], []);
+        if (direction === "redo") assert.equal(history.apply(source, "undo").status, "saved");
+        const before = history.state(source);
+        assert.throws(() => history.apply(source, direction), hasFailure("page-body-forbidden"));
+        assert.deepEqual(history.state(source), before);
+        assert.deepEqual(knowledge.get(paper.id).children, []);
+    }
 });
 
 test("annotation creation is retained, reversible and has an empty paragraph, while repeated selections create distinct pages", async t => {
@@ -181,16 +220,40 @@ test("encrypted PDF passwords stay transient and repeated selections produce ind
 test("annotation text controls the reader icon, while the paper's history spans paper and popup edits", async t => {
     const { knowledge, papers, info, history } = fixture(t), paperId = importPDF(papers, join(info.path, "A.pdf"));
     const id = await papers.annotate(paperId, selection((await papers.resources(paperId)).files[0].id), pageHistory(paperId));
-    const paper = knowledge.get(paperId), paragraph = { id: randomUUID(), type: "paragraph" as const, payload: payload("paragraph", "Paper edit"), children: [] };
-    knowledge.commitEdit({ pageId: paperId, batch: 0, blocks: [paragraph], pageChildren: [...paper.children, paragraph.id] }, pageHistory(paperId));
+    const paper = knowledge.get(paperId), title = paper.blocks[paper.titleBlockId];
+    knowledge.commitEdit({ pageId: paperId, batch: 0, blocks: [{ ...title, payload: payload("title", "Paper edit") }] }, pageHistory(paperId));
     const note = knowledge.get(id), body = note.blocks[note.children[0]];
     knowledge.commitEdit({ pageId: id, batch: 0, blocks: [{ ...body, payload: payload("paragraph", "Popup text") }] }, pageHistory(paperId));
-    assert.equal((await papers.resources(paperId)).annotations[0].hasText, true);
+    const [updated] = (await papers.resources(paperId)).annotations;
+    assert.equal(updated.hasText, true);
+    assert.equal(updated.excerpt, "Popup text");
     assert.equal(history.apply(pageHistory(paperId), "undo").status, "saved");
     assert.equal((await papers.resources(paperId)).annotations[0].hasText, false);
-    assert.ok(knowledge.get(paperId).children.includes(paragraph.id));
+    assert.equal(knowledge.title(paperId), "Paper edit");
     assert.equal(history.apply(pageHistory(paperId), "undo").status, "saved");
-    assert.ok(!knowledge.get(paperId).children.includes(paragraph.id));
+    assert.equal(knowledge.title(paperId), paper.title);
+});
+
+test("a recycled paper can display attached highlights that followed it into the recycle bin", async t => {
+    const { knowledge, papers, info } = fixture(t), paperId = importPDF(papers, join(info.path, "A.pdf"));
+    const fileId = (await papers.resources(paperId)).files[0].id, source = pageHistory(paperId);
+    const previous = await papers.annotate(paperId, selection(fileId), source);
+    const kept = await papers.annotate(paperId, selection(fileId), source);
+    const remove = papers.deleteAnnotation(previous, source);
+    if (remove.status !== "confirmation") throw Error("Expected confirmation");
+    papers.deleteAnnotation(previous, source, remove.preview.token);
+    const trash = knowledge.trash([paperId], workspaceHistory);
+    if (trash.status !== "confirmation") throw Error("Expected confirmation");
+    knowledge.trash([paperId], workspaceHistory, trash.preview.token);
+    assert.equal(knowledge.flags(kept).deleted, true);
+    assert.deepEqual((await papers.resources(paperId, fileId)).annotations.map(item => item.id), [kept]);
+    await assert.rejects(papers.annotate(paperId, selection(fileId), source), hasFailure("page-recycled-readonly"));
+    const attachment = join(info.path, "second.pdf");
+    writeFileSync(attachment, knownCoordinatePdf());
+    assert.deepEqual(papers.importPaths([attachment], source, paperId).failures.map(row => row.error.kind), ["page-recycled-readonly"]);
+    assert.equal(knowledge.restore([paperId], source).status, "saved");
+    assert.equal(knowledge.flags(kept).deleted, false);
+    assert.equal(knowledge.flags(previous).deleted, true);
 });
 
 test("reading position remains a paper attribute without edit conflicts or timestamp changes", async t => {
@@ -210,7 +273,7 @@ test("reading position remains a paper attribute without edit conflicts or times
     const changes: unknown[] = [];
     const unsubscribe = watchKnowledge(change => changes.push(change));
     t.after(unsubscribe);
-    papers.position(id, file.id, { page: 4, scale: 2, rotation: 0, left: 0, top: 0 });
+    assert.throws(() => papers.position(id, file.id, { page: 4, scale: 2, rotation: 0, left: 0, top: 0 }), hasFailure("page-recycled-readonly"));
     assert.deepEqual(changes, []);
     assert.deepEqual(knowledge.get(id).attributes.reading_position, after.attributes.reading_position);
 });
@@ -224,7 +287,7 @@ test("annotation rectangles stay in PDF user space including non-zero and negati
     assert.ok(!rectangleWithinPage({ ...rect, x: Number.NaN }, [30, 40, 630, 840]));
 });
 
-test("annotation file references retain detached files and purging clears membership in the owning paper", async t => {
+test("annotation file references retain detached files and permanently deleted annotations are excluded from resources", async t => {
     const { knowledge, papers, info, history } = fixture(t), path = join(info.path, "A.pdf"), paperId = importPDF(papers, path);
     const file = (await papers.resources(paperId)).files[0], id = await papers.annotate(paperId, selection(file.id), pageHistory(paperId));
     knowledge.commitEdit({ pageId: paperId, batch: 0, blocks: [], attributes: { paper_files: [] } }, pageHistory(paperId));
@@ -241,7 +304,8 @@ test("annotation file references retain detached files and purging clears member
     const purge = purgeServices(), preview = purge.purge([id]);
     if (preview.status !== "confirmation") throw new Error("Expected confirmation");
     assert.equal(purge.purge([id], preview.token).status, "deleted");
-    assert.deepEqual(knowledge.get(paperId).attributes.paper_annotations, []);
+    assert.equal(knowledge.resolve({ kind: "page", id }), null);
+    assert.deepEqual((await papers.resources(paperId)).annotations, []);
     assert.deepEqual(knowledge.get(other).attributes.paper_annotations, [otherAnnotation]);
     assert.ok(!papers.files().some(row => row.id === file.id));
     assert.deepEqual(attachments.unreferencedFiles(knowledge.db), []);
@@ -268,15 +332,80 @@ test("identical PDFs have independent annotations and a second paper cannot adop
     assert.throws(() => knowledge.attributes.write(second, { paper_annotations: [id, secondId] }, true), /annotation-owned/, "recycled annotations still belong to their original paper");
 });
 
-test("annotation edits notify the retaining paper and advance its shared history", async t => {
+test("annotation edits refresh highlights and shared history without marking the paper changed", async t => {
     const { knowledge, papers, info, history } = fixture(t), paperId = importPDF(papers, join(info.path, "A.pdf")), fileId = (await papers.resources(paperId)).files[0].id;
     const id = await papers.annotate(paperId, selection(fileId), pageHistory(paperId));
     assert.equal(history.state(pageHistory(paperId)).canUndo, true);
-    const annotation = knowledge.get(id), body = annotation.blocks[annotation.children[0]], changes: string[][] = [];
-    t.after(watchKnowledge(change => changes.push(change.pages)));
+    const annotation = knowledge.get(id), body = annotation.blocks[annotation.children[0]], changes: import("../shared/types/content").KnowledgeChange[] = [];
+    t.after(watchKnowledge(change => changes.push(change)));
     knowledge.commitEdit({ pageId: id, batch: 0, blocks: [{ ...body, payload: payload("paragraph", "B") }] }, pageHistory(id));
     assert.equal(history.state(pageHistory(paperId)).canUndo, true);
-    assert.ok(changes[0].includes(id)); assert.ok(changes[0].includes(paperId));
+    assert.deepEqual(changes[0].pages, [id]);
+    assert.deepEqual(changes[0].summaryPages, [id]);
+    assert.deepEqual(changes[0].highlightPages, [paperId]);
+    assert.equal(history.apply(pageHistory(paperId), "undo").status, "saved");
+    assert.equal(knowledge.get(id).excerpt, "");
     changes.length = 0; papers.changeAnnotation(id, "pink", pageHistory(id));
-    assert.ok(changes[0].includes(paperId));
+    assert.deepEqual(changes[0].pages, [id]);
+    assert.deepEqual(changes[0].highlightPages, [paperId]);
+});
+
+test("path imports isolate bad files and append ordinary attachments to the requested paper", async t => {
+    const { knowledge, papers, info, history } = fixture(t);
+    const first = join(info.path, "A.pdf"), bad = join(info.path, "B.pdf"), second = join(info.path, "C.PDF"), note = join(info.path, "notes.txt");
+    writeFileSync(first, knownCoordinatePdf()); writeFileSync(second, knownCoordinatePdf());
+    writeFileSync(bad, "invalid"); writeFileSync(note, "notes");
+    const result = papers.importPaths([first, bad, join(info.path, "missing.pdf"), second, note, info.path], workspaceHistory);
+    assert.equal(result.pages.length, 2);
+    assert.deepEqual(result.failures.map(f => f.error.kind), ["pdf-invalid", "file-missing", "import-pdf-only", "import-regular-file"]);
+    const id = result.pages[0];
+    const batch = papers.importPaths([note, bad, second], pageHistory(id), id);
+    assert.deepEqual(batch.pages, [id, id]);
+    assert.deepEqual(batch.failures.map(f => [f.name, f.error.kind]), [["B.pdf", "pdf-invalid"]]);
+    assert.equal(knowledge.list({ kind: "paper" }).total, 2);
+    assert.deepEqual((await papers.resources(id)).files.map(f => f.originalName), ["A.pdf", "notes.txt", "C.PDF"]);
+    assert.equal(history.apply(pageHistory(id), "undo").status, "saved");
+    assert.deepEqual((await papers.resources(id)).files.map(f => f.originalName), ["A.pdf"]);
+    assert.equal(history.apply(pageHistory(id), "redo").status, "saved");
+    assert.deepEqual((await papers.resources(id)).files.map(f => f.originalName), ["A.pdf", "notes.txt", "C.PDF"]);
+});
+
+test("purging filtered results includes dependent annotations in the preview and preserves unrelated notes", t => {
+    const { knowledge } = fixture(t), purge = purgeServices();
+    const paper = knowledge.create("paper", "A"), note = knowledge.create("editable", "B");
+    const annotation = knowledge.create("annotation", "C", { independent: false }, paper.id);
+    const preview = knowledge.trash([paper.id, note.id], workspaceHistory);
+    assert.ok(preview.status === "confirmation");
+    assert.equal(knowledge.trash([paper.id, note.id], workspaceHistory, preview.preview.token).status, "saved");
+    assert.equal(knowledge.get(annotation.id).attributes.deleted, true);
+    const visible = purge.purge([paper.id]);
+    assert.ok(visible.status === "confirmation");
+    assert.deepEqual(visible.pages.toSorted((a, b) => a.title.localeCompare(b.title)), [
+        { id: paper.id, title: "A" },
+        { id: annotation.id, title: "C" }
+    ]);
+    const result = purge.purge([paper.id], visible.token);
+    assert.ok(result.status === "deleted");
+    assert.deepEqual(result.pages, [paper.id, annotation.id].sort());
+    assert.deepEqual(knowledge.list({ deleted: true }).items.map(page => page.id), [note.id]);
+    assert.equal(knowledge.resolve({ kind: "page", id: annotation.id }), null);
+});
+
+test("purging filtered results preserves a recycled annotation retained by an excluded note", t => {
+    const { knowledge } = fixture(t), purge = purgeServices();
+    const paper = knowledge.create("paper", "A");
+    const annotation = knowledge.create("annotation", "B", {}, paper.id);
+    const note = knowledge.create("editable", "C", { links: [annotation.id] });
+    const preview = knowledge.trash([paper.id, note.id], workspaceHistory);
+    assert.ok(preview.status === "confirmation");
+    assert.equal(knowledge.trash([paper.id, note.id], workspaceHistory, preview.preview.token).status, "saved");
+    const visible = purge.purge([paper.id]);
+    assert.ok(visible.status === "confirmation");
+    assert.deepEqual(visible.pages, [{ id: paper.id, title: "A" }]);
+    const result = purge.purge([paper.id], visible.token);
+    assert.ok(result.status === "deleted");
+    assert.deepEqual(result.pages, [paper.id]);
+    assert.equal(knowledge.get(note.id).attributes.deleted, true);
+    assert.deepEqual(knowledge.get(note.id).attributes.links, [annotation.id]);
+    assert.equal(knowledge.get(annotation.id).attributes.deleted, true);
 });

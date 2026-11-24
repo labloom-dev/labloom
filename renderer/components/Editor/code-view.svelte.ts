@@ -7,7 +7,7 @@ import CodeTools from "./CodeTools.svelte";
 
 export const codeView: NodeViewRenderer = ({ node: initial, view, getPos, editor }) => {
     let node = initial, language = $state<CodeLanguage | null>(node.attrs.language);
-    const dom = document.createElement("section"), contentDOM = document.createElement("div"), controls = document.createElement("div");
+    const dom = document.createElement("div"), contentDOM = document.createElement("div"), controls = document.createElement("div");
     dom.spellcheck = false;
     dom.dataset.kind = "code"; dom.dataset.blockId = node.attrs.blockId;
     contentDOM.className = "code-content";

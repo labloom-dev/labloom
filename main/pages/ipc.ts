@@ -14,6 +14,7 @@ type Args<Key extends keyof typeof pagesChannels> = Parameters<PagesAPI[Key]>;
 export const routes = {
     list: route(typia.createAssert<Args<"list">>(invalid), records.list),
     search: route(typia.createAssert<Args<"search">>(invalid), records.searchPages),
+    libraryIndex: route(typia.createAssert<Args<"libraryIndex">>(invalid), records.libraryIndex),
     listUpdates: route(typia.createAssert<Args<"listUpdates">>(invalid), records.listUpdates),
     blockList: route(typia.createAssert<Args<"blockList">>(invalid), picker.blockList),
     get: route(typia.createAssert<Args<"get">>(invalid), papers.get),
@@ -21,7 +22,6 @@ export const routes = {
     syncBlocks: route(typia.createAssert<Args<"syncBlocks">>(invalid), edits.syncBlocks),
     create: route(typia.createAssert<Args<"create">>(invalid), edits.create),
     commitEdit: route(typia.createAssert<Args<"commitEdit">>(invalid), edits.commitEdit),
-    previewEdit: route(typia.createAssert<Args<"previewEdit">>(invalid), edits.previewEdit),
     deleteBlock: route(typia.createAssert<Args<"deleteBlock">>(invalid), edits.deleteBlock),
     place: route(typia.createAssert<Args<"place">>(invalid), edits.place),
     trash: route(typia.createAssert<Args<"trash">>(invalid), edits.trash),

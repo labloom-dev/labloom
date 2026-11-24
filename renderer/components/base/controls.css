@@ -120,14 +120,12 @@
 @keyframes ui-appear { from { opacity: 0; } to { opacity: 1; } }
 
 .ui-menu, .ui-options {
-    z-index: var(--ui-z-dropdown);
     padding: var(--ui-space-2);
     min-width: 9em;
     max-width: calc(100vw - 2 * var(--ui-space-3));
     max-height: var(--bits-dropdown-menu-content-available-height, var(--bits-context-menu-content-available-height, calc(100vh - 2 * var(--ui-space-3))));
     overflow: auto;
 }
-.ui-menu[data-context] { z-index: var(--ui-z-context-menu); }
 .ui-options { min-width: var(--bits-select-anchor-width); max-height: var(--bits-select-content-available-height); }
 .ui-menu-item {
     display: flex;
@@ -152,18 +150,16 @@
 
 .ui-tooltip, .ui-popover { max-width: calc(100vw - 2 * var(--ui-space-3)); overflow-wrap: anywhere; }
 .ui-tooltip {
-    z-index: var(--ui-z-tooltip);
     padding: var(--ui-space-2) var(--ui-space-3);
     display: flex;
     align-items: center;
     gap: var(--ui-space-3);
 }
 .ui-tooltip .ui-shortcut { color: var(--ui-text-secondary); }
-.ui-popover { z-index: var(--ui-z-popover); padding: var(--ui-space-4); max-height: var(--bits-popover-content-available-height); overflow: auto; }
-.ui-scrim { position: fixed; inset: 0; z-index: var(--ui-z-dialog); background: var(--ui-surface-scrim); }
+.ui-popover { padding: var(--ui-space-4); max-height: var(--bits-popover-content-available-height); overflow: auto; }
+.ui-scrim { position: fixed; inset: 0; background: var(--ui-surface-scrim); }
 .ui-dialog {
     position: fixed;
-    z-index: var(--ui-z-dialog);
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);

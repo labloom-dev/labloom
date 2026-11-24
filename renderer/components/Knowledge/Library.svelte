@@ -1,232 +1,186 @@
-<section class="workspace-page library" bind:this={root} onkeydown={keys}>
-    <header class="library-toolbar">
-        <input bind:value={keyword} type="search" aria-label="搜索页面" placeholder="搜索标题、正文和属性…" />
-        <select aria-label="页面类型" bind:value={() => params.pageType?.type ?? "", (type: PageKind | "") => {
-            const { pageType: _previous, ...rest } = params;
-            onparams(type ? { ...rest, pageType: { kind: "page-type", type } } : rest);
-            offset = 0; selected = [];
-        }}><option value="">全部类型</option>{#each Object.entries(kindNames) as [id, name] (id)}<option value={id}>{name}</option>{/each}</select>
-        <select aria-label="排序" bind:value={() => params.sort, sort => change({ sort })}><option value="modified">最近修改</option><option value="created">最近创建</option><option value="title">按标题</option></select>
-        <button class="button" disabled={busy} onclick={() => createPage()}>新建</button>
-        <button class="button" disabled={busy} onclick={importPDF}>导入 PDF</button>
-        {#if params.scope === "trash"}<button class="button" disabled={busy || !result.total} onclick={() => permanent(true)}>清空回收站</button>{/if}
-    </header>
-    <div class="view-tabs">{#each views as item (item.id)}<button class:active={params.scope === item.id} onclick={() => {
-        change({ scope: item.id });
-    }}>{item.label}</button>{/each}</div>
-    <div class="tag-filters">
-        <span>标签</span>
-        {#each definitions.find(item => item.id === "tags")?.metadata.options ?? [] as option (option.id)}
-            <button class:active={params.tags.includes(option.id)} onclick={() => {
-                change({ tags: params.tags.includes(option.id) ? params.tags.filter(id => id !== option.id) : [...params.tags, option.id].sort() });
-            }}>{option.name}</button>
-        {:else}
-            <span>在共享属性中添加第一个标签</span>
-        {/each}
-        {#each params.tags.filter(id => !definitions.find(def => def.id === "tags")?.metadata.options?.some(option => option.id === id)) as id (id)}
-            <button onclick={() => change({ tags: params.tags.filter(tag => tag !== id) })}>找不到标签 {id} <Icon name="close" size="1em" /></button>
-        {/each}
-    </div>
-    <details class="property-filters">
-        <summary>按属性筛选</summary>
-        <select bind:value={filterId}>
-            <option value="">选择属性</option>
-            {#each definitions.filter(item => !item.hidden && !item.readonly && item.id !== "deleted") as item (item.id)}
-                <option value={item.id}>{item.name || item.id}</option>
-            {/each}
-        </select>
-        {#if filterDefinition}
-            <AttributeInput definition={filterDefinition} value={filterValue} onchange={value => filterValue = value} />
-            <button class="button" onclick={() => {
-                change({ filters: [...params.filters.filter(f => f.attribute.id !== filterId), { attribute: { kind: "attribute", id: filterId }, value: copyData(filterValue) }] });
-            }}>添加条件</button>
-        {/if}
-        {#each Object.entries(filters) as [id, value] (id)}
-            <button class="filter-chip" onclick={() => {
-                change({ filters: params.filters.filter(f => f.attribute.id !== id) });
-            }}>{definitions.find(item => item.id === id)?.name ?? `找不到属性 ${id}`}：{attributeText(id, value)} <Icon name="close" size="1em" /></button>
-        {/each}
-    </details>
-    {#if error}<div class="notice error">{message(error)}<button onclick={() => retry++}>{t("dialog.retry")}</button></div>{/if}
-    {#if info}<p class="info">{info}</p>{/if}
-    <div class="list-toolbar"><span>{pending ? "正在读取…" : `${result.total} 个页面`}</span><div class="actions">
-        {#if selected.length}<button class="button" disabled={busy} onclick={bulk}>{params.scope === "trash" ? "恢复所选" : "移入回收站"}（{selected.length}）</button>{#if params.scope === "trash"}<button class="button" disabled={busy} onclick={() => permanent()}>永久删除（{selected.length}）</button>{/if}{/if}
-    </div></div>
-    <div class="page-list" role="grid" aria-label={params.scope === "trash" ? "回收站" : "页面列表"} aria-multiselectable="true" tabindex="0">
-        {#each result.items as page (page.id)}
-            <ContextActions items={pageMenu(page, source, selected.includes(page.id) ? selected : [page.id])}>
-                <div class="page-row" id={`library-${tabId}-${page.id}`} class:selected={selected.includes(page.id)} role="row" aria-selected={selected.includes(page.id)} tabindex="0" onclick={event => choose(page, event)} onkeydown={() => {}} ondblclick={event => openPage(page.id, { otherGroup: event.ctrlKey })} oncontextmenu={() => {
-                    if (!selected.includes(page.id)) {
-                        selected = [page.id]; anchor = page.id;
-                    }
-                }}>
-                    <Icon name={kindIcons[page.kind]} size={16} /><strong role="gridcell">{page.title || "未命名"}</strong><span class="excerpt" role="gridcell">{page.excerpt}</span>
-                    <span class="page-tags" role="gridcell">{#each Array.isArray(page.attributes.tags) ? page.attributes.tags : [] as id (id)}<b>{attributeText("tags", [id])}</b>{/each}</span>
-                    <small class="updated" role="gridcell">{attributeText("modified_at", page.attributes.modified_at)}</small>
-                </div>
-            </ContextActions>
-        {:else}<p class="empty-list">{pending ? "正在读取…" : params.scope === "trash" ? "回收站为空" : "没有页面"}</p>{/each}
-    </div>
-    {#if result.total > 40}<div class="pagination"><button class="button" disabled={pending || offset === 0} onclick={() => offset -= 40}>上一页</button><span>{offset + 1}–{Math.min(offset + 40, result.total)} / {result.total}</span><button class="button" disabled={pending || offset + 40 >= result.total} onclick={() => offset += 40}>下一页</button></div>{/if}
-</section>
-<style>
-    .library { max-width: none; padding: 8px; background: var(--c-paper); }
-    .library-toolbar { display: flex; align-items: center; gap: 6px; height: var(--library-toolbar-height); }
-    input:not([type="checkbox"]), select { min-width: 0; height: var(--button-height); padding-inline: 6px; border: var(--border-width) solid var(--c-line); border-radius: var(--control-radius); background: var(--c-paper); color: inherit; font-size: var(--font-secondary); }
-    .library-toolbar input { flex: 1; }
-    .view-tabs { display: flex; gap: 0; margin-block: 4px; }
-    .view-tabs button { height: var(--button-height); padding-inline: 10px; border: var(--border-width) solid var(--c-line); font-size: var(--font-secondary); }
-    .view-tabs button.active { background: var(--c-gold-light); }
-    .tag-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 17px 0; color: var(--c-muted); font-size: var(--font-min); }
-    .tag-filters button, .filter-chip { padding: 5px 9px; border: var(--border-width) solid var(--c-tab-header-border); border-radius: 7px; background: var(--c-paper); }
-    .tag-filters button.active { color: var(--c-ink); background: var(--c-sage); border-color: var(--c-ink); }
-    .property-filters { font-size: var(--font-secondary); }
-    .property-filters summary { cursor: pointer; margin: 12px 0; }
-    .property-filters > * { margin-bottom: 10px; }
-    .list-toolbar, .actions, .pagination { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: var(--font-secondary); }
-    .list-toolbar { min-height: var(--library-toolbar-height); color: var(--c-muted); }
-    .page-row { display: flex; align-items: center; gap: 8px; height: var(--library-row-height); border-bottom: var(--border-width) solid var(--c-line); padding-inline: 6px; outline-offset: -2px; }
-    .page-row:hover { background: var(--c-cream); }
-    .page-row.selected { background: var(--c-sage); }
-    .page-row strong { min-width: 90px; max-width: 36%; font-size: var(--font-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .excerpt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--c-muted); font-size: var(--font-secondary); }
-    .page-tags { display: flex; gap: 3px; max-width: 20%; overflow: hidden; }
-    .page-tags b { font-size: var(--font-min); font-weight: 400; white-space: nowrap; padding-inline: 3px; background: var(--c-cream); border-radius: var(--control-radius); }
-    .updated { color: var(--c-muted); font-size: var(--font-min); white-space: nowrap; }
-    .pagination { margin-top: 8px; }
-    .empty-list, .info { color: var(--c-muted); font-size: var(--font-secondary); }
-    @container (max-width: 500px) { .updated, .page-tags { display: none; } }
-</style>
+<script module lang="ts">
+    import { tabState } from "../Tab/state.svelte";
+    import type { Tab } from "../Tab/defs";
+    type Location = { selected: ReadonlySet<string>; keyword: string; top?: { id: string; index: number; offset: number } };
+    // Splitting/moving a group remounts its components, but keeps its tab objects.
+    const locations = new WeakMap<Tab, Location>();
+    function tabLocation(tabId: string): Location {
+        const tab = tabState.groups.flatMap(group => group.tabs).find(tab => tab.id === tabId);
+        const saved = tab && locations.get(tab);
+        if (saved) return saved;
+        const fresh: Location = { selected: new Set(), keyword: "" };
+        if (tab) locations.set(tab, fresh);
+        return fresh;
+    }
+</script>
+
 <script lang="ts">
-    import { t, failure, message, type ErrorValue } from "../../i18n.svelte";
-    import { registerEditing } from "../layout/commands";
-    import { onMount, untrack } from "svelte";
-    import { type AttributeDefinition, type AttributeValue } from "../../../shared/types/attributes";
-    import { display } from "../../../shared/attrs/format";
-    import { defaultValue } from "../../../shared/attrs/values";
-    import { currentTimeZone } from "../layout/preferences.svelte";
-    import { type PageKind, type PageList, type PageQuery, type PageSummary } from "../../../shared/types/content";
+    import { onMount, tick, untrack } from "svelte";
+    import { SvelteMap, SvelteSet } from "svelte/reactivity";
+    import { libraryText } from "../../../shared/attrs/format";
+    import { validateValue } from "../../../shared/attrs/values";
+    import { isTimeType } from "../../../shared/content/time";
+    import type { AttributeDefinition, AttributeValue } from "../../../shared/types/attributes";
+    import type { PageSummary } from "../../../shared/types/content";
+    import { defaultColumns, defaultLibrary, libraryBatchSize, repairLibraryFields, type LibraryIndex, type LibraryQuery } from "../../../shared/workspace/library";
+    import type { ViewParams } from "../../../shared/workspace/views";
+    import { currentLanguage, failure, message, t, type ErrorValue } from "../../i18n.svelte";
+    import Button from "../base/Button.svelte";
     import Icon from "../utils/Icon.svelte";
-    import ContextActions from "../utils/ContextActions.svelte";
-    import { pageMenu } from "./page-menu";
-    import { purgePages } from "./purge";
-    import AttributeInput from "./AttributeInput.svelte";
-    import { kindNames, kindIcons } from "./labels";
+    import { registerEditing } from "../layout/commands";
     import { createPage, openPage } from "../layout/navigation";
-    import { copyData } from "../copy-data";
-    import { confirmed } from "./confirmation.svelte";
-    import { registerList } from "./page-visits";
-    import { write } from "./page-sessions";
+    import { currentTimeZone } from "../layout/preferences.svelte";
     import { visits } from "../Tab/activity.svelte";
     import type { ViewProps } from "../Tab/views";
-    import type { ViewParams } from "../../../shared/workspace/views";
+    import { copyData } from "../copy-data";
+    import { propertyName } from "./attribute-labels";
+    import { pageMenu } from "./page-menu";
+    import { registerPageView } from "./page-visits";
+    import { write } from "./page-sessions";
+    import { confirmed } from "./confirmation.svelte";
+    import { purgePages } from "./purge";
+    import Resizer from "../utils/Resizer.svelte";
+    import PageInformation from "./PageInformation.svelte";
+    import LibraryGrid from "./LibraryGrid.svelte";
+    import { importedPages, importPapers } from "./library-import.svelte";
+    import LibraryFilters from "./LibraryFilters.svelte";
+    import LibraryToolbar from "./LibraryToolbar.svelte";
 
+    type Params = ViewParams["library"];
     let { tabId, params, onparams, source }: ViewProps<"library"> = $props();
-    function change(patch: Partial<ViewParams["library"]>): void {
-        onparams({ ...params, ...patch });
-        offset = 0;
-        selected = [];
-    }
-    const views = [{ id: "all", label: "全部页面" }, { id: "pinned", label: "已固定" }, { id: "trash", label: "回收站" }] as const;
-    let keyword = $state(""), applied = $state(""), offset = $state(0);
-    let selected = $state<string[]>([]), definitions = $state<AttributeDefinition[]>([]), result = $state<PageList>({ items: [], total: 0 });
-    let root: HTMLElement;
-    let retry = $state(0), anchor = $state("");
+    const location = untrack(() => tabLocation(tabId));
+    let root: HTMLElement, grid: LibraryGrid;
+    let index = $state.raw<LibraryIndex>({ ids: [], titles: [] }), definitions = $state.raw<AttributeDefinition[]>([]);
+    const rows = new SvelteMap<string, PageSummary>();
+    let names = $state.raw<Record<string, string>>({}), selected = $state.raw<ReadonlySet<string>>(location.selected);
+    let pending = $state(true), busy = $state(false), error = $state<ErrorValue>(""), keyword = $state(location.keyword), applied = $state(location.keyword);
     $effect(() => {
-        const value = keyword; const timer = setTimeout(() => {
-            applied = value; offset = 0; selected = [];
-        }, 200); return () => clearTimeout(timer);
+        location.selected = selected;
+        location.keyword = keyword;
     });
-    function choose(page: PageSummary, event: MouseEvent): void {
-        if (event.shiftKey && anchor) {
-            const from = result.items.findIndex(item => item.id === anchor), to = result.items.findIndex(item => item.id === page.id);
-            if (from >= 0) selected = result.items.slice(Math.min(from, to), Math.max(from, to) + 1).map(item => item.id);
-        }
-        else if (event.ctrlKey) {
-            selected = selected.includes(page.id) ? selected.filter(id => id !== page.id) : [...selected, page.id]; anchor = page.id;
-        }
-        else {
-            selected = [page.id]; anchor = page.id;
-        }
+    let subscriptions: ReturnType<typeof registerPageView> | undefined;
+    let generation = 0, schemaDirty = true, alive = true, loading = new SvelteSet<string>();
+    const defs = $derived(new Map(definitions.map(d => [d.id, d])));
+    const availableAttrs = $derived(new Set(definitions.filter(d => !d.hidden).map(d => d.id)));
+    const choices = $derived(["title", "kind", ...availableAttrs]);
+    const columns = $derived((params.columns ?? defaultColumns(!!params.paperOnly)).filter(c => !definitions.length || choices.includes(c.id)));
+    const sort = $derived(params.sort), zone = $derived(currentTimeZone());
+    const filters = $derived(Object.fromEntries(params.filters.map(f => [f.attribute.id, f.value])));
+    const userFiltered = $derived(!!(params.tags.length || params.filters.length || (!params.paperOnly && params.pageType)));
+    const query = $derived<LibraryQuery>({ keyword: applied, kind: params.paperOnly ? "paper" : params.pageType?.type,
+        sort, deleted: params.scope === "trash", ...(params.scope === "pinned" ? { pinned: true } : {}), tags: params.tags, attributes: filters, language: currentLanguage() });
+    const queryKey = $derived(JSON.stringify(query)), columnKey = $derived(columns.map(c => c.id).join("\n"));
+    let bodyWidth = $state(0), detail = $state("");
+    const paneWidth = $derived(Math.min(bodyWidth * .8, params.infoWidth ?? bodyWidth / 3));
+    const single = $derived(params.showProperties !== false && selected.size === 1 ? [...selected][0] : "");
+    $effect(() => {
+        const id = single;
+        detail = "";
+        if (!id) return;
+        const timer = setTimeout(() => detail = id, 80);
+        return () => clearTimeout(timer);
+    });
+    let lastQuery = $state(""), lastColumns = "";
+    $effect(() => {
+        const target = keyword;
+        const timer = setTimeout(() => applied = target, 200);
+        return () => clearTimeout(timer);
+    });
+    function change(patch: Partial<Params>): void {
+        onparams({ ...params, ...patch });
     }
-    function keys(event: KeyboardEvent): void {
-        if (event.isComposing || (event.target instanceof Element && event.target.closest("input,textarea,select"))) return;
-        if (event.ctrlKey && event.key.toLowerCase() === "a") {
-            event.preventDefault(); selected = result.items.map(page => page.id);
-        }
-        else if (event.key === "Enter" && selected.length) {
-            event.preventDefault(); for (const id of selected) openPage(id, { otherGroup: event.ctrlKey });
-        }
-        else if (event.key === "Delete" && selected.length && params.scope !== "trash") {
-            event.preventDefault(); void bulk();
-        }
-        else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-            event.preventDefault();
-            const index = result.items.findIndex(page => page.id === (selected.at(-1) ?? anchor)), next = result.items[Math.max(0, Math.min(result.items.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)))];
-            if (next) {
-                choose(next, { shiftKey: event.shiftKey, ctrlKey: event.ctrlKey } as MouseEvent); document.getElementById(`library-${tabId}-${next.id}`)?.focus();
-            }
-        }
+    function label(id: string): string {
+        if (id === "title") return t("quickOpen.title");
+        if (id === "kind") return t("library.type");
+        if (id === "created_at") return t("library.added");
+        if (id === "paper_year") return t("library.year");
+        if (id === "paper_venue") return t("library.venue");
+        const def = defs.get(id);
+        return def ? propertyName(def) : id;
     }
-    async function permanent(all = false): Promise<void> {
-        busy = true;
+    function valueText(id: string, value: AttributeValue | undefined): string {
+        const def = defs.get(id);
+        return def ? libraryText(def, value, currentLanguage(), zone, t, names) : "";
+    }
+    function cell(page: PageSummary, id: string): string {
+        if (id === "title") return page.title || t("shell.untitled");
+        if (id === "kind") return t(`library.${page.kind}`);
+        return valueText(id, page.attributes[id]);
+    }
+    function sortBy(id: string): void {
+        const type = defs.get(id)?.type;
+        const desc = sort.column === id ? sort.direction === "asc" : !!type && isTimeType(type);
+        change({ sort: { column: id, direction: desc ? "desc" : "asc" } });
+    }
+    async function fetchRows(ids: string[], version: number, refresh?: ReadonlySet<string>): Promise<void> {
+        const batch = loading, needed = ids.filter(id => !batch.has(id) && (!rows.has(id) || refresh?.has(id)));
+        if (!needed.length) return;
+        needed.forEach(id => batch.add(id));
         try {
-            if (await write(() => purgePages(all ? null : [...selected]))) selected = [];
-        }
-        catch (problem) {
-            error = failure(problem);
+            const updates = await window.api.pages.listUpdates({ ids: needed, limit: needed.length, deleted: query.deleted }, [], columns.map(c => c.id));
+            if (!alive || generation !== version) return;
+            if (updates.names) names = { ...names, ...updates.names };
+            for (const page of updates.items) rows.set(page.id, page);
         }
         finally {
-            busy = false;
+            needed.forEach(id => batch.delete(id));
         }
     }
-    let pending = $state(false), busy = $state(false), error = $state<ErrorValue>(""), info = $state(""), filterId = $state("");
-    const filters = $derived(Object.fromEntries(params.filters.map(f => [f.attribute.id, f.value])));
-    const filterDefinition = $derived(definitions.find(item => item.id === filterId));
-    let filterValue = $derived<AttributeValue>(filterDefinition ? defaultValue(filterDefinition.type) : null);
-    const query = $derived<PageQuery>({ keyword: applied, kind: params.pageType?.type, sort: params.sort, offset, limit: 40, deleted: params.scope === "trash", ...(params.scope === "pinned" ? { pinned: true } : {}), tags: [...params.tags], attributes: { ...filters } });
-    let definitionsDirty = false;
-    onMount(() => {
-        const offEditing = registerEditing(root, command => {
-            if (command === "selectAll") selected = result.items.map(page => page.id);
+    function range(first: number, end: number): void {
+        const version = generation;
+        const from = Math.floor(first / libraryBatchSize) * libraryBatchSize, to = Math.ceil((end + 12) / libraryBatchSize) * libraryBatchSize;
+        void fetchRows(index.ids.slice(from, to), version).catch(problem => {
+            if (alive && generation === version) error = failure(problem);
         });
-        const offList = registerList(tabId, change => {
-            definitionsDirty ||= !!change.definition;
-            return [
-                ...(change.summaryPages ?? change.pages).filter(id => !query.kind || !change.kinds || change.kinds[id] === query.kind),
-                ...(change.definition ? [change.definition] : [])
-            ];
-        }, load);
-        return () => {
-            offEditing(); offList();
-        };
-    });
-    $effect(() => {
-        void query; void retry;
-        if (query.keyword) currentTimeZone();
-        untrack(() => visits.refresh(tabId));
-    });
+    }
     async function load(ids: string[], initial: boolean): Promise<void> {
-        pending = initial;
+        const key = queryKey, fields = columnKey, version = ++generation;
+        const reset = key !== lastQuery, schema = schemaDirty, at = !lastQuery ? location.top : reset ? undefined : grid?.position();
+        loading = new SvelteSet();
+        pending = initial || !index.ids.length;
         try {
-            const changed = new Set(ids);
-            // This lookup exists only until the query result is assembled.
-            // eslint-disable-next-line svelte/prefer-svelte-reactivity
-            const kept = new Map(result.items.filter(row => !initial && !changed.has(row.id)).map(row => [row.id, row]));
-            const pages = await window.api.pages.listUpdates(copyData(query), [...kept.keys()]);
-            for (const row of pages.items) kept.set(row.id, row);
-            result = { items: pages.order.map(id => kept.get(id)!), total: pages.total };
-            if (initial || definitionsDirty) {
-                definitionsDirty = false;
-                try {
-                    definitions = await window.api.attributes.definitions();
-                }
-                catch (problem) {
-                    definitionsDirty = true;
-                    throw problem;
+            if (schema) {
+                const next = await window.api.attributes.definitions();
+                if (!alive) return;
+                definitions = next; schemaDirty = false;
+            }
+            const repaired = repairLibraryFields(params, availableAttrs);
+            if (repaired !== params) {
+                onparams(repaired);
+                await tick();
+                subscriptions?.refresh();
+                return;
+            }
+            try {
+                for (const [id, value] of Object.entries(filters)) {
+                    const def = defs.get(id);
+                    if (def) validateValue(def, value);
                 }
             }
-            selected = selected.filter(id => pages.order.includes(id));
+            catch {
+                onparams(defaultLibrary(params.paperOnly));
+                return;
+            }
+            const changed = new Set(ids), refreshAll = fields !== lastColumns || schema;
+            const initialColumns = !lastQuery && !at?.index ? columns.map(c => c.id) : undefined;
+            const { initial: firstRows, ...next } = await window.api.pages.libraryIndex(copyData(query), initialColumns);
+            if (!alive || key !== queryKey) return;
+            for (const page of firstRows ?? []) rows.set(page.id, page);
+            const positions = new Set(next.ids);
+            const anchor = at?.id ? next.ids.indexOf(at.id) : -1;
+            const first = anchor >= 0 ? anchor : Math.max(0, Math.min(at?.index ?? 0, next.ids.length - 1));
+            const viewport = next.ids.slice(Math.max(0, first - 2), first + libraryBatchSize), kept = new Set(viewport);
+            if (!firstRows || first > 0) await fetchRows(viewport, version, refreshAll ? kept : changed);
+            if (!alive || key !== queryKey) return;
+            for (const id of rows.keys()) {
+                if (!positions.has(id) || (!kept.has(id) && (refreshAll || changed.has(id)))) rows.delete(id);
+            }
+            if (next.names) names = { ...names, ...next.names };
+            index = next;
+            if ([...selected].some(id => !positions.has(id))) selected = new SvelteSet([...selected].filter(id => positions.has(id)));
+            lastQuery = key; lastColumns = fields;
+            await tick();
+            if (reset || (at && grid?.position().id !== at.id)) grid?.scrollToRow(first, at?.offset);
             error = "";
         }
         catch (problem) {
@@ -234,37 +188,36 @@
             throw problem;
         }
         finally {
-            pending = false;
+            if (alive && generation === version) pending = false;
         }
     }
-    let fileNames = $state<Record<string, string>>({});
-    $effect(() => {
-        const ids = Object.entries(filters).flatMap(([id, value]) => {
-            const type = definitions.find(item => item.id === id)?.type;
-            return type === "file" && typeof value === "string" ? [value] : type === "files" && Array.isArray(value) ? value as string[] : [];
+    onMount(() => {
+        const offEditing = registerEditing(root, command => {
+            if (command === "selectAll") grid.selectAll();
         });
-        let active = true;
-        void window.api.papers.files([...new Set(ids)]).then(files => {
-            if (active) fileNames = Object.fromEntries(files.map(file => [file.id, file.originalName]));
-        }, problem => {
-            if (active) error = failure(problem);
+        subscriptions = registerPageView(tabId, {
+            changed(event) {
+                schemaDirty ||= !!event.definition;
+                return [...(event.summaryPages ?? event.pages), ...(event.purged ?? []), ...(event.definition ? [event.definition] : [])];
+            }, read: load
         });
         return () => {
-            active = false;
+            if (index.ids.length) location.top = grid?.position() ?? location.top;
+            alive = false; subscriptions?.(); offEditing();
         };
     });
-    function attributeText(id: string, value: AttributeValue): string {
-        const definition = definitions.find(item => item.id === id);
-        return definition ? display(definition, value, { zone: currentTimeZone(), fileName: id => fileNames[id] }) : "";
+    $effect(() => {
+        void queryKey; void columnKey; void zone;
+        untrack(() => subscriptions?.refresh());
+    });
+    function open(ids: string[], side: boolean): void {
+        ids.forEach((id, i) => openPage(id, { currentGroup: true, otherGroup: side && i === 0 }));
     }
-    async function importPDF(): Promise<void> {
+    async function operate(action: () => Promise<unknown>): Promise<void> {
+        if (busy) return;
         busy = true;
         try {
-            const result = await write(() => window.api.papers.importPDF(source));
-            if (result) {
-                info = "PDF 已复制到工作区。";
-                openPage(result.pageId);
-            }
+            await action(); error = "";
         }
         catch (problem) {
             error = failure(problem);
@@ -273,17 +226,82 @@
             busy = false;
         }
     }
-    async function bulk(): Promise<void> {
-        busy = true;
-        try {
-            const ids = [...selected];
-            if (await write(() => confirmed(token => params.scope === "trash" ? window.api.pages.restore(ids, source) : window.api.pages.trash(ids, source, token)))) selected = [];
-        }
-        catch (problem) {
-            error = failure(problem);
-        }
-        finally {
-            busy = false;
-        }
+    const restrictedTrash = $derived(!!params.paperOnly || userFiltered || !!keyword.trim());
+    const resultsPending = $derived(pending || queryKey !== lastQuery || keyword.trim() !== applied.trim());
+    function remove(all = false): void {
+        if (all && (resultsPending || !index.ids.length)) return;
+        const ids = all ? [...index.ids] : [...selected], trash = params.scope === "trash";
+        void operate(() => write(() => trash ? purgePages(all && !restrictedTrash ? null : ids)
+            : confirmed(token => window.api.pages.trash(ids, source, token))));
     }
+    function actions(row: PageSummary): ReturnType<typeof pageMenu> {
+        const ids = selected.has(row.id) ? [...selected] : [row.id];
+        return pageMenu(row, source, ids, true).map(item => item.id === "open" || item.id === "openSide" ? { ...item, run: () => open(ids, item.id === "openSide") } : item);
+    }
+    function importPDF(paths?: string[], pageId?: string): void {
+        void operate(() => importPapers(pageId ? { kind: "page", id: pageId } : source, { paths, pageId, tabId }));
+    }
+    async function selectImported(ids: string[]): Promise<void> {
+        const current = new Set(index.ids);
+        if (ids.some(id => !current.has(id))) {
+            const before = queryKey;
+            keyword = ""; applied = "";
+            if (params.scope !== "all" || userFiltered) change({ scope: "all", tags: [], filters: [], pageType: undefined });
+            await tick();
+            // A changed query has already requested its read. Otherwise request exactly one.
+            if (queryKey === before) subscriptions?.refresh();
+            await visits.settled(tabId);
+        }
+        if (!alive || importedPages.get(tabId) !== ids) return;
+        const present = new Set(index.ids), matches = ids.filter(id => present.has(id));
+        selected = new SvelteSet(matches);
+        if (matches.length) grid?.scrollToRow(index.ids.indexOf(matches[0]));
+        importedPages.delete(tabId);
+    }
+    $effect(() => {
+        const ids = importedPages.get(tabId);
+        if (ids) untrack(() => void selectImported(ids));
+    });
 </script>
+
+<section class="library" bind:this={root}>
+    <LibraryToolbar scope={params.scope} bind:keyword filtered={userFiltered}
+        {busy} {pending} {restrictedTrash} empty={resultsPending || !index.ids.length} onscope={scope => change({ scope })} oncreate={() => createPage({}, query.kind === "paper" ? "paper" : "editable")}
+        onimport={() => importPDF()} onempty={() => remove(true)}>
+        {#snippet filters()}<LibraryFilters {params} {definitions} {change} />{/snippet}
+    </LibraryToolbar>
+    {#if index.ids.length || userFiltered}
+        <div class="library-status">
+            {#if !params.paperOnly && params.pageType}<Button variant="text" onclick={() => change({ pageType: undefined })}>{t(`library.${params.pageType.type}`)} <Icon name="close" size="var(--ui-icon-small)" /></Button>{/if}
+            {#each params.tags as id (id)}<Button variant="text" onclick={() => change({ tags: params.tags.filter(tag => tag !== id) })}>{defs.get("tags")?.metadata.options?.find(o => o.id === id)?.name ?? id} <Icon name="close" size="var(--ui-icon-small)" /></Button>{/each}
+            {#each params.filters as filter (filter.attribute.id)}<Button variant="text" onclick={() => change({ filters: params.filters.filter(f => f.attribute.id !== filter.attribute.id) })}>{label(filter.attribute.id)} · {valueText(filter.attribute.id, filter.value) || t("property.empty")} <Icon name="close" size="var(--ui-icon-small)" /></Button>{/each}
+            <span class="total">{t("library.count", { count: index.ids.length })}</span>
+        </div>
+    {/if}
+    {#if error}<div class="error" role="alert">{message(error)} <Button onclick={() => subscriptions?.refresh()}>{t("dialog.retry")}</Button></div>{/if}
+    <div class="library-body" bind:clientWidth={bodyWidth}>
+        <LibraryGrid bind:this={grid} {index} {rows} {columns} {choices} {sort} bind:selected {pending} {label} {cell}
+            onsort={sortBy} oncolumns={columns => change({ columns })} onreset={() => change({ columns: undefined })}
+            onrange={range} onfiles={params.scope === "trash" || busy ? undefined : importPDF} {actions} onopen={open} ondelete={() => remove()} />
+        {#if params.showProperties !== false}
+            <Resizer direction="vertical" label={t("library.panelWidth")} origin={bodyWidth - paneWidth} min={bodyWidth * .2} max={bodyWidth * .85}
+                changeCB={width => change({ infoWidth: Math.max(1, Math.round(bodyWidth - width)) })} />
+            <aside style:width={paneWidth + "px"} aria-label={t("editor.properties")}>
+                {#if selected.size > 1}<div data-paragraph>{t("library.selected", { count: selected.size })}</div>
+                {:else if detail && detail === single}{#key detail}<PageInformation {tabId} pageId={detail} />{/key}{/if}
+            </aside>
+        {/if}
+    </div>
+</section>
+
+<style>
+    .library { height: 100%; min-height: 0; display: flex; flex-direction: column; color: var(--ui-text); background: var(--ui-surface-window); font-family: var(--ui-font-family); }
+    .library-status, .error { display: flex; align-items: center; gap: var(--ui-space-2); padding-inline: var(--ui-space-3); min-height: var(--ui-row-height); font-size: var(--ui-font-small); color: var(--ui-text-secondary); }
+    .library-status { flex: none; overflow-x: auto; white-space: nowrap; }
+    .library-status :global(button) { flex: none; font-size: inherit; height: var(--ui-row-height); }
+    .total { margin-inline-start: auto; }
+    .error { color: var(--ui-danger); }
+    aside { flex: none; overflow: auto; min-width: 0; }
+    aside > :where([data-paragraph]) { padding: var(--ui-space-3); color: var(--ui-text-secondary); font-size: var(--ui-font-small); }
+    .library-body { flex: 1; display: flex; min-width: 0; min-height: 0; }
+</style>

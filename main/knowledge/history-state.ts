@@ -12,7 +12,7 @@ type Node = { entry: Entry; previous: Node | null; next: Node | null };
 type Timeline = { source: HistorySource; first: Node | null; cursor: Node | null };
 export type Replay = { timeline: Timeline; node: Node; direction: "undo" | "redo" };
 export type Invalidation = { keys: string[]; permanent: boolean };
-export type Capture = { source: HistorySource; page: string; rows: RowChanges; replay?: Replay };
+export type Capture = { source: HistorySource; page: string; rows: RowChanges; dependencies?: Set<string>; replay?: Replay };
 
 const timelines = new Map<string, Timeline>();
 // Map iteration follows insertion order, including after unrelated records are removed.
@@ -136,6 +136,11 @@ function capture(inputs: Capture[], pages: string[], changed: Set<Timeline>): vo
     for (const { replay } of inputs) if (replay) targets.delete(replay.timeline);
     if (!targets.size) return;
     const dependencies = new Set(inputs.map(({ page }) => "page:" + page));
+    for (const { source, dependencies: targets, replay } of inputs) {
+        if (source.kind === "page") dependencies.add("page:" + source.id);
+        for (const key of targets ?? []) dependencies.add(key);
+        for (const key of replay?.node.entry.dependencies ?? []) dependencies.add(key);
+    }
     // Attribute definitions are dependencies of saved page values. A definition change
     // invalidates those values, while editing the same field on a different page does not.
     for (const side of [rows.before, rows.after]) for (const value of Object.values(side)) {

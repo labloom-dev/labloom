@@ -165,6 +165,7 @@
 
     --ui-font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
     --ui-font-mono: "Cascadia Mono", Consolas, ui-monospace, "SFMono-Regular", Menlo, "Liberation Mono", monospace;
+    --ui-font-code: "Cascadia Mono", Consolas, "SFMono-Regular", Menlo, "Liberation Mono", var(--ui-font-family);
     --ui-font-small: 12px;
     --ui-font-body: 14px;
     --ui-font-title: 20px;
@@ -217,7 +218,7 @@
     --ui-properties-width: 300px;
     --ui-editor-preview-width: 320px;
     --ui-editor-drag-preview-height: 200px;
-    --ui-editor-block-selection: var(--ui-text-selection);
+    --ui-editor-block-selection: color-mix(in srgb, var(--ui-accent) 22%, transparent);
     --ui-editor-sync-border: var(--ui-text-match);
     --ui-editor-fg-gray: var(--ui-p-ink-gray);
     --ui-editor-fg-light-gray: var(--ui-p-ink-light-gray);
@@ -246,12 +247,6 @@
     --ui-editor-bg-pink: var(--ui-p-tint-pink);
     --ui-editor-bg-magenta: var(--ui-p-tint-magenta);
 
-    /* All portalled to the document body, in ascending paint order. */
-    --ui-z-dropdown: 100;
-    --ui-z-popover: 200;
-    --ui-z-tooltip: 300;
-    --ui-z-dialog: 400;
-    --ui-z-context-menu: 500;
     --ui-duration-fast: 90ms;
     --ui-duration-normal: 150ms;
 }

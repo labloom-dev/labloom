@@ -1,5 +1,4 @@
 <Popover label={t("editor.colors")} bind:open={() => open, setOpen} align={attached ? "end" : "start"}
-    portal={attached ? anchor : editor?.view.dom.closest<HTMLElement>(":popover-open") ?? undefined}
     contentProps={{ class: "editor-colors", customAnchor: attached ? anchor : caretAnchor, onOpenAutoFocus: openColors,
         onCloseAutoFocus: event => {
             event.preventDefault(); if (!editor?.isDestroyed) restoreFocus();
@@ -114,10 +113,6 @@
         element.querySelector<HTMLButtonElement>(".color-choice:not(:disabled)")?.focus({ preventScroll: true });
     }
 
-    function closeColors(): void {
-        open = false;
-        restoreFocus();
-    }
     function restoreFocus(): void {
         if (returnFocus && anchor?.matches(":popover-open") && anchor.contains(returnFocus)) {
             returnFocus.focus({ preventScroll: true });
@@ -191,14 +186,6 @@
             if (!inside) return;
             const modifier = isMac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
 
-            if (open && event.key === "Escape") {
-                consume(event);
-                if (!event.repeat) {
-                    heldKeys.add(event.code);
-                    closeColors();
-                }
-                return;
-            }
             if (modifier && !event.altKey && !event.shiftKey && ["KeyR", "KeyJ", "KeyK"].includes(event.code)) {
                 consume(event);
                 if (event.repeat) return;

@@ -1,6 +1,7 @@
 <script lang="ts">
     import { Popover } from "bits-ui";
     import { tick } from "svelte";
+    import TopLayer from "../base/TopLayer.svelte";
     import { recent, search } from "./page-search";
     import { t } from "../../i18n.svelte";
     import { commandDisabled, prepareCommands, rememberFocus, runCommand } from "../layout/commands";
@@ -49,20 +50,24 @@
             <SearchTrigger {...props} onmousedown={event => event.preventDefault()} />
         {/snippet}
     </Popover.Trigger>
-    <Popover.Portal>
-        <Popover.Content class="ui-popup search-popup" aria-label={t("quickOpen.input")} align="center"
-            sideOffset={-(trigger?.offsetHeight ?? 0)} collisionPadding={{ left: 8, right: 8 }} onOpenAutoFocus={opened} onCloseAutoFocus={event => event.preventDefault()}>
-            {#if shell.search}
-                <GSPopover bind:input bind:query={shell.query} {search}
-                    {recent} formatTime={ms => clock.format(ms)} disabled={commandDisabled}
-                    onchoose={selected => {
-                        if (shell.search) {
-                            choice = selected; shell.search = false;
-                        }
-                    }} />
-            {/if}
-        </Popover.Content>
-    </Popover.Portal>
+    <Popover.Content class="ui-popup search-popup" aria-label={t("quickOpen.input")} align="center" strategy="fixed"
+        sideOffset={-(trigger?.offsetHeight ?? 0)} collisionPadding={{ left: 8, right: 8 }} onOpenAutoFocus={opened} onCloseAutoFocus={event => event.preventDefault()}>
+        {#snippet child({ props, wrapperProps })}
+            <TopLayer props={wrapperProps}>
+                <div {...props}>
+                    {#if shell.search}
+                        <GSPopover bind:input bind:query={shell.query} {search}
+                            {recent} formatTime={ms => clock.format(ms)} disabled={commandDisabled}
+                            onchoose={selected => {
+                                if (shell.search) {
+                                    choice = selected; shell.search = false;
+                                }
+                            }} />
+                    {/if}
+                </div>
+            </TopLayer>
+        {/snippet}
+    </Popover.Content>
 </Popover.Root>
 
 <style>
@@ -71,6 +76,5 @@
         width: min(var(--ui-search-width), calc(100vw - 2 * var(--ui-space-3)));
         max-height: min(calc(100vh - var(--ui-space-5)), var(--bits-popover-content-available-height));
         overflow: hidden;
-        z-index: var(--ui-z-popover);
     }
 </style>

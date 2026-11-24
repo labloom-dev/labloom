@@ -52,7 +52,8 @@ export function prepareValues(pageId: string, values: Record<string, AttributeVa
         let value = values[id];
         if (!removing && id === "feed_url" && value !== "") {
             value = feedURL(String(value));
-            const duplicate = workspace.database().$client.prepare("SELECT p.page_id FROM page_attrs p JOIN pages ON pages.id=p.page_id WHERE p.attr_id='feed_url' AND pages.kind='feed' AND p.value=? AND p.page_id<>? LIMIT 1").get(value, pageId);
+            const duplicate = statement(`SELECT 1 FROM page_attrs p JOIN page_attrs d ON d.page_id=p.page_id AND d.attr_id='deleted' AND d.value=0
+                WHERE p.attr_id='feed_url' AND p.value=? AND p.page_id<>? LIMIT 1`).get(value, pageId);
             if (duplicate) throw new LabloomError({ kind: "feed-duplicate" });
         }
         if (!removing && id === "feed_refresh" && value !== null) {
@@ -87,7 +88,7 @@ function validateOwnership(pageId: string, values: PreparedValue[]): void {
     }
 }
 
-export function persistValues(pageId: string, values: PreparedValue[]): void {
+function persistValues(pageId: string, values: PreparedValue[]): void {
     workspace.requireWorkspace();
     for (const { id, definition, row } of values) {
         if (!row) statement("DELETE FROM page_attrs WHERE page_id=? AND attr_id=?").run(pageId, id);

@@ -2,7 +2,7 @@ html, body { width: auto; height: auto; min-height: 100%; overflow: visible; }
 body { background: var(--ui-surface-window); color: var(--ui-text); font: var(--ui-font-body)/1.5 var(--ui-font-family); user-select: text; }
 .catalog-header, .catalog { max-width: 1480px; margin: auto; padding-inline: clamp(16px, 4vw, 64px); }
 .catalog-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding-block: 32px 24px; border-bottom: 1px solid var(--ui-divider); }
-.catalog-header p { margin: 0 0 6px; color: var(--ui-text-secondary); font-size: var(--ui-font-small); }
+.catalog-header :where([data-paragraph]) { margin: 0 0 6px; color: var(--ui-text-secondary); font-size: var(--ui-font-small); }
 .catalog-header h1 { margin: 0; font-size: 28px; font-weight: 600; }
 .theme-tools, .theme-choice, .examples { display: flex; align-items: center; gap: var(--ui-space-3); flex-wrap: wrap; }
 .theme-tools { gap: 18px; }
@@ -46,8 +46,8 @@ body.specimen { padding: 12px; }
 .metric-bar { height: 4px; }
 .metric-shape { width: 12px; height: 12px; }
 .icon-comparison { display: flex; flex-wrap: wrap; gap: var(--ui-space-6); margin-bottom: var(--ui-space-5); }
-.icon-comparison p { margin: var(--ui-space-3) 0 0; }
-.icon-comparison p .icon:not(:first-child) { margin-inline-start: var(--ui-space-3); }
+.icon-comparison :where([data-paragraph]) { margin: var(--ui-space-3) 0 0; }
+.icon-comparison :where([data-paragraph]) .icon:not(:first-child) { margin-inline-start: var(--ui-space-3); }
 .glyphs { grid-template-columns: repeat(auto-fill, minmax(min(210px, 100%), 1fr)); }
 .glyphs > div { min-height: 34px; }
 .glyphs small { display: block; color: var(--ui-text-secondary); font-size: var(--ui-font-small); }

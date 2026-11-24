@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { onDestroy, tick } from "svelte";
+    import { onDestroy, onMount, tick } from "svelte";
     import type { PageBlockList, PageSummary, Target } from "../../../shared/types/content";
     import { t, failure, message, type ErrorValue } from "../../i18n.svelte";
     import Popover from "../base/Popover.svelte";
@@ -16,10 +16,10 @@
         onselect: (target: Target, label: string) => void; onclose: () => void;
     } = $props();
     const origin = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const portal = origin?.closest<HTMLElement>(":popover-open") ?? undefined;
     let page = $state.raw<PageBlockList | null>(null), pageQuery = $state(""), filter = $state(""), selected = $state(0);
     let input = $state<HTMLInputElement>(), loading = $state(false), error = $state<ErrorValue>("");
     let generation = 0;
+    let browsing: string | undefined;
     const anchor = {
         getBoundingClientRect(): DOMRect {
             if (position) {
@@ -47,8 +47,12 @@
     onDestroy(() => {
         generation++;
     });
+    onMount(() => window.api?.pages.onChanged(change => {
+        if (browsing && (change.recycledPages?.includes(browsing) || change.purged?.includes(browsing))) back();
+    }));
     async function browse(item: Pick<PageSummary, "id">): Promise<void> {
         const request = ++generation;
+        browsing = item.id;
         loading = true; error = "";
         try {
             const result = await source.blockList(item.id);
@@ -63,7 +67,7 @@
         }
     }
     function back(): void {
-        generation++; page = null; filter = ""; selected = 0; error = "";
+        generation++; browsing = undefined; page = null; filter = ""; selected = 0; loading = false; error = "";
     }
     function finish(target?: Target, title = ""): void {
         generation++;
@@ -88,7 +92,7 @@
     });
 </script>
 
-<Popover label={t("editor.choosePage")} bind:open={() => open, toggle} align={position ? "start" : "center"} {portal} contentProps={content}>
+<Popover label={t("editor.choosePage")} bind:open={() => open, toggle} align={position ? "start" : "center"} contentProps={content}>
     {#if page}
         <SearchList bind:query={filter} bind:input bind:selected options={rows} label={t("editor.blocks", { title: page.title || t("shell.untitled") })}
             empty={t("editor.noBlocks")} onback={back} onchoose={index => {
@@ -99,7 +103,7 @@
             onbrowse={mode === "page" ? undefined : browse} onpage={item => mode === "sync" ? browse(item) : finish({ kind: "page", id: item.id }, item.title || t("shell.untitled"))} />
     {/if}
     {#if loading}<div class="progress" role="progressbar" aria-label={t("editor.loadingReference")}></div>{/if}
-    {#if error}<p role="alert">{message(error)}</p>{/if}
+    {#if error}<div data-paragraph role="alert">{message(error)}</div>{/if}
 </Popover>
 
 <style>
@@ -107,5 +111,5 @@
     :global(.title-picker) { width: min(var(--ui-search-width), calc(100vw - 2 * var(--ui-space-3))); }
     :global(.inline-picker) { width: var(--ui-editor-preview-width); }
     .progress { height: var(--ui-active-border); background: var(--ui-accent); }
-    p { margin: var(--ui-space-2) var(--ui-space-3); font-size: var(--ui-font-small); color: var(--ui-danger); }
+    :where([data-paragraph]) { margin: var(--ui-space-2) var(--ui-space-3); font-size: var(--ui-font-small); color: var(--ui-danger); }
 </style>

@@ -274,6 +274,16 @@ export async function checkEditing(ids: { large: string; origin: string; geometr
         const backlink = field.querySelector<HTMLElement>(".editor-backlinks")!;
         await hoverAt(edge, center(backlink.getBoundingClientRect()));
         await hoverAt(outer, center(boxOf(A)), A);
+        const toggle = handle()!.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
+        const bounds = toggle.getBoundingClientRect(), toggleX = bounds.left + bounds.width / 2, toggleY = center(bounds);
+        const caret = sample.state.selection;
+        for (const expanded of [false, true, false, true]) {
+            assert(document.elementFromPoint(toggleX, toggleY)?.closest("button") === toggle, "Fold control moved without pointer input");
+            toggle.click(); await paint();
+            assert(toggle.isConnected && toggle.getAttribute("aria-expanded") === String(expanded)
+                && (getComputedStyle(element(B.attrs.blockId)).display !== "none") === expanded, "Repeated fold click lost its control or state");
+            assert(sample.view.hasFocus() && sample.state.selection.eq(caret), "Fold click moved the caret");
+        }
         await hoverAt(boxOf(B).left - 4, center(boxOf(B)), B);
         await hoverAt(edge, center(boxOf(B)), B);
         const divide = (boxOf(B).bottom + element(C.attrs.blockId).getBoundingClientRect().top) / 2;
@@ -287,7 +297,10 @@ export async function checkEditing(ids: { large: string; origin: string; geometr
         await hoverAt(outer, divide - 1, B); await hoverAt(edge, divide + 1, C);
         sample.commands.setTextSelection(pos); key(field, "Enter", { ctrlKey: true }); await paint();
         await hoverAt(outer, center(boxOf(A)), A);
+        assert(handle()!.querySelector("[aria-expanded=false] [data-icon=chevron-right]"), "Collapsed row handle lost its fold arrow");
         await hoverAt(edge, center(boxOf(C)), C);
+        assert(!handle()!.querySelector("[aria-expanded]") && getComputedStyle(element(A.attrs.blockId), "::before").content === "none",
+            "Fold arrow remained on the collapsed row after its handle left");
         key(field, "Enter", { ctrlKey: true }); await paint();
         await hoverAt(edge, boxOf(F).bottom + 15);
         const startC = pos - 2 + A.nodeSize;

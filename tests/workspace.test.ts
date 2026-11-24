@@ -350,7 +350,7 @@ test("business edits update last_modified_at while reads and unchanged updates d
             database.prepare("UPDATE blocks SET content = 'edited' WHERE id = ?").run(content);
         },
         (): void => {
-            database.prepare("UPDATE pages SET kind = 'paper' WHERE id = ?").run(created.id);
+            database.prepare("UPDATE pages SET kind = 'annotation' WHERE id = ?").run(created.id);
         },
         (): void => {
             database.exec("UPDATE attrs_meta SET name = 'Updated' WHERE id = 'custom:test'");

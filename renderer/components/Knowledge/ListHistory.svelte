@@ -1,11 +1,11 @@
 {#if history.canUndo || history.canRedo}
-    <button class="button" disabled={!history.canUndo} onclick={() => apply("undo")}>撤销</button>
-    <button class="button" disabled={!history.canRedo} onclick={() => apply("redo")}>重做</button>
+    <button class="button" disabled={!history.canUndo} onclick={() => apply("undo")}>{t("command.undo")}</button>
+    <button class="button" disabled={!history.canRedo} onclick={() => apply("redo")}>{t("command.redo")}</button>
 {/if}
 
 <script lang="ts">
     import type { HistoryState } from "../../../shared/types/knowledge";
-    import { confirmed } from "./confirmation.svelte";
+    import { t } from "../../i18n.svelte";
     import { perform } from "./feedback.svelte";
     import { write } from "./page-sessions";
     import { onMount } from "svelte";
@@ -18,7 +18,7 @@
     }));
     function apply(direction: "undo" | "redo"): void {
         void perform(async () => {
-            await write(() => confirmed(token => window.api.history.apply(source, direction, token)));
+            await write(() => window.api.history.apply(source, direction));
         });
     }
 </script>

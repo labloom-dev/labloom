@@ -11,9 +11,10 @@ type Args<Key extends keyof typeof papersChannels> = Parameters<PapersAPI[Key]>;
 export function registerPapersIPCs(window: BrowserWindow): void {
     const routes = {
         importPDF: route(typia.createAssert<Args<"importPDF">>(invalid), async (...[source, pageId]) => {
-            const path = await dialogs.selectPDF(window);
-            return path ? papers.importFile(path, pageId, source) : null;
+            const paths = await dialogs.selectPDF(window);
+            return papers.importPaths(paths, source, pageId, true);
         }),
+        importPaths: route(typia.createAssert<Args<"importPaths">>(invalid), papers.importPaths),
         importFiles: route(typia.createAssert<Args<"importFiles">>(invalid), async (...[pageId, attributeId, source]) => {
             const paths = await dialogs.selectFiles(window, papers.fileSelection(attributeId));
             return paths.length ? papers.attachFiles(paths, pageId, attributeId, source) : null;
@@ -25,6 +26,7 @@ export function registerPapersIPCs(window: BrowserWindow): void {
             if (error) throw new LabloomError({ kind: "attachment-open-failed", diagnostic: error });
         }),
         resources: route(typia.createAssert<Args<"resources">>(invalid), papers.resources),
+        annotationPaper: route(typia.createAssert<Args<"annotationPaper">>(invalid), papers.annotationPaper),
         readFile: route(typia.createAssert<Args<"readFile">>(invalid), papers.read),
         unlockPDF: route(typia.createAssert<Args<"unlockPDF">>(invalid), papers.unlockPDF),
         changeAnnotation: route(typia.createAssert<Args<"changeAnnotation">>(invalid), papers.changeAnnotation),

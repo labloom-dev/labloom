@@ -1,3 +1,5 @@
+import { showLayer } from "../base/top-layer";
+
 type Point = { x: number; y: number };
 
 export function dragPreview(rows: HTMLElement[], grabbed: HTMLElement, grip: Point): { move: (point: Point) => void; close: () => void } {
@@ -7,7 +9,7 @@ export function dragPreview(rows: HTMLElement[], grabbed: HTMLElement, grip: Poi
     ghost.inert = true;
     ghost.setAttribute("aria-hidden", "true");
     document.body.append(ghost);
-    ghost.showPopover();
+    const hide = showLayer(ghost);
 
     const first = rows[0].getBoundingClientRect(), last = rows[rows.length - 1].getBoundingClientRect();
     const origin = grabbed.getBoundingClientRect(), pointer = { x: origin.left + grip.x, y: origin.top + grip.y };
@@ -43,6 +45,9 @@ export function dragPreview(rows: HTMLElement[], grabbed: HTMLElement, grip: Poi
         move(point) {
             ghost.style.transform = `translate3d(${left + point.x - pointer.x}px, ${top + point.y - pointer.y}px, 0)`;
         },
-        close: () => ghost.remove()
+        close: () => {
+            hide();
+            ghost.remove();
+        }
     };
 }

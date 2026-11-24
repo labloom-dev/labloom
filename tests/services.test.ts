@@ -96,7 +96,7 @@ test("every public service operation rejects a closed session before validating 
         () => records.get(page.id), () => records.list(), () => records.listUpdates({}, []), () => records.readObjects(page.id, []),
         () => records.header(""), () => records.readBatch([]), () => records.sharedUses([]), () => records.backlinks(page.id),
         () => records.resolve({ kind: "page", id: page.id }), () => attributes.definitions(), () => attributes.definition("tags"),
-        () => edits.create(workspaceHistory), () => edits.commitEdit({} as never, workspaceHistory), () => edits.previewEdit({} as never), () => edits.syncBlocks("", []),
+        () => edits.create(workspaceHistory), () => edits.commitEdit({} as never, workspaceHistory), () => edits.syncBlocks("", []),
         () => edits.trash([], workspaceHistory), () => edits.restore([], workspaceHistory), () => edits.setDefinition("", null),
         () => history.state(pageHistory(page.id)), () => history.apply(pageHistory(page.id), "undo"),
         () => papers.files([]), () => papers.state(page.id), () => papers.read(""), () => papers.get(page.id),

@@ -1,11 +1,12 @@
 <script lang="ts">
     import { onMount, tick } from "svelte";
     import Icon, { type IconName } from "../utils/Icon.svelte";
+    import { showLayer } from "./top-layer";
     import "./controls.css";
 
-    let { items, selected, onselect, bounds, label }: {
+    let { items, selected, onselect, bounds, label, onclose }: {
         items: { label: string; icon: IconName; shortcut?: string; group: number }[]; selected: number;
-        onselect: (index: number) => void; bounds: () => DOMRect; label: string;
+        onselect: (index: number) => void; bounds: () => DOMRect; label: string; onclose: () => void;
     } = $props();
     let element: HTMLDivElement;
     function position(): void {
@@ -14,11 +15,12 @@
         element.style.top = Math.max(0, caret.bottom + rect.height <= innerHeight ? caret.bottom : caret.top - rect.height) + "px";
     }
     onMount(() => {
-        element.showPopover();
+        const hide = showLayer(element, onclose);
         position();
         window.addEventListener("scroll", position, true);
         window.addEventListener("resize", position);
         return () => {
+            hide();
             window.removeEventListener("scroll", position, true); window.removeEventListener("resize", position);
         };
     });

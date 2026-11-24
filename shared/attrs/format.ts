@@ -1,3 +1,5 @@
+import type { Language } from "../locale";
+import type { Translate } from "../i18n";
 import { secondsToDay, secondsToMonth, secondsToWall, secondsToYear } from "../content/time";
 import { type AttributeDefinition, type AttributeFormat, type AttributeType, type AttributeValue } from "../types/attributes";
 import { builtinValueFormats, isBuiltin } from "./builtins";
@@ -39,4 +41,30 @@ export function search(definition: AttributeDefinition, value: AttributeValue, c
     if (isEmpty(definition.type, value)) return "";
     const override = isBuiltin(definition.id) ? builtinValueFormats[definition.id]?.search : undefined;
     return (override ?? defaults[definition.type].search ?? display)(definition, value, context);
+}
+
+/** The library uses this text both in cells and as its locale-aware sort key. */
+export function libraryText(def: AttributeDefinition, value: AttributeValue | undefined, language: Language, zone: string, t: Translate, names: Record<string, string>): string {
+    if (value == null || isEmpty(def.type, value)) return "";
+    if (def.type === "boolean") return t(value ? "library.yes" : "library.no");
+    if (def.type === "page-link" || def.type === "page-links" || def.type === "file" || def.type === "files") {
+        return (Array.isArray(value) ? value : [value]).map(id => names[String(id)] === "" ? t("shell.untitled") : names[String(id)] ?? "").filter(Boolean).join(t("dialog.listJoin"));
+    }
+    if (def.type === "json") return JSON.stringify(value);
+    if (def.type === "select" || def.type === "status" || def.type === "multiselect") {
+        return (Array.isArray(value) ? value : [value]).map(id => {
+            if (def.id === "feed_status" && (id === "enabled" || id === "paused" || id === "cancelled")) return t(`property.${id}`);
+            if (def.id === "annotation_color" && (id === "yellow" || id === "green" || id === "purple" || id === "pink")) return t(`color.${id}`);
+            return def.metadata.options?.find(o => o.id === id)?.name ?? "";
+        }).filter(Boolean).join(t("dialog.listJoin"));
+    }
+    if (def.type === "recurrence") {
+        const period = value as { every: number; unit: string };
+        return t("property.repeatPeriod", { period: new Intl.NumberFormat(language, { style: "unit", unit: period.unit, unitDisplay: "long" }).format(period.every) });
+    }
+    if (def.type === "hour") {
+        const wall = secondsToWall(Number(value), zone);
+        return wall.slice(0, 10) + " " + t("property.hourValue", { hour: wall.slice(11, 13) });
+    }
+    return display(def, value, { zone });
 }

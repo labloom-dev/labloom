@@ -105,8 +105,8 @@
         {/each}
         <div aria-hidden="true" style:height={(offsets[options.length] - offsets[end]) + "px"}></div>
     </div>
-    {#if error}<p role="alert">{error}</p>
-    {:else if !options.length && !pending && empty}<p>{empty}</p>{/if}
+    {#if error}<div data-paragraph role="alert">{error}</div>
+    {:else if !options.length && !pending && empty}<div data-paragraph>{empty}</div>{/if}
 </div>
 
 <style>
@@ -124,8 +124,8 @@
     .result-heading { display: flex; min-width: 0; align-items: baseline; gap: var(--ui-space-4); }
     .result-title, .result-detail, .result-snippet { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .result-title { flex: 1; }
-    .result-detail, .result-snippet, p { font-size: var(--ui-font-small); color: var(--ui-text-secondary); }
+    .result-detail, .result-snippet, :where([data-paragraph]) { font-size: var(--ui-font-small); color: var(--ui-text-secondary); }
     .result-detail { max-width: 50%; }
     .result-snippet { display: block; line-height: var(--snippet-line-height); }
-    p { margin: var(--ui-space-2) var(--ui-space-3); }
+    :where([data-paragraph]) { margin: var(--ui-space-2) var(--ui-space-3); }
 </style>

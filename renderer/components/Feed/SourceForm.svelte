@@ -19,7 +19,7 @@
             订阅地址
             <input bind:value={url} type="url" required placeholder="https://rss.arxiv.org/atom/cs.LG" disabled={pending} />
         </label>
-        <p class="hint">支持 RSS、Atom 和 JSON Feed。填写网站首页时，会自动查找它提供的订阅地址。另外支持 Anthropic 的 News、Engineering 页面。博客订阅会保存来源返回的全部文章，已保存的文章和阅读状态会保留。</p>
+        <div data-paragraph class="hint">支持 RSS、Atom 和 JSON Feed。填写网站首页时，会自动查找它提供的订阅地址。另外支持 Anthropic 的 News、Engineering 页面。博客订阅会保存来源返回的全部文章，已保存的文章和阅读状态会保留。</div>
     {:else if kind === "arxiv"}
         <label>
             领域
@@ -29,20 +29,20 @@
             关键词或短语
             <input bind:value={keyword} placeholder="例如：large language model" disabled={pending} />
         </label>
-        <p class="hint">多个领域用逗号分隔，匹配其中任一领域。关键词按完整短语匹配标题或摘要。</p>
-        <p class="hint">仅填领域时订阅每日公告；填写关键词时获取最近提交的 10 篇匹配论文，之后刷新并累积保存。这里只获取来源返回的内容，不补齐全部历史。</p>
+        <div data-paragraph class="hint">多个领域用逗号分隔，匹配其中任一领域。关键词按完整短语匹配标题或摘要。</div>
+        <div data-paragraph class="hint">仅填领域时订阅每日公告；填写关键词时获取最近提交的 10 篇匹配论文，之后刷新并累积保存。这里只获取来源返回的内容，不补齐全部历史。</div>
         {#if address.url}
-            <p class="address">{address.url}</p>
+            <div data-paragraph class="address">{address.url}</div>
         {/if}
     {:else}
-        <p class="address">{address.url}</p>
-        <p class="hint">每次刷新会保存来源返回的全部文章，已保存的文章和阅读状态会保留。</p>
+        <div data-paragraph class="address">{address.url}</div>
+        <div data-paragraph class="hint">每次刷新会保存来源返回的全部文章，已保存的文章和阅读状态会保留。</div>
     {/if}
     {#if address.error}
-        <p class="hint" role="status">{message(address.error)}</p>
+        <div data-paragraph class="hint" role="status">{message(address.error)}</div>
     {/if}
     {#if source && address.url && address.url !== source.url}
-        <p class="hint">修改地址会保留此来源已保存的条目。</p>
+        <div data-paragraph class="hint">修改地址会保留此来源已保存的条目。</div>
     {/if}
     <label class="checkbox"><input type="checkbox" bind:checked={autoRefresh} disabled={pending} />自动刷新</label>
     {#if autoRefresh}
@@ -56,7 +56,7 @@
         </label>
     {/if}
     {#if error}
-        <p class="error" role="alert">{message(error)}</p>
+        <div data-paragraph class="error" role="alert">{message(error)}</div>
     {/if}
     <div class="actions">
         <button type="submit" disabled={pending || !address.url}>{pending ? "正在处理…" : "保存并校验来源"}</button>

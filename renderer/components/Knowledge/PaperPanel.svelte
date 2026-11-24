@@ -1,239 +1,497 @@
-<section class="paper-panel">
-    <header>
-        <div class="attachments">
-            {#if pdfs.length}
-                <select aria-label="阅读 PDF" value={fileId} onchange={event => void openFile(event.currentTarget.value)}>
-                    {#each pdfs as file (file.id)}<option value={file.id}>{file.originalName}</option>{/each}
-                </select>
-            {:else}<span class="no-pdf">没有 PDF</span>{/if}
-            <button class="button" disabled={busy || !!page.attributes.deleted} onclick={attach}>添加文件</button>
-        </div>
-        <button class="text-button" onclick={toggleExpanded}>{expanded ? "收起阅读器" : "展开阅读器"}</button>
-    </header>
-    {#if error}
-        <div class="notice error">{message(error)}<button onclick={() => void openFile(fileId)}>{t("dialog.retry")}</button></div>
-    {/if}
-    {#if expanded}
-        {#if pdfs.length}
-            <div class="paper-reader">
-                <Reader bind:this={reader} {source} {fileId} {viewState} annotations={resources.annotations} onSelection={selectText} onHighlight={selectHighlight} onViewStateChange={savePosition} onPasswordAccepted={unlock} />
-            </div>
-        {/if}
-        {#if (selection || activeHighlight) && !annotationId}
-            <div class="selection-menu" popover="manual" {@attach element => {
-                element.showPopover();
-            }} role="toolbar" aria-label="高亮与批注" style:left={menuLeft + "px"} style:top={menuTop + "px"}>
-                {#each colors as item (item.value)}
-                    <button class="swatch" style:background={item.value} aria-label={item.label + "高亮"} title={item.label} disabled={busy || !!page.attributes.deleted} onclick={() => markColor(item.id)}></button>
-                {/each}
-                <button disabled={busy || !!page.attributes.deleted} onclick={annotateSelection}>{resources.annotations.find(item => item.id === activeHighlight)?.hasText ? "编辑批注" : activeHighlight ? "添加批注" : "批注"}</button>
-                {#if activeHighlight}<button disabled={busy || !!page.attributes.deleted} onclick={() => remove(activeHighlight!)}>删除</button>{/if}
-                <button onclick={dismiss}>关闭</button>
-            </div>
-        {/if}
-        {#if annotationId}
-            {#key annotationId}
-                <AnnotationPopover source={session.source} pageId={annotationId} {tabId} position={menuPosition} onclose={() => annotationId = null} />
-            {/key}
-        {/if}
-    {/if}
-</section>
-<style>
-    .paper-panel { border-bottom: 1px solid var(--c-line); background: var(--c-cream); }
-    header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 20px; }
-    .attachments { display: flex; align-items: center; gap: 10px; min-width: 0; }
-    select { padding: 7px; border: 1px solid var(--c-line); border-radius: 5px; background: var(--c-paper); color: var(--c-ink); min-width: 0; max-width: 300px; font-size: 12px; }
-    .no-pdf { color: var(--c-muted); font-size: var(--font-secondary); }
-    .paper-reader { height: 65vh; min-height: 400px; }
-    .selection-menu { position: fixed; inset: auto; margin: 0; z-index: 65; display: flex; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--c-line); border-radius: 6px; background: var(--c-paper); color: var(--c-ink); box-shadow: 0 3px 12px #0002; font-size: 12px; }
-    .selection-menu button { padding: 3px; }
-    .selection-menu .swatch { width: 22px; height: 22px; border: 1px solid var(--c-line); border-radius: 50%; }
-    .notice { margin: 10px 20px; }
-</style>
-<script lang="ts">
-    import { t, failure, message, type ErrorValue } from "../../i18n.svelte";
-    import { onMount } from "svelte";
-    import { type PageRecord } from "../../../shared/types/content";
-    import { type AnnotationInput, type PaperResources } from "../../../shared/types/papers";
-    import { annotationColors } from "../../../shared/content/annotations";
-    import { record } from "../../../shared/attrs/values";
-    import { type ReaderSource, type ReaderViewState } from "../Reader/defs";
-    import Reader from "../Reader/Reader.svelte";
-    import AnnotationPopover from "./AnnotationPopover.svelte";
-    import { knowledgeState, perform } from "./feedback.svelte";
-    import { write, session as pageSession } from "./page-sessions";
-    import { confirmed } from "./confirmation.svelte";
+<script module lang="ts">
+    import { type ReaderAnchor } from "../Reader/defs";
     import { type PageSession } from "./page-session.svelte";
-    let { page, session, tabId }: { page: PageRecord; session: PageSession; tabId: string } = $props();
-    let resources = $state<PaperResources>({ files: [], annotations: [] }), fileId = $state(""), source = $state.raw<ReaderSource | null>(null), viewState = $state<ReaderViewState | undefined>(undefined);
-    let reader = $state<Reader | null>(null), selection = $state<AnnotationInput | null>(null), expanded = $state(true), busy = $state(false), error = $state<ErrorValue>("");
-    let activeHighlight = $state<string | null>(null), annotationId = $state<string | null>(null);
-    let menuPosition = $state({ x: 0, y: 0 });
-    const menuLeft = $derived(Math.max(12, Math.min(menuPosition.x, window.innerWidth - 310)));
-    const menuTop = $derived(Math.max(48, Math.min(menuPosition.y + 8, window.innerHeight - 60)));
-    const colors = Object.entries(annotationColors).map(([id, item]) => ({ id, value: item.value, label: item.name }));
-    const pdfs = $derived(resources.files.filter(file => file.mediaType === "application/pdf"));
-    let request = 0, resourceRequest = 0;
-    async function unlock(password: string): Promise<void> {
-        await window.api.papers.unlockPDF(fileId, password);
-        await load();
-    }
-    async function selectText(value: AnnotationInput | null, at?: { x: number; y: number }): Promise<void> {
-        selection = value;
-        if (at) menuPosition = at;
-        if (value) {
-            activeHighlight = null;
-            if (annotationId && await pageSession(tabId, annotationId, session.source).flush()) annotationId = null;
-        }
-    }
-    const sourceFiles = new WeakMap<ReaderSource, string>();
-    async function load(): Promise<void> {
-        const sequence = ++resourceRequest;
-        try {
-            const next = await window.api.papers.resources(page.id);
-            if (sequence !== resourceRequest) return;
-            resources = next;
-            if (annotationId && !next.annotations.some(item => item.id === annotationId)) annotationId = null;
-            const available = next.files.filter(file => file.mediaType === "application/pdf");
-            if (!available.some(file => file.id === fileId)) {
-                request++;
-                source = null; fileId = "";
-                dismiss();
-                if (annotationId && await pageSession(tabId, annotationId, session.source).flush()) annotationId = null;
-                if (available[0]) await openFile(available[0].id);
-                else error = "";
-            }
-        }
-        catch (problem) {
-            error = failure(problem);
-        }
-    }
-    onMount(() => {
-        const off = session.watchObject(page.id, load, true);
-        return () => {
-            off();
-            request++; resourceRequest++;
-        };
-    });
-    async function toggleExpanded(): Promise<void> {
-        if (annotationId && !await pageSession(tabId, annotationId, session.source).flush()) return;
-        annotationId = null;
-        dismiss();
-        expanded = !expanded;
-    }
-    async function openFile(id: string): Promise<void> {
-        if (!pdfs.some(file => file.id === id)) return;
-        if (annotationId && !await pageSession(tabId, annotationId, session.source).flush()) return;
-        annotationId = null;
-        const sequence = ++request;
-        try {
-            const data = await window.api.papers.readFile(id);
-            if (sequence !== request) return;
-            window.dispatchEvent(new Event("workspace-flush"));
-            source = null;
-            selection = null;
-            fileId = id;
-            const position = record(page.attributes.reading_position) ? page.attributes.reading_position[id] : null;
-            viewState = record(position) ? { pageNumber: Number(position.page), scale: position.scale as ReaderViewState["scale"], rotation: position.rotation as ReaderViewState["rotation"], left: Number(position.left), top: Number(position.top) } : undefined;
-            source = { kind: "data", data: new Uint8Array(data) };
-            sourceFiles.set(source, id);
-            error = "";
-        }
-        catch (problem) {
-            if (sequence === request) {
-                error = failure(problem);
-                fileId = id;
-                source = null;
-            }
-        }
-    }
-    function savePosition(state: ReaderViewState, current: ReaderSource): void {
-        const id = sourceFiles.get(current);
-        if (page.attributes.deleted || !id || !Array.isArray(page.attributes.paper_files) || !page.attributes.paper_files.includes(id)) return;
-        const request = write(() => window.api.papers.position(page.id, id, { page: state.pageNumber, scale: state.scale, rotation: state.rotation, left: state.left, top: state.top }));
-        void request.catch(problem => {
-            error = failure(problem);
-            knowledgeState.error = error;
-        });
-    }
-    async function attach(): Promise<void> {
-        busy = true;
-        try {
-            if (await write(() => window.api.papers.importFiles(page.id, "paper_files", session.source))) await load();
-        }
-        catch (problem) {
-            error = failure(problem);
-        }
-        finally {
-            busy = false;
-        }
-    }
-    function dismiss(): void {
-        selection = null;
-        activeHighlight = null;
-        reader?.clearSelection();
-    }
-    async function selectHighlight(id: string, at: { x: number; y: number }, annotation = false): Promise<void> {
-        if (annotationId && !await pageSession(tabId, annotationId, session.source).flush()) return;
-        dismiss();
-        menuPosition = at;
-        const highlight = resources.annotations.find(item => item.id === id);
-        if (annotation && highlight) annotationId = highlight.id;
-        else {
-            annotationId = null; activeHighlight = id;
-        }
-    }
-    async function annotation(anchor: AnnotationInput | string, color?: string): Promise<string | null> {
-        const pageId = page.id;
-        if (!await window.api.papers.prepareAnnotation(pageId, anchor)) return null;
-        if (typeof anchor === "string") return anchor;
-        return write(() => window.api.papers.annotate(pageId, anchor, session.source, color));
-    }
-    async function markColor(color: string): Promise<void> {
-        if (!selection && !activeHighlight) return;
-        busy = true;
-        try {
-            const anchor = selection ? $state.snapshot(selection) : null, id = activeHighlight;
-            if (id) await write(() => window.api.papers.changeAnnotation(id, color, session.source));
-            else if (anchor && !await annotation(anchor, color)) return;
-            dismiss();
-            await load();
-        }
-        catch (problem) {
-            error = failure(problem);
-        }
-        finally {
-            busy = false;
-        }
-    }
-    async function annotateSelection(): Promise<void> {
-        const existing = resources.annotations.find(item => item.id === activeHighlight);
-        const anchor = existing?.id ?? (selection ? $state.snapshot(selection) : null);
-        if (!anchor) return;
-        busy = true;
-        try {
-            const id = await annotation(anchor, existing?.color);
-            if (!id) return;
-            await session.reread([page.id]);
-            dismiss();
-            await load();
-            annotationId = id;
-        }
-        catch (problem) {
-            error = failure(problem);
-        }
-        finally {
-            busy = false;
-        }
-    }
-    function remove(id: string): void {
-        void perform(async () => {
-            await write(async () => {
-                if (await confirmed(token => window.api.papers.deleteAnnotation(id, session.source, token))) {
-                    dismiss();
-                    await session.reread([page.id]);
-                }
-            });
-        });
+
+    type Point = { x: number; y: number };
+    type OpenAnnotation = { id: string; fileId: string; anchor: ReaderAnchor; position: Point | null };
+    type AnnotationSlot = { note: OpenAnnotation | null };
+    // A split can rebuild the group while its tab and page session survive.
+    const annotationSlots = new WeakMap<PageSession, AnnotationSlot>();
+    function slotFor(session: PageSession): AnnotationSlot {
+        const existing = annotationSlots.get(session);
+        if (existing) return existing;
+        const slot = $state<AnnotationSlot>({ note: null });
+        annotationSlots.set(session, slot);
+        return slot;
     }
 </script>
+
+<script lang="ts">
+    import { Tabs } from "bits-ui";
+    import { onMount, untrack } from "svelte";
+    import { record } from "../../../shared/attrs/values";
+    import { annotationColors } from "../../../shared/content/annotations";
+    import { isComposingKey } from "../../../shared/content/commands";
+    import type { PageRecord } from "../../../shared/types/content";
+    import type { AnnotationInput, Attachment, PaperAnnotation } from "../../../shared/types/papers";
+    import type { ViewParams } from "../../../shared/workspace/views";
+    import { t, failure, message, type ErrorValue } from "../../i18n.svelte";
+    import Button from "../base/Button.svelte";
+    import IconButton from "../base/IconButton.svelte";
+    import Tooltip from "../base/Tooltip.svelte";
+    import Select from "../base/Select.svelte";
+    import { showLayer } from "../base/top-layer";
+    import { openPage } from "../layout/navigation";
+    import { AnchorLayout, controlsReaderView } from "../Reader/anchor-layout";
+    import { type ReaderAnchorGeometry, type ReaderSource, type ReaderViewState } from "../Reader/defs";
+    import Reader from "../Reader/Reader.svelte";
+    import { tabState } from "../Tab/state.svelte";
+    import Resizer from "../utils/Resizer.svelte";
+    import AnnotationList from "./AnnotationList.svelte";
+    import AnnotationPopover from "./AnnotationPopover.svelte";
+    import { confirmed } from "./confirmation.svelte";
+    import { knowledgeState, perform } from "./feedback.svelte";
+    import { importPapers } from "./library-import.svelte";
+    import { write } from "./page-sessions";
+    import PageInformation from "./PageInformation.svelte";
+
+    type Params = ViewParams["page"];
+    let { page, session, tabId, params, onparams, syncing }: {
+        page: PageRecord; session: PageSession; tabId: string; params: Params;
+        onparams: (params: Params) => void; syncing: boolean;
+    } = $props();
+
+    let pdfs = $state.raw<Attachment[]>([]), annotations = $state.raw<PaperAnnotation[]>([]);
+    let fileId = $state(""), source = $state.raw<ReaderSource | null>(null), viewState = $state.raw<ReaderViewState>();
+    let reader = $state<Reader>(), selection = $state.raw<AnnotationInput | null>(null), selectedId = $state<string | null>(null);
+    const annotationSlot = untrack(() => slotFor(session));
+    let toolsOpen = $state(false);
+    let annotationPopup = $state<AnnotationPopover>();
+    let highlightTools = $state<HTMLDivElement>();
+    let paletteWidth = $state(0), paletteHeight = $state(0);
+    let placement = $state.raw(new AnchorLayout());
+    let measuredAnchor = $state.raw<ReaderAnchorGeometry | null>(null);
+    let busy = $state(false), dropping = $state(false), loadingFiles = $state(true);
+    let fileError = $state<ErrorValue>(""), annotationError = $state<ErrorValue>("");
+    let width = $state(0), infoPanel = $state<HTMLElement | null>(null);
+    let fileRequest = 0, openRequest = 0, annotationRequest = 0;
+    const sourceFiles = new WeakMap<ReaderSource, string>();
+    // Position is read only when reopening that file.
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity
+    const positions = new Map<string, ReaderViewState>();
+
+    const sidebar = $derived(params.showProperties !== false);
+    const sidebarTab = $derived(params.paperSidebar ?? "info");
+    const paneWidth = $derived(Math.max(240, Math.min(width - 364, params.infoWidth ?? Math.round(width / 3))));
+    const locked = $derived(!!page.attributes.deleted);
+    const visible = $derived(tabState.groups.some(group => group.activeTabId === tabId));
+    const opened = $derived(annotationSlot.note);
+    const editorId = $derived(opened?.id ?? null);
+    const filesKey = $derived(JSON.stringify(page.attributes.paper_files ?? []));
+    const anchor = $derived(visible ? opened?.anchor ?? (toolsOpen ? selection : null) : null);
+    const geometry = $derived(measuredAnchor?.anchor === anchor ? measuredAnchor : null);
+    const palette = $derived(!editorId && toolsOpen && geometry && paletteWidth && paletteHeight
+        ? placement.place(geometry, paletteWidth, paletteHeight) : null);
+    const colors = Object.entries(annotationColors) as [keyof typeof annotationColors, typeof annotationColors[keyof typeof annotationColors]][];
+
+    $effect(() => {
+        const ids = JSON.parse(filesKey) as string[];
+        void untrack(() => loadFiles(ids));
+        return () => {
+            fileRequest++;
+        };
+    });
+    $effect(() => {
+        const id = fileId;
+        void untrack(() => loadAnnotations(id));
+        return () => {
+            annotationRequest++;
+        };
+    });
+    // Membership, content and recycle changes share one notification. A later
+    // session read may replace page attributes without changing the resources.
+    onMount(() => window.api.pages.onChanged(change => {
+        if (fileId && change.highlightPages?.includes(page.id)) void loadAnnotations(fileId);
+    }));
+    $effect.pre(() => {
+        if ((!sidebar || sidebarTab !== "info") && document.activeElement instanceof HTMLElement && infoPanel?.contains(document.activeElement))
+            document.activeElement.blur();
+    });
+    $effect(() => {
+        if (locked || !visible) toolsOpen = false;
+    });
+    $effect(() => () => {
+        openRequest++;
+    });
+
+    async function loadFiles(ids: string[]): Promise<void> {
+        const sequence = ++fileRequest;
+        try {
+            const files = ids.length ? await window.api.papers.files(ids) : [];
+            if (sequence !== fileRequest) return;
+            pdfs = files.filter(file => file.mediaType === "application/pdf");
+            if (!pdfs.some(file => file.id === fileId)) {
+                const next = pdfs.find(file => file.id === params.fileId) ?? pdfs[0];
+                if (next) await openFile(next.id);
+                else {
+                    openRequest++;
+                    source = null;
+                    fileId = "";
+                    resetSelection();
+                }
+            }
+        }
+        catch (error) {
+            if (sequence === fileRequest) fileError = failure(error);
+        }
+        finally {
+            if (sequence === fileRequest) loadingFiles = false;
+        }
+    }
+
+    async function openFile(id: string): Promise<void> {
+        if (!pdfs.some(file => file.id === id)) return;
+        const sequence = ++openRequest;
+        if ((fileId || opened?.fileId !== id) && !await closeAnnotation()) return;
+        if (sequence !== openRequest) return;
+        window.dispatchEvent(new Event("workspace-flush"));
+        if (id !== fileId) annotations = [];
+        resetSelection();
+        selectedId = editorId;
+        fileId = id;
+        source = null;
+        fileError = "";
+        try {
+            const data = await window.api.papers.readFile(id);
+            if (sequence !== openRequest) return;
+            const position = record(page.attributes.reading_position) ? page.attributes.reading_position[id] : null;
+            viewState = positions.get(id) ?? (record(position) ? {
+                pageNumber: Number(position.page), scale: position.scale as ReaderViewState["scale"], rotation: position.rotation as ReaderViewState["rotation"],
+                left: Number(position.left), top: Number(position.top)
+            } : undefined);
+            source = { kind: "data", data: new Uint8Array(data) };
+            sourceFiles.set(source, id);
+        }
+        catch (error) {
+            if (sequence === openRequest) fileError = failure(error);
+        }
+    }
+
+    async function loadAnnotations(id: string): Promise<void> {
+        const sequence = ++annotationRequest;
+        if (!id) {
+            annotations = [];
+            annotationError = "";
+            return;
+        }
+        try {
+            const result = await window.api.papers.resources(page.id, id);
+            if (sequence !== annotationRequest) return;
+            annotations = result.annotations;
+            annotationError = "";
+            if (selectedId && !annotations.some(annotation => annotation.id === selectedId)) resetSelection();
+            if (editorId && !annotations.some(annotation => annotation.id === editorId)) void closeAnnotation();
+        }
+        catch (error) {
+            if (sequence === annotationRequest) annotationError = failure(error);
+        }
+    }
+
+    async function unlock(password: string): Promise<void> {
+        const id = fileId;
+        await window.api.papers.unlockPDF(id, password);
+        if (id === fileId) await loadAnnotations(id);
+    }
+
+    function savePosition(state: ReaderViewState, current: ReaderSource): void {
+        const id = sourceFiles.get(current);
+        if (locked || !id || !Array.isArray(page.attributes.paper_files) || !page.attributes.paper_files.includes(id)) return;
+        positions.set(id, state);
+        void write(() => window.api.papers.position(page.id, id, { page: state.pageNumber, scale: state.scale, rotation: state.rotation, left: state.left, top: state.top }))
+            .catch(problem => {
+                const error = failure(problem);
+                if (error.kind !== "page-recycled-readonly") knowledgeState.error = error;
+            });
+    }
+
+    function resetSelection(): void {
+        setToolsOpen(false);
+        selection = null;
+        selectedId = null;
+        reader?.clearSelection();
+    }
+
+    async function closeAnnotation(): Promise<boolean> {
+        if (annotationPopup) return annotationPopup.close(false);
+        forgetAnnotation();
+        return true;
+    }
+    function forgetAnnotation(): void {
+        annotationSlot.note = null;
+    }
+    function openAnnotation(id: string, { pageNumber, rectangles }: ReaderAnchor): void {
+        annotationSlot.note = { id, fileId, anchor: { pageNumber, rectangles }, position: null };
+    }
+    function retainAnnotation(note: OpenAnnotation): boolean {
+        return annotationSlot.note === note && tabState.groups.some(group => group.tabs.some(tab =>
+            tab.id === tabId && tab.view.type === "page" && tab.view.params.page.id === page.id));
+    }
+
+    function selectText(value: AnnotationInput | null): void {
+        selection = value;
+        if (value) selectedId = null;
+        setToolsOpen(!!value && !locked);
+    }
+    function setToolsOpen(value: boolean): void {
+        if (!value && highlightTools?.contains(document.activeElement)) reader?.focusViewer();
+        if (value && !toolsOpen) placement = new AnchorLayout();
+        toolsOpen = value;
+    }
+    function mountPalette(element: HTMLElement): () => void {
+        const hide = showLayer(element, () => setToolsOpen(false));
+        function dismiss(event: PointerEvent): void {
+            if (event.button !== 0 || event.composedPath().includes(element)) return;
+            const view = geometry?.viewport;
+            if (view && controlsReaderView(event, view)) return;
+            setToolsOpen(false);
+        }
+        document.addEventListener("pointerdown", dismiss, true);
+        return () => {
+            document.removeEventListener("pointerdown", dismiss, true);
+            hide();
+        };
+    }
+    function focusSelectionTools(): boolean {
+        const first = palette?.visible && highlightTools?.querySelector<HTMLButtonElement>("button:not(:disabled)");
+        if (!first) return false;
+        first.focus({ preventScroll: true });
+        return true;
+    }
+    function navigateHighlightTools(event: KeyboardEvent & { currentTarget: HTMLButtonElement }): void {
+        if (isComposingKey(event) || event.ctrlKey || event.altKey || event.metaKey) return;
+        const direction = event.key === "ArrowRight" || event.key === "ArrowDown" ? 1
+            : event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 0;
+        if (!direction) return;
+        const buttons = [...(event.currentTarget.closest(".annotation-swatches")?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [])];
+        const index = buttons.indexOf(event.currentTarget);
+        if (index < 0) return;
+        event.preventDefault();
+        buttons[(index + direction + buttons.length) % buttons.length].focus({ preventScroll: true });
+    }
+
+    async function selectHighlight(id: string): Promise<void> {
+        const item = annotations.find(annotation => annotation.id === id);
+        if (!item || id === editorId) return;
+        if (editorId && !await closeAnnotation()) return;
+        selectedId = id;
+        reader?.clearSelection();
+        openAnnotation(id, item);
+    }
+
+    async function selectFromList(item: PaperAnnotation, at?: Point): Promise<void> {
+        if (editorId && !await closeAnnotation()) return;
+        setToolsOpen(false);
+        selectedId = item.id;
+        reader?.clearSelection();
+        reader?.goToHighlight(item);
+        if (at) openAnnotation(item.id, item);
+    }
+
+    async function annotate(color: keyof typeof annotationColors): Promise<void> {
+        if (locked || busy) return;
+        const input = selection;
+        if (!input) return;
+        busy = true;
+        try {
+            if (!await window.api.papers.prepareAnnotation(page.id, input)) return;
+            const id = await write(() => window.api.papers.annotate(page.id, input, session.source, color));
+            if (!id || input.fileId !== fileId) return;
+            selectedId = id;
+            reader?.clearSelection();
+            openAnnotation(id, input);
+        }
+        catch (problem) {
+            knowledgeState.error = failure(problem);
+        }
+        finally {
+            busy = false;
+        }
+    }
+
+    function recolor(id: string, color: string): void {
+        if (!locked && !busy) void perform(async () => {
+            await write(() => window.api.papers.changeAnnotation(id, color, session.source));
+        });
+    }
+
+    function remove(id: string): void {
+        if (!locked && !busy) void perform(async () => {
+            busy = true;
+            try {
+                await write(async () => {
+                    if (!await confirmed(token => window.api.papers.deleteAnnotation(id, session.source, token))) return;
+                    if (editorId === id) forgetAnnotation();
+                    if (selectedId === id) resetSelection();
+                });
+            }
+            finally {
+                busy = false;
+            }
+        });
+    }
+
+    async function attach(paths?: string[]): Promise<void> {
+        if (locked || busy) return;
+        busy = true;
+        try {
+            await perform(() => importPapers(session.source, { pageId: page.id, paths }));
+        }
+        finally {
+            busy = false;
+        }
+    }
+    function dragOver(event: DragEvent): void {
+        if (!event.dataTransfer?.types.includes("Files")) return;
+        event.preventDefault();
+        dropping = !locked && !busy;
+        event.dataTransfer.dropEffect = dropping ? "copy" : "none";
+    }
+    function dropFiles(event: DragEvent): void {
+        if (!event.dataTransfer?.types.includes("Files")) return;
+        event.preventDefault();
+        event.stopPropagation();
+        dropping = false;
+        if (event.dataTransfer.files.length) void attach(Array.from(event.dataTransfer.files, file => window.getPathForFile(file)));
+    }
+</script>
+
+<div class="paper-panel" bind:clientWidth={width}>
+    <div class="pdf-area" class:dropping role="region" aria-label={t("reader.pdf")}
+        ondragover={dragOver} ondrop={dropFiles} ondragleave={event => {
+            if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) dropping = false;
+        }}>
+        {#if pdfs.length}
+            <Reader bind:this={reader} {source} {fileId} {viewState} {annotations} highlightId={selectedId}
+                {anchor} onAnchorChange={value => measuredAnchor = value} {focusSelectionTools} onSelection={selectText} onHighlight={selectHighlight}
+                onViewStateChange={savePosition} onPasswordAccepted={unlock}
+                error={fileError || undefined} onretry={() => void openFile(fileId)}>
+                {#snippet toolbarExtra()}
+                    {#if pdfs.length > 1}
+                        <div class="pdf-select">
+                            <Select label={t("reader.pdfFile")} value={fileId}
+                                options={pdfs.map(file => ({ value: file.id, label: file.originalName }))}
+                                onchange={id => {
+                                    if (id && id !== fileId) {
+                                        onparams({ ...params, fileId: id });
+                                        void openFile(id);
+                                    }
+                                }} />
+                        </div>
+                    {/if}
+                {/snippet}
+            </Reader>
+        {:else if fileError}
+            <div class="empty-pdf"><div data-paragraph role="alert">{message(fileError)}</div><Button onclick={() => void loadFiles(JSON.parse(filesKey) as string[])}>{t("dialog.retry")}</Button></div>
+        {:else}
+            <div class="empty-pdf">
+                <div data-paragraph>{t(loadingFiles ? "reader.loading" : "reader.noPdf")}</div>
+                {#if !loadingFiles && !locked}<Button icon="add" disabled={busy} onclick={() => void attach()}>{t("reader.addPdf")}</Button>{/if}
+            </div>
+        {/if}
+    </div>
+    {#if sidebar}
+        <div class="paper-sash">
+            <Resizer direction="vertical" label={t("library.panelWidth")} origin={width - paneWidth} min={364} max={Math.max(364, width - 240)}
+                changeCB={position => onparams({ ...params, infoWidth: Math.round(width - position) })} overflowMargin={20}
+                onMaxExceeded={() => onparams({ ...params, showProperties: false })} />
+        </div>
+        <aside class="paper-sidebar" style:--paper-sidebar-width={params.infoWidth === undefined ? "calc(100% / 3)" : params.infoWidth + "px"}
+            aria-label={t("editor.properties")}>
+            <Tabs.Root class="paper-sidebar-tabs" value={sidebarTab} onValueChange={value => {
+                if (value === "info" || value === "annotations") onparams({ ...params, paperSidebar: value });
+            }}>
+                <Tabs.List class="paper-sidebar-tabs-list" aria-label={t("editor.properties")}>
+                    <Tabs.Trigger class="ui-control" value="info">{t("reader.info")}</Tabs.Trigger>
+                    <Tabs.Trigger class="ui-control" value="annotations">{t("reader.annotations")}</Tabs.Trigger>
+                </Tabs.List>
+                <Tabs.Content class="paper-sidebar-content" value="info" bind:ref={infoPanel} inert={syncing}>
+                    <PageInformation {tabId} pageId={page.id} />
+                </Tabs.Content>
+                <Tabs.Content class="paper-sidebar-content annotations" value="annotations">
+                    {#if annotationError}<div data-paragraph class="annotation-error" role="alert">{message(annotationError)}
+                        <Button onclick={() => void loadAnnotations(fileId)}>{t("dialog.retry")}</Button></div>{/if}
+                    <AnnotationList items={annotations} {selectedId} readOnly={locked} visible={visible && sidebarTab === "annotations"}
+                        onselect={selectFromList} oncolor={recolor} onremove={remove} onopen={id => openPage(id, { currentGroup: true })} />
+                </Tabs.Content>
+            </Tabs.Root>
+        </aside>
+    {/if}
+</div>
+
+{#snippet swatches(active: string | undefined, choose: (color: keyof typeof annotationColors) => void, disabled: boolean)}
+    <div class="annotation-swatches">
+        {#each colors as [id, color] (id)}
+            <Tooltip text={t(`color.${id}`)}>
+                {#snippet trigger({ props })}
+                    <Button {...props} class="swatch-button" variant="text" aria-label={t("reader.highlightColor", { color: t(`color.${id}`) })}
+                        {disabled} onkeydown={navigateHighlightTools} onclick={() => choose(id)}>
+                        <span class="color-swatch" class:active={active === id} style:background={color.value}></span>
+                    </Button>
+                {/snippet}
+            </Tooltip>
+        {/each}
+    </div>
+{/snippet}
+
+{#if visible && !locked && toolsOpen && selection && !editorId}
+    <div class="highlight-tools ui-popup ui-popover" role="dialog" aria-label={t("reader.highlightActions")}
+        bind:this={highlightTools} bind:offsetWidth={paletteWidth} bind:offsetHeight={paletteHeight}
+        style:left={palette && palette.x + "px"} style:top={palette && palette.y + "px"}
+        style:clip-path={palette?.clip} style:visibility={palette?.visible ? "visible" : "hidden"}
+        inert={!palette?.visible} popover="manual" {@attach mountPalette}>
+        {@render swatches(undefined, color => void annotate(color), busy)}
+    </div>
+{/if}
+{#if opened}
+    {#key opened}
+        {@const note = opened}
+        <AnnotationPopover bind:this={annotationPopup} source={session.source} pageId={note.id} {tabId} {geometry} position={note.position}
+            {visible} readOnly={locked} retain={() => retainAnnotation(note)} onmove={position => note.position = position}
+            focusOnOpen={tabState.groups.some(group => group.id === tabState.focusedGroupId && group.activeTabId === tabId)}
+            restoreFocus={() => reader?.focusViewer()} onclose={() => {
+                if (opened === note) forgetAnnotation();
+            }}>
+            {#snippet actions(readOnly)}
+                {@render swatches(annotations.find(item => item.id === note.id)?.color, color => recolor(note.id, color), readOnly || busy)}
+                <IconButton icon="trash" label={t("reader.deleteAnnotation")} disabled={readOnly || busy} onclick={() => remove(note.id)} />
+            {/snippet}
+        </AnnotationPopover>
+    {/key}
+{/if}
+
+<style>
+    .paper-panel { display: flex; flex: 1; min-height: 0; min-width: 0; }
+    .pdf-area { display: flex; position: relative; flex: 1; min-width: 0; min-height: 0; background: var(--ui-surface-panel); }
+    .pdf-area.dropping::after { content: ""; position: absolute; inset: 0; border: var(--ui-active-border) solid var(--ui-accent); pointer-events: none; }
+    .pdf-select { min-width: 0; max-width: 220px; }
+    .pdf-select :global(.ui-select) { max-width: 100%; }
+    .empty-pdf { margin: auto; display: grid; justify-items: center; gap: var(--ui-space-3); padding: var(--ui-space-4); color: var(--ui-text-secondary); }
+    .empty-pdf :where([data-paragraph]) { margin: 0; }
+    .paper-sash { display: flex; flex: none; }
+    .paper-sidebar {
+        display: flex; flex: none; width: max(240px, min(calc(100% - 364px), var(--paper-sidebar-width)));
+        min-height: 0; background: var(--ui-surface-window);
+    }
+    .paper-sidebar :global(.paper-sidebar-tabs) { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
+    .paper-sidebar :global(.paper-sidebar-tabs-list) {
+        display: flex; flex: none; min-height: var(--ui-toolbar-height); align-items: center; padding-inline: var(--ui-space-2);
+        gap: var(--ui-space-1); border-bottom: var(--ui-stroke) solid var(--ui-divider); background: var(--ui-surface-panel);
+    }
+    .paper-sidebar :global([data-tabs-trigger][data-state="active"]) { background: var(--ui-selected); }
+    .paper-sidebar :global(.paper-sidebar-content) { flex: 1; min-height: 0; min-width: 0; overflow: auto; outline-offset: calc(-1 * var(--ui-focus-width)); }
+    .paper-sidebar :global(.paper-sidebar-content:focus-visible) { outline: var(--ui-focus-width) solid var(--ui-focus); }
+    .paper-sidebar :global(.paper-sidebar-content.annotations:not([hidden])) { display: flex; flex-direction: column; overflow: hidden; }
+    .annotation-error { color: var(--ui-danger); margin: var(--ui-space-3); }
+    .highlight-tools { position: fixed; inset: auto; margin: 0; padding: var(--ui-space-1); }
+    .annotation-swatches { display: flex; align-items: center; gap: var(--ui-space-1); }
+    .annotation-swatches :global(.swatch-button) {
+        width: var(--ui-row-height); height: var(--ui-row-height); padding: 0; border: 0; border-radius: 50%;
+    }
+    .color-swatch { width: var(--ui-icon-small); height: var(--ui-icon-small); border-radius: 50%; }
+    .color-swatch.active { outline: var(--ui-stroke) solid var(--ui-text-secondary); outline-offset: var(--ui-stroke); }
+    @container (max-width: 639px) {
+        .paper-panel { flex-direction: column; }
+        .paper-sidebar { width: 100%; height: 40%; min-height: var(--ui-toolbar-height); border-top: var(--ui-stroke) solid var(--ui-divider); }
+        .paper-sash { display: none; }
+    }
+</style>
