@@ -9,7 +9,7 @@ import * as settings from "../main/settings/store";
 import * as session from "../main/session";
 import * as edits from "../main/knowledge/edits";
 import * as events from "../main/knowledge/events";
-import * as papers from "../main/knowledge/papers";
+import { paperServices } from "./support/session";
 import { payload } from "../shared/content/blocks";
 import { arxivURL } from "../shared/utils/feed";
 import { restoreTabState } from "../renderer/components/Tab/restore";
@@ -24,7 +24,7 @@ import type { PaperResources } from "../shared/types/papers";
 import { route } from "../main/ipc";
 import { routes as pages } from "../main/pages/ipc";
 import type { CommitResult, ContentBlock, PageBlockList, PageList, PageRecord, RichNode } from "../shared/types/content";
-import { appChannels, attributesChannels, feedChanged, feedChannels, historyChannels, pagesChanged, pagesChannels, papersChannels, settingsChanged, settingsChannels, startupChannels, timersChannels, workspaceChannels } from "../shared/ipc";
+import { appChannels, attachmentsChannels, attributesChannels, feedChanged, feedChannels, historyChannels, pagesChanged, pagesChannels, papersChannels, settingsChanged, settingsChannels, startupChannels, timersChannels, workspaceChannels } from "../shared/ipc";
 
 test("every group rejects malformed IPC arguments before side effects and accepts its declared shape", async t => {
     const root = (): string => mkdtempSync(join(process.env.LABLOOM_TEST_ROOT!, "ipc-"));
@@ -35,6 +35,9 @@ test("every group rejects malformed IPC arguments before side effects and accept
         ipc.contents.emit("destroyed"); session.close(); await settings.flush(settings.get().settingsRevision);
     });
     const malformed: [string, unknown[][]][] = [
+        [attachmentsChannels.choose, [["audio"], ["image", "multiple"]]],
+        [attachmentsChannels.importPath, [[42, ""], ["A", "C", { id: "B" }]]],
+        [attachmentsChannels.uploadChunk, [["A", "bytes"]]],
         [pagesChannels.get, [[42]]], [pagesChannels.blockList, [[42]]],
         [pagesChannels.commitEdit, [[{ pageId: "A", batch: 0, blocks: [3] }, workspaceHistory],
             [{ batch: 0, blocks: [] }, workspaceHistory], [{ pageId: "A", batch: 0, blocks: [] }, workspaceHistory, undefined, 42],
@@ -323,7 +326,8 @@ test("registered annotation handlers extract and store a 200000-character PDF se
     const stream = lines.map((line, i) => `BT /F1 0.5 Tf 1 0 0 1 40 ${baseline(i)} Tm (${line}) Tj ET`).join("\n");
     const pdf = join(path, "selection.pdf");
     writeFileSync(pdf, knownCoordinatePdf(true, stream));
-    const { pageId } = papers.importFile(pdf);
+    const papers = paperServices();
+    const { pageId } = await papers.importFile(pdf);
     const [file] = (await papers.resources(pageId)).files;
     const rectangles = lines.map((_, i) => ({ x: 40, y: baseline(i) - 0.1, width: 65, height: 0.7 }));
     const selection = { fileId: file.id, pageNumber: 1, rectangles, quote, context: quote, extractorVersion: "A".repeat(201) };

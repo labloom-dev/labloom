@@ -57,3 +57,5 @@ export const annotationShortcuts = {
     next: "ArrowDown", previous: "ArrowUp", edit: "Enter", openTab: "Ctrl+Enter", remove: "Delete", menu: "Shift+F10"
 } as const;
 export const readerShortcuts = { zoomIn: "Ctrl++", zoomOut: "Ctrl+-" } as const;
+export const imageViewerShortcuts = { previous: "ArrowLeft", next: "ArrowRight", close: "Escape" } as const;
+export const webLinkShortcut = { mac: "metaKey", other: "ctrlKey" } as const;

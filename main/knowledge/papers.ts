@@ -1,8 +1,8 @@
 import { type HistorySource } from "../../shared/history/ipc";
 import { eq, sql } from "drizzle-orm";
-import { accessSync, constants, readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { basename, dirname, extname, isAbsolute, join } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { PDFDocumentLoadingTask, PDFDocumentProxy } from "pdfjs-dist/types/src/display/api";
 import { record, validUUID } from "../../shared/attrs/values";
@@ -12,8 +12,7 @@ import { charactersFromTextContent, extractText, PDF_EXTRACTOR_VERSION, type Pdf
 import { diagnostic, LabloomError, toFailureInfo } from "../../shared/failure";
 import { type AttributeValue } from "../../shared/types/attributes";
 import { type CommitResult, type PageRecord } from "../../shared/types/content";
-import { type AnnotationInput, type AnnotationPaper, type Attachment, type PaperAnnotation, type PaperImport, type PaperImportBatch, type PaperResources, type ReadingPosition } from "../../shared/types/papers";
-import * as attachmentFiles from "../attachments/service";
+import { type AnnotationInput, type AnnotationPaper, type Attachment, type PaperAnnotation, type PaperResources, type ReadingPosition } from "../../shared/types/papers";
 import { attachmentPath } from "../storage/files";
 import { attachments } from "../storage/tables";
 import * as workspace from "../workspace-state";
@@ -179,69 +178,35 @@ export function attachFile(pageId: string, attributeId: string, fileId: string, 
     append(pageId, attributeId, [file], source);
 }
 
-export function attachFiles(paths: string[], pageId: string, attributeId: string, source?: HistorySource): Attachment[] {
+function requiredFiles(ids: string[]): Attachment[] {
+    const found = files(ids);
+    if (found.length !== ids.length) throw new LabloomError({ kind: "attachment-missing" });
+    return found;
+}
+
+export function attachImported(ids: string[], pageId: string, attributeId: string, source?: HistorySource): Attachment[] {
     workspace.requireWorkspace();
-    if (!Array.isArray(paths) || !paths.length) throw new LabloomError({ kind: "attachment-selection-required" });
-    return attachmentFiles.importing(store => commit.run({ history: false }, () => {
-        const localFiles = paths.map(store);
+    if (!Array.isArray(ids) || !ids.length) throw new LabloomError({ kind: "attachment-selection-required" });
+    return commit.run({ history: false }, () => {
+        const localFiles = requiredFiles(ids);
         append(pageId, attributeId, localFiles, source);
         return localFiles;
-    }));
+    });
 }
 
-export function importFile(path: string, pageId?: string, source?: HistorySource): PaperImport {
+export function importPrepared(ids: string[], source?: HistorySource, pageId?: string): string[] {
     workspace.requireWorkspace();
-    if (pageId) paper(pageId, true);
-    return attachmentFiles.importing(store => commit.run({ history: false }, () => {
-        const file = store(path);
-        const page = pageId ? paper(pageId, true) : edits.createPage("paper", basename(path, extname(path)), { source_snapshot: { originalName: basename(path) } }, undefined, source);
-        append(page.id, "paper_files", [file], source);
-        return { pageId: page.id };
-    }));
-}
-
-export function importPaths(paths: string[], source: HistorySource, pageId?: string, pdfOnly = !pageId): PaperImportBatch {
-    workspace.requireWorkspace();
-    type Entry = { path: string; error?: ReturnType<typeof toFailureInfo>; page?: string };
-    const entries: Entry[] = paths.map(path => ({ path }));
-    for (const entry of entries) {
-        try {
-            const { path } = entry;
-            if (!isAbsolute(path) || !statSync(path).isFile()) throw new LabloomError({ kind: "import-regular-file" });
-            accessSync(path, constants.R_OK);
-            const pdf = extname(path).toLowerCase() === ".pdf";
-            if (pdfOnly && !pdf) throw new LabloomError({ kind: "import-pdf-only" });
-            if (pageId && pdf) attachmentFiles.checkLocalPDF(path);
-            if (!pageId) entry.page = importFile(path, undefined, source).pageId;
-        }
-        catch (error) {
-            entry.error = toFailureInfo(error);
-        }
+    if (!ids.length) return [];
+    if (pageId) {
+        paper(pageId, true);
+        attachImported(ids, pageId, "paper_files", source);
+        return ids.map(() => pageId);
     }
-    const accepted = entries.filter(entry => !entry.error);
-    if (pageId && accepted.length) {
-        try {
-            paper(pageId, true);
-            attachmentFiles.importing(store => commit.run({ history: false }, () => {
-                const files: Attachment[] = [];
-                for (const entry of accepted) {
-                    try {
-                        files.push(store(entry.path));
-                    }
-                    catch (error) {
-                        entry.error = toFailureInfo(error);
-                    }
-                }
-                if (files.length) append(pageId, "paper_files", files, source);
-            }));
-            for (const entry of accepted) if (!entry.error) entry.page = pageId;
-        }
-        catch (error) {
-            for (const entry of accepted) entry.error ??= toFailureInfo(error);
-        }
-    }
-    return { pages: entries.flatMap(entry => entry.page ? [entry.page] : []),
-        failures: entries.flatMap(entry => entry.error ? [{ name: basename(entry.path), error: entry.error }] : []) };
+    const files = requiredFiles(ids);
+    if (files.some(file => file.mediaType !== "application/pdf")) throw new LabloomError({ kind: "import-pdf-only" });
+    return files.map(file => edits.createPage("paper", basename(file.originalName, extname(file.originalName)), {
+        paper_files: [file.id], source_snapshot: { originalName: file.originalName }
+    }, undefined, source).id);
 }
 
 export function read(id: string): Uint8Array {
@@ -420,10 +385,4 @@ export async function get(pageId: string): Promise<PageRecord> {
     const session = workspace.requireWorkspace(), page = data.get(pageId);
     if (page.kind === "annotation" && !page.attributes.deleted) await getAnnotation(pageId);
     return workspace.isCurrent(session) ? data.get(pageId) : page;
-}
-export function fileSelection(attributeId: string): boolean {
-    workspace.requireWorkspace();
-    const definition = attributes.definition(attributeId);
-    if (definition.type !== "file" && definition.type !== "files") throw new LabloomError({ kind: "attribute-file-required" });
-    return definition.type === "files";
 }

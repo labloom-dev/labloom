@@ -1,9 +1,12 @@
 import { attributeTargets, decodeValue } from "../../shared/attrs/values";
 import { references } from "../../shared/content/blocks";
 import type { AttributeDefinition, AttributeValue } from "../../shared/types/attributes";
+import * as attachments from "../../main/attachments/service";
+import { toFailureInfo } from "../../shared/failure";
 import { type FeedSourceInput } from "../../shared/types/feed";
 import { type HistorySource } from "../../shared/history/ipc";
-import { type AnnotationInput } from "../../shared/types/papers";
+import type { AnnotationInput, Attachment } from "../../shared/types/papers";
+import type { AttachmentBatch } from "../../shared/attachments/ipc";
 import { pageHistory } from "./history";
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { join } from "node:path";
@@ -121,7 +124,37 @@ export async function annotate(pageId: string, input: AnnotationInput | string, 
     return typeof input === "string" ? input : papers.annotate(pageId, input, source, color);
 }
 export function paperServices(): Papers {
-    return { ...papers, annotate };
+    return { ...papers, annotate, importFile, importPaths, attachFiles };
+}
+async function importFile(path: string, pageId?: string, source?: HistorySource): Promise<{ pageId: string }> {
+    const { files } = await attachments.stagePaths([path], !pageId, true), ids = files.map(file => file.id);
+    try {
+        return { pageId: papers.importPrepared(ids, source, pageId)[0] };
+    }
+    finally {
+        attachments.releaseHandoffs(ids);
+    }
+}
+async function attachFiles(paths: string[], pageId: string, attribute: string, source?: HistorySource): Promise<Attachment[]> {
+    const { files } = await attachments.stagePaths(paths, false, true), ids = files.map(file => file.id);
+    try {
+        return papers.attachImported(ids, pageId, attribute, source);
+    }
+    finally {
+        attachments.releaseHandoffs(ids);
+    }
+}
+async function importPaths(paths: string[], source: HistorySource, pageId?: string): Promise<{ pages: string[]; failures: AttachmentBatch["failures"] }> {
+    const { files, failures } = await attachments.stagePaths(paths, !pageId), ids = files.map(file => file.id);
+    try {
+        return { pages: papers.importPrepared(ids, source, pageId), failures };
+    }
+    catch (error) {
+        return { pages: [], failures: [...failures, ...files.map(file => ({ name: file.originalName, error: toFailureInfo(error) }))] };
+    }
+    finally {
+        attachments.releaseHandoffs(ids);
+    }
 }
 export function purgeServices(): typeof purge {
     return purge;
@@ -151,5 +184,7 @@ export type Knowledge = typeof records & Omit<typeof edits, "create"> & {
 };
 export type Attributes = ReturnType<typeof attributeServices>;
 export type History = typeof history;
-export type Papers = Omit<typeof papers, "annotate"> & { annotate: typeof annotate };
+export type Papers = Omit<typeof papers, "annotate"> & {
+    annotate: typeof annotate; importFile: typeof importFile; importPaths: typeof importPaths; attachFiles: typeof attachFiles;
+};
 export type Purge = typeof purge;

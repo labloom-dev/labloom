@@ -1,6 +1,8 @@
 import { extname } from "node:path";
 import { MIMEType } from "node:util";
 import { type Attachment } from "../../shared/types/papers";
+import { imageTypes } from "../../shared/content/media";
+import type { MediaKind } from "../../shared/types/content";
 
 export type Metadata = Pick<Attachment, "originalName" | "mediaType">;
 export const binary = "application/octet-stream";
@@ -12,9 +14,16 @@ const mediaTypes: Record<string, string> = {
     ppt: "application/vnd.ms-powerpoint", pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     odt: "application/vnd.oasis.opendocument.text", rtf: "application/rtf", epub: "application/epub+zip",
     zip: "application/zip", gz: "application/gzip", tar: "application/x-tar", "7z": "application/x-7z-compressed", rar: "application/vnd.rar",
-    png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", svg: "image/svg+xml", tif: "image/tiff", tiff: "image/tiff", bmp: "image/bmp",
-    mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime"
+    ...imageTypes,
+    mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", oga: "audio/ogg", opus: "audio/ogg",
+    m4a: "audio/mp4", flac: "audio/flac", aac: "audio/aac", aiff: "audio/aiff", wma: "audio/x-ms-wma",
+    mp4: "video/mp4", m4v: "video/mp4", webm: "video/webm", mov: "video/quicktime", ogv: "video/ogg",
+    avi: "video/x-msvideo", mkv: "video/x-matroska", mpg: "video/mpeg", mpeg: "video/mpeg", wmv: "video/x-ms-wmv", hevc: "video/hevc"
 };
+
+export function extensionsFor(kind: Exclude<MediaKind, "file">): string[] {
+    return Object.keys(mediaTypes).filter(key => mediaTypes[key].startsWith(kind + "/") || kind === "video" && mediaTypes[key].startsWith("audio/"));
+}
 
 export function typeFor(name: string): string | undefined {
     const extension = extname(name).slice(1).toLowerCase();
@@ -27,7 +36,7 @@ export function suffixFor(type: string): string {
 }
 
 // A response filename is display metadata. Keep only a usable final path component.
-function safeName(name: string): string {
+export function safeName(name: string): string {
     return (name.split(/[\\/]/).pop() ?? "").replace(/[\p{Cc}<>:"|?*]/gu, "_").trim().replace(/[. ]+$/, "");
 }
 

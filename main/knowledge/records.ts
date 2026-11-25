@@ -5,11 +5,13 @@ import { libraryText, search } from "../../shared/attrs/format";
 import { attributeTargetKind, decodeValue, emptyValue, encodeValue, nullable, record, validUUID } from "../../shared/attrs/values";
 import { blockText, payload, validateBlock, validTarget } from "../../shared/content/blocks";
 import { matchRanges } from "../../shared/content/matches";
+import type { MediaFile } from "../../shared/content/media";
 import { isTimeType, resolveTimeZone, validTimeSeconds } from "../../shared/content/time";
 import { LabloomError } from "../../shared/failure";
 import { type AttributeDefinition, type AttributeValue } from "../../shared/types/attributes";
 import { pageKinds, type Backlink, type ContentBlock, type LinkTarget, type PageKind, type PageList, type PageObjects, type PageQuery, type PageRecord, type PageSummary, type PageSearchResult, type ResolvedTarget, type Target } from "../../shared/types/content";
 import { type blocks, type pages } from "../storage/tables";
+import { attachmentPath } from "../storage/files";
 import * as workspace from "../workspace-state";
 
 import { overviewBatchSize, type OverviewIndex, type OverviewPage, type OverviewQuery } from "../../shared/workspace/overview";
@@ -129,7 +131,9 @@ export function readObjects(pageId: string, ids: string[]): PageObjects {
     workspace.requireWorkspace();
     const page = ids.includes(pageId) ? { children: children({ kind: "page", id: pageId }), attributes: valuesFor([pageId]).get(pageId) ?? {} } : undefined;
     const blocks = ids.filter(id => id !== pageId);
-    return { page, blocks: readBatch(blocks), uses: sharedUses(blocks) };
+    const content = readBatch(blocks), files = new Set<string>();
+    for (const block of content) if (block.payload.media?.fileId) files.add(block.payload.media.fileId);
+    return { page, blocks: content, uses: sharedUses(blocks), ...(files.size ? { mediaFiles: mediaFiles(files) } : {}) };
 }
 
 export function uses(id: string): Use[] {
@@ -191,6 +195,7 @@ export function get(id: string): PageRecord {
     const row = header(id), pageChildren = children({ kind: "page", id });
     const visible: Record<string, ContentBlock> = {};
     const seen = new Set<string>();
+    let files: Set<string> | undefined;
     let level = [row.titleBlockId, ...pageChildren];
     while (level.length) {
         const batch = [...new Set(level)].filter(id => !seen.has(id));
@@ -198,14 +203,23 @@ export function get(id: string): PageRecord {
         level = [];
         for (const block of readBatch(batch)) {
             visible[block.id] = block;
+            if (block.payload.media?.fileId) (files ??= new Set()).add(block.payload.media.fileId);
             for (const child of block.children) if (!seen.has(child)) level.push(child);
         }
     }
     const localTitle = visible[row.titleBlockId];
     return {
         ...row, kind: row.kind as PageKind, children: pageChildren, title: localTitle ? blockText(localTitle) : "", excerpt: excerpt(pageChildren, visible),
-        blocks: visible, sharedUses: sharedUses([...seen]), attributes: valuesFor([id]).get(id) ?? {}
+        blocks: visible, sharedUses: sharedUses([...seen]), attributes: valuesFor([id]).get(id) ?? {},
+        ...(files ? { mediaFiles: mediaFiles(files) } : {})
     };
+}
+
+function mediaFiles(ids: Set<string>): Record<string, MediaFile> {
+    const root = workspace.root();
+    const rows = statement(`SELECT id, original_name AS originalName, media_type AS mediaType, size, stored_name AS storedName
+        FROM attachments WHERE id IN (SELECT value FROM json_each(?))`).all(JSON.stringify([...ids])) as (Omit<MediaFile, "path"> & { storedName: string })[];
+    return Object.fromEntries(rows.map(({ storedName, ...file }) => [file.id, { ...file, path: attachmentPath(root, storedName) }]));
 }
 
 function excerpt(ids: string[], blocks: Record<string, ContentBlock>): string {
@@ -245,8 +259,16 @@ function attributeText(): string {
         ) END) END`;
 }
 
-const blockHits = `block_hits(id) AS MATERIALIZED (
+const blockHits = `file_hits(id, name) AS MATERIALIZED (
+    SELECT l.source_id, f.original_name FROM attachments f CROSS JOIN link_refs l
+    ON l.target_kind='file' AND l.target_id=f.id AND l.source_kind='block'
+    WHERE instr(knowledge_lower(f.original_name), @keyword)>0
+    UNION ALL
+    SELECT b.id, b.content ->> '$.media.name' FROM blocks b WHERE b.type IN ('image','video','file')
+        AND b.content ->> '$.media.fileId' IS NULL AND instr(knowledge_lower(coalesce(b.content ->> '$.media.name', '')), @keyword)>0
+), block_hits(id) AS MATERIALIZED (
     SELECT b.id FROM blocks b WHERE instr(knowledge_lower(knowledge_text(b.type,b.content)), @keyword)>0
+    UNION SELECT id FROM file_hits
 ), owners(kind,id) AS (
     SELECT 'block', id FROM block_hits
     UNION SELECT u.container_kind,u.container_id FROM owners o JOIN sync_refs u ON u.block_id=o.id WHERE o.kind='block'
@@ -366,9 +388,10 @@ const searchSQL = searchMatches + `, ranked AS MATERIALIZED (
           AND r.block_id IN (SELECT id FROM owners WHERE kind='block') ORDER BY r.position LIMIT 1
     ) FROM walk w WHERE w.kind='page' OR w.id NOT IN block_hits
 ), body AS (
-    SELECT w.page, b.type, b.content FROM walk w JOIN blocks b ON b.id=w.id WHERE w.kind='block' AND w.id IN block_hits
+    SELECT w.page, coalesce(f.name, knowledge_text(b.type,b.content)) AS text
+    FROM walk w JOIN blocks b ON b.id=w.id LEFT JOIN file_hits f ON f.id=b.id WHERE w.kind='block' AND w.id IN block_hits
 )
-SELECT r.*, a.name, CASE r.field WHEN 'body' THEN knowledge_text(b.type,b.content)
+SELECT r.*, a.name, CASE r.field WHEN 'body' THEN b.text
     WHEN 'attribute' THEN ${attributeText()} END AS text FROM ranked r
 LEFT JOIN body b ON b.page=r.id
 LEFT JOIN page_attrs v ON r.field='attribute' AND v.page_id=r.id AND v.attr_id=r.attr

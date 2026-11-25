@@ -1,15 +1,14 @@
 import { type HistorySource } from "../history/ipc";
 import type { CommitResult } from "../types/content";
-import { type AnnotationInput, type AnnotationPaper, type Attachment, type PaperImportBatch, type PaperResources, type ReadingPosition } from "../types/papers";
+import { type AnnotationInput, type AnnotationPaper, type Attachment, type PaperResources, type ReadingPosition } from "../types/papers";
 import { type Channels } from "../ipc/contract";
 import type { tags } from "typia";
 
 type SelectedAnnotation = Omit<AnnotationInput, "rectangles"> & { rectangles: AnnotationInput["rectangles"] & tags.MinItems<1> };
 
 export type PapersAPI = {
-    importPDF(source: HistorySource, pageId?: string): Promise<PaperImportBatch>;
-    importPaths(paths: string[], source: HistorySource, pageId?: string): Promise<PaperImportBatch>;
-    importFiles(pageId: string, attributeId: string, source: HistorySource): Promise<Attachment[] | null>;
+    importPrepared(ids: string[], source: HistorySource, pageId?: string): Promise<string[]>;
+    attachImported(ids: string[], pageId: string, attributeId: string, source: HistorySource): Promise<Attachment[]>;
     attachFile(pageId: string, attributeId: string, fileId: string, source: HistorySource): Promise<void>;
     files(ids?: string[]): Promise<Attachment[]>;
     openFile(fileId: string): Promise<void>;
@@ -25,9 +24,8 @@ export type PapersAPI = {
 };
 
 export const papersChannels = {
-    importPDF: "papers:import-pdf",
-    importPaths: "papers:import-paths",
-    importFiles: "papers:import-files",
+    importPrepared: "papers:import-prepared",
+    attachImported: "papers:attach-imported",
     attachFile: "papers:attach-file",
     files: "papers:files",
     openFile: "papers:open-file",

@@ -5,7 +5,7 @@ import { Text } from "@tiptap/extension-text";
 import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
 import { type Node as DocNode, type Schema } from "@tiptap/pm/model";
 import { Plugin } from "@tiptap/pm/state";
-import { payload, references } from "../../../shared/content/blocks";
+import { isMediaKind, payload, references } from "../../../shared/content/blocks";
 import { type ContentBlock, type ContentBlockKind, type InlineNode, type PageRecord, type RichNode } from "../../../shared/types/content";
 import bold from "./extensions/mark/bold";
 import italic from "./extensions/mark/italic";
@@ -14,13 +14,14 @@ import strike from "./extensions/mark/strike";
 import code from "./extensions/mark/code";
 import fgColor from "./extensions/mark/fgColor";
 import bgColor from "./extensions/mark/bgColor";
+import webLink from "./extensions/mark/webLink";
 import { LabloomError } from "../../../shared/failure";
 
 const blockAttrs = (): Record<string, { default: null; rendered: boolean }> => ({ blockId: { default: null, rendered: false }, collapsed: { default: null, rendered: false } });
 const domAttrs = (node: DocNode): Record<string, string> => ({ "data-block-id": node.attrs.blockId, "data-kind": kindOf(node), ...(node.attrs.collapsed ? { "data-folded": "true" } : {}) });
 export const canNest = (kind: string): boolean => ["paragraph", "ordered_list", "unordered_list", "blockquote", "callout"].includes(kind);
 export function kindOf(node: DocNode): ContentBlockKind {
-    if (node.type.name === "pageBlock") return node.attrs.kind;
+    if (node.type.name === "pageBlock" || node.type.name === "mediaBlock") return node.attrs.kind;
     if (node.type.name === "pageTitle") return "title";
     if (node.type.name === "codeBlock") return "code";
     if (node.type.name === "pageTable") return "table";
@@ -165,9 +166,18 @@ const HardBreak = ExtensionNode.create({
     }
 });
 export const referenceBlock = atom("blocked_reference");
+export const mediaBlock = ExtensionNode.create<{ nodeView: NodeViewRenderer | null }>({
+    name: "mediaBlock", group: "workspaceBlock", content: "blockBody", defining: true, isolating: true,
+    addOptions: () => ({ nodeView: null }),
+    addAttributes: () => ({ ...blockAttrs(), kind: { default: "file", rendered: false }, media: { default: null, rendered: false } }),
+    renderHTML: () => ["div", 0],
+    addNodeView() {
+        return this.options.nodeView;
+    }
+});
 export const documentExtensions = [Document.extend({ content: "pageTitle workspaceBlock*" }), title, block, body, codeLine, codeBlock, table,
 Table.configure({ resizable: false }), TableRow, TableCell.extend({ content: "paragraph+" }), TableHeader.extend({ content: "paragraph+" }),
-    cellParagraph, atom("hr"), referenceBlock, inlineReference, Text, HardBreak, bold, italic, underline, strike, code, fgColor, bgColor];
+    cellParagraph, atom("hr"), referenceBlock, mediaBlock, inlineReference, Text, HardBreak, bold, italic, underline, strike, code, fgColor, bgColor, webLink];
 export const blankTable = (): RichNode => ({ type: "table", content: Array.from({ length: 2 }, () => ({ type: "tableRow", content: Array.from({ length: 2 }, () => ({ type: "tableCell", content: [{ type: "paragraph", content: [] }] })) })) });
 
 export function blockJSON(b: ContentBlock, children: JSONContent[] = []): JSONContent {
@@ -177,6 +187,7 @@ export function blockJSON(b: ContentBlock, children: JSONContent[] = []): JSONCo
     if (b.type === "table") return { type: "pageTable", attrs, content: [b.payload.table ?? blankTable()] };
     if (b.type === "hr" || b.type === "blocked_reference") return { type: b.type, attrs: { ...attrs, target: b.payload.target } };
     const body = { type: "blockBody", attrs: bodyAttributes(b.type) ?? undefined, content: b.payload.inline };
+    if (isMediaKind(b.type)) return { type: "mediaBlock", attrs: { ...attrs, kind: b.type, media: b.payload.media }, content: [body] };
     return { type: "pageBlock", attrs: { ...attrs, kind: b.type }, content: [body, ...children] };
 }
 export function subtree(id: string, blocks: PageRecord["blocks"]): JSONContent {
@@ -218,7 +229,8 @@ export function blockData(node: DocNode): ContentBlock {
     if (type === "table") value.table = tableData(node.firstChild!);
     else if (type === "blocked_reference") value.target = node.attrs.target;
     else if (node.type.name === "codeBlock") value.inline = codeInline(node);
-    else if (node.type.name === "pageBlock" || type === "title") value.inline = ((type === "title" ? node : node.firstChild!).content.toJSON() ?? []) as InlineNode[];
+    else if (node.type.name === "pageBlock" || node.type.name === "mediaBlock" || type === "title") value.inline = ((type === "title" ? node : node.firstChild!).content.toJSON() ?? []) as InlineNode[];
+    if (isMediaKind(type)) value.media = node.attrs.media;
     return { id: node.attrs.blockId, type, payload: value, children: childIds(node) };
 }
 export type Location = { node: DocNode; pos: number };
@@ -257,7 +269,7 @@ export function removesReference(edit: DocumentEdit, page: PageRecord): boolean 
         if (seen.has(id)) return false;
         seen.add(id);
         const b = page.blocks[id];
-        return !!b && (!!references(b).length || b.children.some(contains));
+        return !!b && (references(b).some(target => target.kind !== "file") || b.children.some(contains));
     }
     function removed(prior: string[], next: string[]): boolean {
         const counts = new Map<string, number>();
@@ -273,7 +285,7 @@ export function removesReference(edit: DocumentEdit, page: PageRecord): boolean 
         const base = page.blocks[b.id];
         if (!base) return false;
         const targets = new Set(references(b).map(t => t.kind + t.id));
-        return references(base).some(t => !targets.has(t.kind + t.id)) || removed(base.children, b.children);
+        return references(base).some(t => t.kind !== "file" && !targets.has(t.kind + t.id)) || removed(base.children, b.children);
     });
 }
 export function blankBlock(schema: Schema, type: ContentBlockKind = "paragraph", text = ""): DocNode {

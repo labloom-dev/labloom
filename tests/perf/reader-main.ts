@@ -181,7 +181,7 @@ async function wheel(wc: WebContents, selector: string, measureWork = false): Pr
 
 async function run(): Promise<void> {
     const data = fixture();
-    const { paperId, fileId } = seedReader(data, root);
+    const { paperId, fileId } = await seedReader(data, root);
     const directory = dirname(data.sql.name);
     session.close();
     const startup = startupServices(join(root, "profile"));

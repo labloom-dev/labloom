@@ -10,20 +10,25 @@ import typia from "@typia/unplugin/vite";
 import { createServer } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { viteStaticCopy } from "vite-plugin-static-copy";
+import { generateMedia } from "./media-fixture.mjs";
 
 const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const editing = process.argv.includes("--editing");
 const library = process.argv.includes("--library");
 const reader = process.argv.includes("--reader");
+const media = process.argv.includes("--media");
+const mediaClipboard = process.argv.includes("--media-clipboard");
 const paperState = process.argv.includes("--feed-paper-state");
 const feed = paperState || process.argv.includes("--feed");
 const picker = library || editing || process.argv.includes("--picker");
 const local = join(root, ".local");
 mkdirSync(local, { recursive: true });
+const mediaFixtures = join(local, "media-bench-data");
+if (media) await generateMedia(mediaFixtures);
 const dir = mkdtempSync(join(local, reader ? "reader-benchmark-" : feed ? "feed-benchmark-" : picker ? "picker-benchmark-" : "tab-benchmark-"));
 const pdfAssets = dirname(createRequire(import.meta.url).resolve("pdfjs-dist/package.json")).replaceAll("\\", "/");
-const server = await createServer({ root: process.env.LABLOOM_RENDERER_ROOT ?? join(root, "renderer"), configFile: false, cacheDir: join(dir, "vite"),
-    ...(picker || reader || feed ? { optimizeDeps: { entries: ["index.html", "components/Editor/code-worker.ts"], exclude: ["svelte/elements"], include: ["typia/lib/internal/_accessExpressionAsString"] } } : {}),
+const server = await createServer({ root: process.env.LABLOOM_RENDERER_ROOT ?? join(root, "renderer"), configFile: false, cacheDir: join(media ? mediaFixtures : dir, "vite"),
+    ...(picker || reader || feed || media || mediaClipboard ? { optimizeDeps: { entries: ["index.html", "components/Editor/code-worker.ts"], exclude: ["svelte/elements"], include: ["typia/lib/internal/_accessExpressionAsString"] } } : {}),
     plugins: [typia({ include: [/[/\\]Tab[/\\]restore\.ts$/], tsconfig: join(root, "configs/tsconfig.web.json") }), svelte({ configFile: join(root, "configs/svelte.config.js") }),
         ...(reader ? [viteStaticCopy({ targets: ["cmaps", "iccs", "standard_fonts", "wasm"].map(folder => ({
             src: pdfAssets + "/" + folder + "/*", dest: "pdfjs/" + folder, rename: { stripBase: true }
@@ -31,12 +36,12 @@ const server = await createServer({ root: process.env.LABLOOM_RENDERER_ROOT ?? j
     server: { host: "127.0.0.1", port: reader ? 15176 : 0, hmr: false, watch: null, ...(reader ? { forwardConsole: false } : {}), fs: { allow: [root] } } });
 try {
     const options = { absWorkingDir: root, bundle: true, platform: "node", format: "cjs", packages: "external", outdir: dir, outExtension: { ".js": ".cjs" } };
-    await buildTestMain({ ...options, entryPoints: { main: reader ? "tests/perf/reader-main.ts" : feed ? "tests/perf/feed-main.ts" : library ? "tests/perf/library-main.ts" : picker ? "tests/perf/picker-main.ts" : "tests/perf/tabs-main.ts" } });
+    await buildTestMain({ ...options, entryPoints: { main: mediaClipboard ? "tests/perf/media-clipboard-main.ts" : media ? "tests/perf/media-main.ts" : reader ? "tests/perf/reader-main.ts" : feed ? "tests/perf/feed-main.ts" : library ? "tests/perf/library-main.ts" : picker ? "tests/perf/picker-main.ts" : "tests/perf/tabs-main.ts" } });
     await build({ ...options, entryPoints: { preload: "preload/index.ts" } });
     await server.listen();
-    const env = { ...process.env, LABLOOM_TEST_ROOT: dir, LABLOOM_BENCH_URL: server.resolvedUrls.local[0] };
+    const env = { ...process.env, LABLOOM_TEST_ROOT: dir, LABLOOM_BENCH_URL: server.resolvedUrls.local[0], LABLOOM_MEDIA_FIXTURES: mediaFixtures };
     delete env.ELECTRON_RUN_AS_NODE;
-    for (const scale of reader ? ["reader"] : feed ? [paperState ? "paper-state" : "feed"] : picker ? [editing ? "editing" : "B"] : process.env.LABLOOM_TAB_SCALE ? [process.env.LABLOOM_TAB_SCALE] : ["A", "B"]) {
+    for (const scale of mediaClipboard ? ["media-clipboard"] : media ? ["media"] : reader ? ["reader"] : feed ? [paperState ? "paper-state" : "feed"] : picker ? [editing ? "editing" : "B"] : process.env.LABLOOM_TAB_SCALE ? [process.env.LABLOOM_TAB_SCALE] : ["A", "B"]) {
         const run = spawn(createRequire(import.meta.url)("electron"), [join(dir, "main.cjs"), scale], { cwd: root, env, stdio: "inherit", windowsHide: true });
         const code = await new Promise((resolve, reject) => {
             run.once("error", reject);

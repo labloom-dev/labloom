@@ -144,7 +144,7 @@ test("a changed recycle set invalidates a previously confirmed empty-trash scope
 async function annotated(t: TestContext): Promise<ReturnType<typeof fixture> & { id: string; annotation: string; file: string; path: string }> {
     const f = fixture(t), path = join(f.info.path, "paper.pdf");
     writeFileSync(path, knownCoordinatePdf());
-    const id = f.papers.importFile(path).pageId, file = (await f.papers.resources(id)).files[0];
+    const id = (await f.papers.importFile(path)).pageId, file = (await f.papers.resources(id)).files[0];
     const annotation = await f.papers.annotate(id, { fileId: file.id, pageNumber: 1, rectangles: [{ x: 50, y: 690, width: 70, height: 30 }], quote: "", context: "", extractorVersion: PDF_EXTRACTOR_VERSION }, pageHistory(id));
     const stored = f.database.prepare("SELECT stored_name FROM attachments WHERE id=?").pluck().get(file.id) as string;
     return { ...f, id, annotation, file: join(f.info.path, "attachments", stored), path };
@@ -209,7 +209,7 @@ test("a surviving annotation retains its contents and can identify its permanent
 test("purging one paper deletes only its independent copy of an identically imported PDF", async t => {
     const { service, purge, papers, info } = fixture(t), path = join(info.path, "shared.pdf");
     writeFileSync(path, knownCoordinatePdf());
-    const a = papers.importFile(path).pageId, b = papers.importFile(path).pageId;
+    const a = (await papers.importFile(path)).pageId, b = (await papers.importFile(path)).pageId;
     const first = papers.externalPath((await papers.resources(a)).files[0].id), second = papers.externalPath((await papers.resources(b)).files[0].id);
     confirm(token => service.trash([a, b], workspaceHistory, token));
     erase(purge, [a]); assert.equal(existsSync(first), false); assert.equal(existsSync(second), true);
@@ -218,7 +218,7 @@ test("purging one paper deletes only its independent copy of an identically impo
 test("purging an annotation's paper removes its PDF and removes the highlight history", async t => {
     const { service, history, purge, papers, info } = fixture(t), path = join(info.path, "plain.pdf");
     writeFileSync(path, knownCoordinatePdf());
-    const page = papers.importFile(path).pageId, fileId = (await papers.resources(page)).files[0].id;
+    const page = (await papers.importFile(path)).pageId, fileId = (await papers.resources(page)).files[0].id;
     await papers.annotate(page, { fileId, pageNumber: 1, rectangles: [{ x: 50, y: 690, width: 70, height: 30 }], quote: "", context: "", extractorVersion: PDF_EXTRACTOR_VERSION }, pageHistory(page), "yellow");
     const mark = (await papers.resources(page)).annotations[0];
     confirm(token => papers.deleteAnnotation(mark.id, pageHistory(mark.id), token));

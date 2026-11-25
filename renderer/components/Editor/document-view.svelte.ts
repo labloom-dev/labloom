@@ -1,4 +1,4 @@
-import { Extension, type Extensions } from "@tiptap/core";
+import { Extension, type Extensions, type NodeViewRenderer } from "@tiptap/core";
 import { Plugin } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { DOMSerializer } from "@tiptap/pm/model";
@@ -6,7 +6,7 @@ import type { Target } from "../../../shared/types/content";
 import { t } from "../../i18n.svelte";
 import { codeView } from "./code-view.svelte";
 import { syntaxPlugin } from "./code-highlight";
-import { codeBlock, documentExtensions, inlineReference, referenceBlock } from "./document";
+import { codeBlock, documentExtensions, inlineReference, mediaBlock, referenceBlock } from "./document";
 import "./document.css";
 
 // Only the title and the current textblock can show a placeholder.
@@ -18,8 +18,10 @@ const placeholders = Extension.create({
             const title = doc.firstChild!;
             if (!title.content.size) nodes.push(Decoration.node(0, title.nodeSize, { class: "empty-field" }));
             const from = selection.$from;
-            if (selection.empty && (from.parent.type.name === "blockBody" || from.parent.type.name === "codeLine" && from.node(-1).childCount === 1) && !from.parent.content.size)
-                nodes.push(Decoration.node(from.before(), from.after(), { class: "empty-field" }));
+            if (selection.empty && (from.parent.type.name === "blockBody" || from.parent.type.name === "codeLine" && from.node(-1).childCount === 1) && !from.parent.content.size) {
+                const caption = from.node(-1).type.name === "mediaBlock";
+                nodes.push(Decoration.node(from.before(), from.after(), { class: caption ? "media-caption-active" : "empty-field" }));
+            }
             return nodes.length ? DecorationSet.create(doc, nodes) : DecorationSet.empty;
         }
     } })]
@@ -34,7 +36,7 @@ export function documentLabels(element: HTMLElement): void {
     });
 }
 
-export function documentViews(glyph: Element, mountCard: (element: HTMLElement, target: Target) => () => void): Extensions {
+export function documentViews(glyph: Element, mountCard: (element: HTMLElement, target: Target) => () => void, mediaView?: NodeViewRenderer): Extensions {
     const label = (): string => t("block.blocked_reference");
     const link = inlineReference.configure({ label,
         nodeView: ({ node }) => {
@@ -66,7 +68,8 @@ export function documentViews(glyph: Element, mountCard: (element: HTMLElement, 
             return DecorationSet.create(state.doc, [Decoration.node(at.before(d), at.after(d), { class: "code-active" })]);
         return null;
     } } })] });
-    return [...documentExtensions.map(extension => extension === codeBlock ? code : extension === referenceBlock ? card : extension === inlineReference ? link : extension), placeholders, highlighting];
+    const views = [code, card, link, mediaBlock.configure({ nodeView: mediaView ?? null })];
+    return [...documentExtensions.map(extension => views.find(view => view.name === extension.name) ?? extension), placeholders, highlighting];
 }
 
 // A single non-editable widget between the title and the first body block. It has no document position of its own.

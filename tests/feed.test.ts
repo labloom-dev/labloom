@@ -125,7 +125,7 @@ test("a downloaded PDF attaches to its committed paper as independent bytes, and
     const knowledge = knowledgeServices(), papers = paperServices();
     const data = knownCoordinatePdf(), original = join(workspace.info.path, "original.pdf");
     writeFileSync(original, data);
-    const existingPage = papers.importFile(original).pageId;
+    const existingPage = (await papers.importFile(original)).pageId;
     let requests = 0;
     const server = createServer((_request, response) => {
         requests++; response.end(data);
@@ -289,7 +289,7 @@ test("a slow PDF leaves other writes free and appends only after the page buffer
     assert.equal(feed.importItem(itemId).downloadPDF, false);
     const notes = join(workspace.info.path, "notes.txt");
     writeFileSync(notes, "notes");
-    const [original] = papers.attachFiles([notes], pageId, "paper_files", pageHistory(pageId));
+    const [original] = await papers.attachFiles([notes], pageId, "paper_files", pageHistory(pageId));
     const sending = Promise.withResolvers<void>(), applyRemoval = Promise.withResolvers<void>();
     const buffer = new PageWrites(pageId, async input => {
         sending.resolve();

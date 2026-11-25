@@ -1,5 +1,5 @@
 import type { EditorState, Transaction } from "@tiptap/pm/state";
-import type { ContentBlockKind } from "../../../shared/types/content";
+import { mediaKinds, type ContentBlockKind } from "../../../shared/types/content";
 import { convertibleKinds } from "../../../shared/content/block-labels";
 import { conversionShortcuts } from "../../../shared/content/commands";
 import en from "../../../locales/en.json";
@@ -16,15 +16,16 @@ const aliases: Record<string, string> = { paragraph: "text plain", heading_1: "h
 export function insertItems(query: string): InsertItem[] {
     const rows: InsertItem[] = convertibleKinds.map(kind => ({ kind, label: t(`block.${kind}`), icon: blockIcons[kind],
         shortcut: conversionShortcuts[kind], terms: en.block[kind] + " " + (aliases[kind] ?? ""), group: 0 }));
+    for (const kind of mediaKinds) rows.push({ kind, label: t(`block.${kind}`), icon: blockIcons[kind], terms: en.block[kind], group: 1 });
     for (const kind of ["inline", "reference", "sync"] as const) rows.push({ kind, label: t(`insertReference.${kind}`),
-        icon: kind === "sync" ? "sync" : "link-external", terms: en.insertReference[kind], group: 1 });
+        icon: kind === "sync" ? "sync" : "link-external", terms: en.insertReference[kind], group: 2 });
     const needle = query.trim().toLowerCase();
     return rows.filter(item => (item.label + " " + item.terms).toLowerCase().includes(needle));
 }
 
 export function slashTrigger(state: EditorState, tr: Transaction, previous: Trigger | null): Trigger | null {
     const { selection } = state, at = selection.$head;
-    if (!selection.empty || at.parent.type.name !== "blockBody") return null;
+    if (!selection.empty || at.parent.type.name !== "blockBody" || at.node(-1).type.name === "mediaBlock") return null;
     const head = selection.head, start = at.start();
     if (previous) {
         const from = tr.mapping.map(previous.from, -1), to = tr.mapping.map(previous.to, 1);

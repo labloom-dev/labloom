@@ -1,5 +1,6 @@
 import { type HistorySource } from "../../shared/history/ipc";
 import { randomUUID } from "node:crypto";
+import { extname } from "node:path";
 import { attributeTargets, decodeValue, record, validUUID } from "../../shared/attrs/values";
 import { blockText, payload } from "../../shared/content/blocks";
 import { nowSeconds } from "../../shared/content/time";
@@ -7,6 +8,7 @@ import { LabloomError } from "../../shared/failure";
 import { type AttributeDefinition, type AttributeImpact, type AttributeValue } from "../../shared/types/attributes";
 import { bodylessPageKinds, pageKinds, type BlockDeletion, type ChangePreview, type CommitResult, type ContentBlock, type EditCommit, type PageKind, type PageRecord, type Placement, type Target } from "../../shared/types/content";
 import * as workspace from "../workspace-state";
+import { storedAttachment } from "../attachments/service";
 import * as attributes from "./attributes";
 import { fingerprint } from "./attributes";
 import { EditChanges, type PagePatch, type RowChanges } from "./changes";
@@ -69,7 +71,30 @@ export function commitEdit(input: EditCommit, source: HistorySource | false, con
     workspace.requireWorkspace();
     return commit.edit({ history: source, directPage: input?.pageId, confirmation, writeId }, () => {
         const plan = planEdit(input);
-        return commit.finish(plan, input.pageId, input.batch, { action: input });
+        const linked = input.linkedPapers;
+        let rows: RowChanges | undefined;
+        if (linked?.length) {
+            const links = new Set<string>();
+            for (const block of input.blocks) {
+                const target = block.payload.target;
+                if (block.type === "blocked_reference" && target?.kind === "page" && plan.owners(block.id).includes(input.pageId))
+                    links.add(target.id);
+            }
+            const newPages = new Set<string>();
+            for (const { id, fileId } of linked) {
+                if (!validUUID(id) || !validUUID(fileId) || newPages.has("page:" + id) || !links.has(id)) throw new LabloomError({ kind: "page-invalid-create" });
+                const file = storedAttachment(fileId);
+                if (file?.mediaType !== "application/pdf") throw new LabloomError({ kind: "attachment-pdf-required" });
+                const name = file.originalName, title = name.slice(0, name.length - extname(name).length);
+                for (const block of createPageRows(plan, id, "paper", title, { independent: false, paper_files: [fileId], source_snapshot: { originalName: name } }))
+                    plan.blocks.add(block);
+                newPages.add("page:" + id);
+            }
+            const forHistory = (value: RowChanges["before"]): RowChanges["before"] =>
+                Object.fromEntries(Object.entries(value).filter(([key]) => !newPages.has(key)));
+            rows = { before: forHistory(plan.rows.before), after: forHistory(plan.rows.after) };
+        }
+        return commit.finish(plan, input.pageId, input.batch, { action: input }, rows);
     });
 }
 
@@ -99,7 +124,8 @@ function deletionSubject(block: ContentBlock): string {
     const names: Record<ContentBlock["type"], string> = {
         title: "标题", paragraph: "段落", heading_1: "一级标题", heading_2: "二级标题", heading_3: "三级标题",
         unordered_list: "无序列表项", ordered_list: "有序列表项", blockquote: "引言", callout: "提示块",
-        code: "代码块", table: "表格", hr: "分隔线", blocked_reference: "链接引用"
+        code: "代码块", table: "表格", hr: "分隔线", blocked_reference: "链接引用",
+        image: "图片", video: "视频", file: "文件"
     };
     const target = block.payload.target;
     if (block.type === "blocked_reference" && target) {
@@ -256,6 +282,25 @@ export function restore(ids: string[], source: HistorySource, writeId?: string):
     });
 }
 
+function createPageRows(plan: EditChanges, id: string, kind: PageKind, title: string, initial: Record<string, AttributeValue>): string[] {
+    const titleId = randomUUID(), children: string[] = [];
+    putBlock({ id: titleId, type: "title", payload: payload("title", title), children: [] });
+    if (!bodylessPageKinds.includes(kind)) {
+        const bodyId = randomUUID();
+        putBlock({ id: bodyId, type: "paragraph", payload: payload("paragraph"), children: [] });
+        children.push(bodyId);
+    }
+    data.statement("INSERT INTO pages(id,kind,title_block_id,children) VALUES (?,?,?,?)").run(id, kind, titleId, JSON.stringify(children));
+    attributes.initializePage(id);
+    const now = nowSeconds();
+    plan.attributes(id, {
+        ...(kind === "feed" ? { feed_status: "enabled", feed_refresh: { every: 60, unit: "minute" } } : {}), ...initial,
+        independent: initial.independent ?? kind !== "annotation", created_at: now, modified_at: now
+    }, [], true);
+    plan.seed({ kind: "page", id });
+    return [titleId, ...children];
+}
+
 export function createPage(kind: PageKind = "editable", title = "", initial: Record<string, AttributeValue> = {}, parentId?: string, history?: HistorySource): PageRecord {
     workspace.requireWorkspace();
     if (!pageKinds.includes(kind) || typeof title !== "string" || !record(initial)) throw new LabloomError({ kind: "page-invalid-create" });
@@ -267,22 +312,8 @@ export function createPage(kind: PageKind = "editable", title = "", initial: Rec
             const files = data.get(parentId).attributes.paper_files as string[];
             if (!files.includes(String(initial.annotation_file))) throw new LabloomError({ kind: "paper-file-removed" });
         }
-        const id = randomUUID(), titleId = randomUUID(), children: string[] = [], plan = new EditChanges();
-        putBlock({ id: titleId, type: "title", payload: payload("title", title), children: [] });
-        if (!bodylessPageKinds.includes(kind)) {
-            const bodyId = randomUUID();
-            putBlock({ id: bodyId, type: "paragraph", payload: payload("paragraph"), children: [] });
-            children.push(bodyId);
-        }
-        data.statement("INSERT INTO pages(id,kind,title_block_id,children) VALUES (?,?,?,?)").run(id, kind, titleId, JSON.stringify(children));
-        attributes.initializePage(id);
-        const now = nowSeconds();
-        plan.attributes(id, {
-            ...(kind === "feed" ? { feed_status: "enabled", feed_refresh: { every: 60, unit: "minute" } } : {}), ...initial,
-            independent: parentId ? false : initial.independent ?? kind !== "annotation",
-            created_at: now, modified_at: now
-        }, [], true);
-        plan.seed({ kind: "page", id });
+        const id = randomUUID(), plan = new EditChanges();
+        const created = createPageRows(plan, id, kind, title, parentId ? { ...initial, independent: false } : initial);
         if (parentId && kind === "annotation") {
             if (data.header(parentId).kind !== "paper") throw new LabloomError({ kind: "annotation-paper-required" });
             const current = (data.get(parentId).attributes.paper_annotations as string[]).filter(id =>
@@ -315,7 +346,7 @@ export function createPage(kind: PageKind = "editable", title = "", initial: Rec
         if (data.flags(id).deleted) throw new LabloomError({ kind: "page-retaining-reference-required" });
         if (!history && parentId && kind !== "annotation") context.invalidate(["page:" + parentId]);
         changed.pages = [...plan.pages];
-        changed.blocks = [titleId, ...children, ...plan.blocks];
+        changed.blocks = [...created, ...plan.blocks];
         context.change(changed);
         return data.get(id);
     });
