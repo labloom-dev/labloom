@@ -129,9 +129,20 @@
         busy = true;
         try {
             const current = session;
-            await write(async () => {
-                if (await window.api.papers.importFiles(current.state.page!.id, definition.id, current.source)) await current.reread([current.state.page!.id]);
-            });
+            const api = window.api, pageId = current.state.page!.id, attribute = definition.id;
+            const paths = await api.attachments.choose("file", definition.type === "files");
+            if (!paths.length) return;
+            const staged = await api.attachments.stagePaths(paths, false, true);
+            const ids = staged.files.map(file => file.id);
+            try {
+                await write(async () => {
+                    await api.papers.attachImported(ids, pageId, attribute, current.source);
+                    await current.reread([pageId]);
+                });
+            }
+            finally {
+                await api.attachments.releaseHandoffs(ids);
+            }
             error = "";
         }
         catch (problem) {

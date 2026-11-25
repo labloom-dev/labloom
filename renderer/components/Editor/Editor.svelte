@@ -1,4 +1,15 @@
+{#each [...mediaInsertions.jobs] as [job, transfer] (job)}
+    {#if transfer}
+        <div class="media-transfer" role="status">
+            <span>{t("editor.mediaTransfer", transfer)}</span>
+            <progress aria-label={t("editor.mediaTransfer", transfer)} max={transfer.length || 1} value={transfer.length ? transfer.bytes : undefined}></progress>
+            <Button variant="text" onclick={() => job.cancel.abort()}>{t("dialog.cancel")}</Button>
+        </div>
+    {/if}
+{/each}
 <div class="editor editor-canvas" class:paper={session.state.page?.kind === "paper"} bind:this={root} role="presentation"
+    ondragstart={trackEditorDrag} ondragovercapture={mediaDragOver} ondragleave={mediaDragLeave} ondropcapture={mediaDrop}
+    onclickcapture={followWebLink} onauxclickcapture={followWebLink}
     onpointerdowncapture={marginDown} oncontextmenucapture={context} onpointermove={hover} onpointerleave={() => {
         if (!menu && !picker && !gesture) handle = null;
         clearPreview();
@@ -44,9 +55,18 @@
         anchor={{ getBoundingClientRect: () => new DOMRect(pasteChoice?.x, pasteChoice?.y, 0, 0) }}
         items={pasteItems(synced => void perform(() => paste(synced)))} onrestore={restoreEditor} />
 {/if}
+{#if webChoice}
+    <Menu align="start" bind:open={() => !!webChoice, value => !value && resolveWebPaste(false)} first
+        anchor={{ getBoundingClientRect: () => new DOMRect(webChoice?.x, webChoice?.y, 0, 0) }}
+        items={[{ label: t("editor.pasteLink"), onselect: () => resolveWebPaste(false) },
+            { label: t("editor.embedImage"), icon: "file-media", onselect: () => resolveWebPaste(true) }]} onrestore={restoreEditor} />
+{/if}
+{#if gallery}<ImageViewer images={gallery.images} start={gallery.start} onclose={closeImage} />{/if}
 {#if editor}<Toolbar {editor} history={session.state.history} dirty={session.state.dirty} />{/if}
 
 <style>
+    .media-transfer { display: flex; flex: none; align-items: center; gap: var(--ui-space-3); padding-inline: var(--ui-editor-gutter); min-height: var(--ui-toolbar-height); background: var(--ui-surface-panel); color: var(--ui-text-secondary); font-size: var(--ui-font-small); }
+    .media-transfer progress { flex: 1; min-width: 0; accent-color: var(--ui-accent); }
     .editor { --handle-gap: var(--ui-space-2); position: relative; flex: 1; min-height: var(--ui-editor-min-height); }
     .editor[data-gesture]::after { content: ""; position: absolute; inset: 0; z-index: 3; }
     .editor[data-gesture="drag"]::after { cursor: grabbing; }
@@ -75,16 +95,18 @@
     import type { EditorView } from "@tiptap/pm/view";
     import { Mapping, type Step } from "@tiptap/pm/transform";
     import { commandLabel, t } from "../../i18n.svelte";
-    import { isComposingKey, commands, blockShortcuts } from "../../../shared/content/commands";
+    import { isComposingKey, commands, blockShortcuts, webLinkShortcut } from "../../../shared/content/commands";
     import { registerEditing, type EditingCommand } from "../layout/commands";
     import { openPage, openTarget } from "../layout/navigation";
     import Menu from "../base/Menu.svelte";
     import { hasOpenLayer } from "../base/top-layer";
     import IconButton from "../base/IconButton.svelte";
+    import Button from "../base/Button.svelte";
     import Backlinks from "../Knowledge/Backlinks.svelte";
     import { block as blockItems, body as bodyItems, paste as pasteItems } from "./menus";
-    import { type Target, type ContentBlockKind } from "../../../shared/types/content";
-    import { blockText, payload } from "../../../shared/content/blocks";
+    import { type BlockMedia, type MediaKind, type Target, type ContentBlockKind } from "../../../shared/types/content";
+    import { blockText, isMediaKind, payload } from "../../../shared/content/blocks";
+    import { isImageURL, pastedURL } from "../../../shared/content/media";
     import { type PageSession } from "../Knowledge/page-session.svelte";
     import { perform } from "../Knowledge/feedback.svelte";
     import { readingTabs } from "../Tab/activity.svelte";
@@ -102,11 +124,16 @@
     import { moveBlocks, dropAt, relativeDrop, type Drop } from "./block-move";
     import { dragPreview } from "./drag-preview";
     import { trackPointer } from "./pointer-gesture";
-    import { blockPosition, clickPage, followTextSelection, handleRowAtHeight, inMargin, intersectingBlocks } from "./page-pointer";
+    import { blockPosition, clickPage, followTextSelection, handleRowAtHeight, inMargin, intersectingBlocks, rowAtHeight } from "./page-pointer";
     import { blankBlock, blockData, blockJSON, canNest, documentEdit, indexDoc, kindOf, pageDocument, removesReference, subtree, type Location } from "./document";
     import { backlinkRow, documentLabels, documentViews } from "./document-view.svelte";
-    import { clipboardRows, editing, located, remoteEdit, selectionIn, syncInsert } from "./transactions";
-    import { pasteBlocks, readClipboard, writeClipboard, type BlockClipboard } from "./clipboard";
+    import { clipboardRows, copyBlocks, editing, located, remoteEdit, selectionIn, syncInsert } from "./transactions";
+    import { mediaViews } from "./media-view.svelte";
+    import ImageViewer, { type ViewImage } from "./ImageViewer.svelte";
+    import { clipboardMedia, pasteBlocks, readClipboard, remapClipboardMedia, writeClipboard, type BlockClipboard } from "./clipboard";
+    import { finishClipboardWebLinks, readClipboardWebLinks, webLinkClipboard } from "./extensions/mark/webLink";
+    import { MediaInsertions, copyLocal, insertMedia, localFiles, localPaths, mediaNode, probeMedia, type MediaAnchor } from "./media-insert";
+    import { onlineNodes, readWebContent, uri, urlText, webParts, type WebPart } from "./web-images";
     import { borders, borderPlugin } from "./sync-border";
     import { inverse, patchDocument, replay } from "./reconcile";
     import { anchors } from "../Tab/anchors";
@@ -115,12 +142,39 @@
     let linkGlyph: HTMLSpanElement;
     let backlinkElement: HTMLDivElement | undefined;
     let workspaceId = "", pasting = $state(false);
+    let gallery = $state.raw<{ images: ViewImage[]; start: number; anchor: HTMLElement } | null>(null);
+    const mediaInsertions = new MediaInsertions(() => session, () => readOnly);
+    function openImage(pos: number, anchor: HTMLElement): void {
+        const instance = editor;
+        if (!instance || instance.isDestroyed || instance.view.composing) return;
+        const files = session.state.page?.mediaFiles, images: ViewImage[] = [];
+        let start = -1;
+        instance.state.doc.descendants((node, position) => {
+            if (node.type.name === "mediaBlock" && node.attrs.kind === "image") {
+                if (position === pos) start = images.length;
+                const block = blockData(node), media = block.payload.media!;
+                images.push({ media, caption: blockText(block), name: media.fileId === null ? media.name : files?.[media.fileId]?.originalName ?? "" });
+            }
+            return node.type.name === "pageBlock";
+        });
+        if (start >= 0) gallery = { images, start, anchor };
+    }
+    function closeImage(): void {
+        const anchor = gallery?.anchor;
+        gallery = null;
+        void tick().then(() => {
+            if (anchor?.isConnected) anchor.focus({ preventScroll: true });
+            else restoreEditor();
+        });
+    }
     type PasteChoice = { clipboard: BlockClipboard; bookmark: SelectionBookmark; x: number; y: number };
     let pasteChoice = $state.raw<PasteChoice | null>(null), pendingPaste: PasteChoice | null = null;
-    const locked = $derived(readOnly || pasting || !!pasteChoice || readingTabs.has(tabId) || session.state.loading || !!session.state.page?.attributes.deleted);
-    type Handle = { id: string; pos: number; top: number; left: number; kind: ContentBlockKind; shared: boolean; folded: boolean; children: boolean };
+    let webChoice = $state.raw<{ url: string; bookmark: SelectionBookmark; x: number; y: number } | null>(null);
+    const locked = $derived(readOnly || pasting || !!pasteChoice || !!webChoice || mediaInsertions.committing
+        || readingTabs.has(tabId) || session.state.loading || !!session.state.page?.attributes.deleted);
+    type Handle = { id: string; pos: number; top: number; left: number; kind: ContentBlockKind; shared: boolean; folded: boolean; children: boolean; caption?: boolean };
     let handle = $state.raw<Handle | null>(null), menu = $state(false), picker = $state<"inline" | "reference" | "sync" | null>(null);
-    let groupFold = $state.raw<Pick<Handle, "folded" | "children"> | null>(null);
+    let groupFold = $state.raw<(Pick<Handle, "folded" | "children"> & { media: boolean }) | null>(null);
     let pickerVersion = 0, menuOrigin: SelectionBookmark | null = null, bodyOpen = $state(false);
     let caret: SelectionBookmark | null = null, preview = $state.raw<{ target: Target; pos: number; anchor: HTMLElement } | null>(null);
     let pickerPosition = $state<{ x: number; y: number; left: number; right: number; bottom: number }>();
@@ -136,6 +190,13 @@
         const item = suggestions[index], range = slash, instance = editor;
         if (!item || !range || !instance || locked || instance.view.composing) return;
         slash = null;
+        if (isMediaKind(item.kind)) {
+            const kind = item.kind;
+            importFiles(instance, { bookmark: instance.state.selection.getBookmark(),
+                text: { from: range.from, to: range.to, text: instance.state.doc.textBetween(range.from, range.to, "\n") } },
+                async () => localPaths(await window.api.attachments.choose(kind)), kind);
+            return;
+        }
         const tr = instance.state.tr.delete(range.from, range.to), loc = located(tr);
         if (!loc) return;
         if (item.kind === "inline" || item.kind === "reference" || item.kind === "sync") {
@@ -225,7 +286,8 @@
             const places = loc ? selectedBlocks(loc) : [];
             if (places.length > 1) {
                 const parents = places.filter(p => p.node.type.name === "pageBlock" && p.node.childCount > 1);
-                groupFold = { children: !!parents.length, folded: !!parents.length && parents.every(p => p.node.attrs.collapsed) };
+                groupFold = { children: !!parents.length, folded: !!parents.length && parents.every(p => p.node.attrs.collapsed),
+                    media: places.some(place => isMediaKind(kindOf(place.node))) };
             }
         }
         menu = value;
@@ -239,7 +301,7 @@
         if (!selection.eq(editor.state.selection)) editor.view.dispatch(editor.state.tr.setSelection(selection));
     }
     function restoreEditor(): void {
-        if (picker || pasting || pasteChoice || !editor || editor.isDestroyed) return;
+        if (picker || pasting || pasteChoice || webChoice || !editor || editor.isDestroyed) return;
         if (!editor.view.dom.isConnected || editor.view.dom.closest("[data-tabs-content][hidden]")) return;
         if (menuOrigin) restoreBookmark(menuOrigin);
         menuOrigin = null;
@@ -269,6 +331,24 @@
     async function offerPaste(clipboard: BlockClipboard): Promise<void> {
         const instance = editor;
         if (!instance || locked) return;
+        const ids = clipboardMedia(clipboard.slice);
+        if (workspaceId && workspaceId !== clipboard.workspaceId && ids.length) {
+            const bookmark = instance.state.selection.getBookmark();
+            void mediaInsertions.run(instance, { bookmark }, async job => {
+                const copied = await mediaInsertions.collect(job, ids, id => clipboard.files?.[id]?.originalName ?? id, async (id, transfer) => {
+                    const source = clipboard.files?.[id];
+                    if (!source) throw new LabloomError({ kind: "attachment-missing" });
+                    const file = await window.api.attachments.importPath(transfer, source.path, source);
+                    job.files.push(file.id);
+                    return file;
+                });
+                const files = new Map<string, BlockMedia>(ids.map((id, index) => [id,
+                    copied[index] ? { fileId: copied[index].id } : { fileId: null, name: clipboard.files?.[id]?.originalName || t("block.file") }]));
+                const slice = remapClipboardMedia(clipboard.slice, files);
+                return (state, anchor) => "bookmark" in anchor ? state.tr.setSelection(anchor.bookmark.resolve(state.doc)).replaceSelection(copyBlocks(slice)) : state.tr;
+            });
+            return;
+        }
         const at = instance.view.coordsAtPos(instance.state.selection.from);
         const choice = pendingPaste = { clipboard, bookmark: instance.state.selection.getBookmark(), x: at.left, y: at.bottom };
         pasting = true;
@@ -419,6 +499,142 @@
     }
     let gesture: (() => void) | null = null;
     let indicator = $state.raw<Drop | null>(null);
+    const editorDragType = "application/x-labloom-editor-drag";
+    function importFiles(instance: Editor, anchor: MediaAnchor, select: () => ReturnType<typeof localFiles> | Promise<ReturnType<typeof localFiles>>, kind?: MediaKind): void {
+        void mediaInsertions.run(instance, anchor, async job => {
+            const inputs = await select();
+            const nodes = (await mediaInsertions.collect(job, inputs, input => input.name, async (input, id) => {
+                const file = await copyLocal(input, id, job, mediaInsertions);
+                if (!kind && file.mediaType === "application/pdf") {
+                    const page = { id: crypto.randomUUID(), fileId: file.id };
+                    (job.linkedPapers ??= []).push(page);
+                    return instance.schema.nodes.blocked_reference.create({ blockId: crypto.randomUUID(), target: { kind: "page", id: page.id } });
+                }
+                const media = kind === "file" ? { kind, data: { fileId: file.id } } : await probeMedia(file, job.cancel.signal);
+                return mediaNode(instance.schema, media.kind, media.data);
+            })).filter(node => node !== undefined);
+            return nodes.length ? (state, at) => insertMedia(state, at, nodes) : undefined;
+        });
+    }
+    function importImages(instance: Editor, anchor: MediaAnchor, parts: WebPart[]): void {
+        void mediaInsertions.run(instance, anchor, async job => {
+            const nodes = await onlineNodes(instance.schema, parts, job, mediaInsertions);
+            return (state, at) => insertMedia(state, at, nodes);
+        });
+    }
+    function resolveWebPaste(embed: boolean): void {
+        const choice = webChoice, instance = editor;
+        if (!choice || !instance) return;
+        webChoice = null;
+        if (readOnly || instance.isDestroyed || session.state.page?.attributes.deleted) return;
+        if (embed) importImages(instance, { bookmark: choice.bookmark }, [{ url: choice.url }]);
+        else {
+            const tr = instance.state.tr, selection = choice.bookmark.resolve(tr.doc);
+            session.checkpoint();
+            instance.view.dispatch(tr.setSelection(selection).replaceSelectionWith(urlText(instance.schema, choice.url), false).scrollIntoView());
+            session.checkpoint();
+            void session.flush();
+        }
+        void tick().then(restoreEditor);
+    }
+    const webLinkModifier = webLinkShortcut[/Mac|iPhone|iPad|iPod/.test(navigator.platform) ? "mac" : "other"];
+    function followWebLink(event: MouseEvent): void {
+        const link = event.target instanceof Element && event.target.closest("a.web-link");
+        if (!link) return;
+        event.preventDefault();
+        if (event.button !== 0 || editor?.view.composing) return;
+        if (!event[webLinkModifier] && !readOnly && !session.state.page?.attributes.deleted) return;
+        const url = link.getAttribute("href");
+        if (url && /^https?:\/\//iu.test(url)) window.open(url, "_blank", "noopener,noreferrer");
+    }
+    function pasteMedia(instance: Editor, event: ClipboardEvent): boolean {
+        const data = event.clipboardData;
+        if (!data || locked || instance.view.composing || data.types.includes("application/x-labloom-blocks")) return false;
+        if (readClipboardWebLinks(event)) return false;
+        const bookmark = instance.state.selection.getBookmark(), html = data.getData("text/html");
+        const plain = data.getData("text/plain").trim(), web = html ? readWebContent(html, uri(data)) : undefined;
+        const pictures = Array.from(data.files).filter(file => file.type.startsWith("image/"));
+        const bitmap = pictures.length && (web ? !web.hasText && web.imageCount === 1 : !plain);
+        const parts = !bitmap && web ? webParts(instance.schema, web) : undefined;
+        const url = web?.imageCount && web.hasText ? undefined : pastedURL(plain);
+        if (bitmap) {
+            const inputs = localFiles(pictures);
+            importFiles(instance, { bookmark }, () => inputs, "image");
+        }
+        else if (parts) importImages(instance, { bookmark }, parts);
+        else if (url) {
+            const code = kindOf(located(instance.state)?.node ?? instance.state.doc) === "code";
+            if (isImageURL(url) && (!code || web?.imageCount)) importImages(instance, { bookmark }, [{ url }]);
+            else if (code) return false;
+            else {
+                const at = instance.view.coordsAtPos(instance.state.selection.from);
+                webChoice = { url, bookmark, x: at.left, y: at.bottom };
+            }
+        }
+        else return false;
+        event.preventDefault();
+        return true;
+    }
+    function dropPosition(instance: Editor, event: DragEvent): Drop | null {
+        const indent = parseFloat(getComputedStyle(root).getPropertyValue("--ui-editor-indent"));
+        const row = rowAtHeight(instance.view, event.clientY);
+        return dropAt(instance.view, Math.min(event.clientX, row.getBoundingClientRect().left), event.clientY, indent);
+    }
+    function showDropLine(next: Drop | null): void {
+        const bounds = root.getBoundingClientRect();
+        indicator = next && { ...next, left: next.left - bounds.left, right: next.right - bounds.left, top: next.top - bounds.top };
+    }
+    function trackEditorDrag(event: DragEvent): void {
+        if (editor?.view.dragging) event.dataTransfer?.setData(editorDragType, "1");
+    }
+    function mediaDragOver(event: DragEvent): void {
+        const data = event.dataTransfer, instance = editor;
+        if (gesture || !data || !instance) return;
+        if (instance.view.dragging || data.types.includes(editorDragType)) {
+            indicator = null;
+            return;
+        }
+        if (data.types.includes("text/html") || !data.types.includes("Files")) {
+            // Drag data is protected until drop, so HTML alone cannot identify a media insertion.
+            indicator = null;
+            if (!locked && !instance.view.composing && (data.types.includes("text/html") || data.types.includes("text/uri-list"))) event.preventDefault();
+            return;
+        }
+        event.preventDefault(); event.stopPropagation();
+        const next = !locked && !instance.view.composing ? dropPosition(instance, event) : null;
+        data.dropEffect = next ? "copy" : "none";
+        showDropLine(next);
+    }
+    function mediaDragLeave(event: DragEvent): void {
+        if (!gesture && (!(event.relatedTarget instanceof globalThis.Node) || !root.contains(event.relatedTarget))) indicator = null;
+    }
+    function mediaDrop(event: DragEvent): void {
+        if (gesture) return;
+        const instance = editor, data = event.dataTransfer;
+        indicator = null;
+        if (!instance || !data || instance.view.dragging || data.types.includes(editorDragType)) return;
+        const html = data.getData("text/html"), base = uri(data), web = html ? readWebContent(html, base) : undefined;
+        const parts = (web && webParts(instance.schema, web)) ?? (!web?.hasText && base && isImageURL(base) ? [{ url: base }] : undefined);
+        const files = !parts && !web?.hasText ? [...data.files] : [];
+        if (!parts && !files.length) return;
+        event.preventDefault(); event.stopPropagation();
+        if (locked || instance.view.composing) return;
+        const target = dropPosition(instance, event);
+        if (!target) return;
+        const anchor = { position: target.pos };
+        if (parts) {
+            showDropLine(target);
+            const line = indicator;
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+                if (!gesture && indicator === line) indicator = null;
+            }));
+            importImages(instance, anchor, parts);
+        }
+        else {
+            const inputs = localFiles(files);
+            importFiles(instance, anchor, () => inputs);
+        }
+    }
     const handleAnchor = { getBoundingClientRect: (): DOMRect => root.querySelector(".handle button")?.getBoundingClientRect() ?? new DOMRect() };
     function handleDown(event: PointerEvent): void {
         const instance = editor, loc = target();
@@ -485,13 +701,15 @@
         if (node && node.attrs.blockId === el.dataset.blockId) placeHandle(el, { pos, node });
     }
     function placeHandle(el: HTMLElement, loc: { node: DocNode; pos: number }): void {
-        const line = el.querySelector<HTMLElement>("[data-body],[data-cell-line],.reference-title") ?? el;
+        const kind = kindOf(loc.node), media = isMediaKind(kind);
+        const line = (media ? el.querySelector<HTMLElement>(".media-resource") : el.querySelector<HTMLElement>("[data-body],[data-cell-line],.reference-title")) ?? el;
         const rect = el.getBoundingClientRect(), first = line.getBoundingClientRect(), container = root.getBoundingClientRect();
         const height = parseFloat(getComputedStyle(line).lineHeight) || first.height;
         const left = rect.left - container.left;
         handle = {
             id: loc.node.attrs.blockId, pos: loc.pos, top: first.top - container.top + Math.min(first.height, height) / 2, left,
-            kind: kindOf(loc.node), shared: el.classList.contains("sync-block"), folded: !!loc.node.attrs.collapsed, children: loc.node.type.name === "pageBlock" && loc.node.childCount > 1
+            kind, shared: el.classList.contains("sync-block"), folded: !!loc.node.attrs.collapsed,
+            children: loc.node.type.name === "pageBlock" && loc.node.childCount > 1, caption: media && !loc.node.firstChild!.content.size
         };
     }
     function target(): { node: DocNode; pos: number } | null {
@@ -541,7 +759,7 @@
         const loc = target(), instance = editor;
         const places = loc ? selectedBlocks(loc) : [];
         close();
-        if (!instance || !places.length) return;
+        if (!instance || !places.length || places.some(place => isMediaKind(kindOf(place.node)))) return;
         void perform(async () => {
             const tr = instance.state.tr;
             for (const { pos, node } of places.slice().reverse()) {
@@ -571,7 +789,7 @@
         if (tr.docChanged) instance.view.dispatch(tr);
         instance.view.focus();
     }
-    function act(action: "delete" | "fold" | "unsync" | "row" | "column"): void {
+    function act(action: "delete" | "fold" | "unsync" | "row" | "column" | "caption"): void {
         if (action === "fold") {
             toggleFold(groupFold ? !groupFold.folded : undefined);
             close(); return;
@@ -589,7 +807,8 @@
         if (places.length > 1) {
             instance.view.focus(); return;
         }
-        if (action === "row" || action === "column") {
+        if (action === "caption") instance.view.dispatch(selectionIn(instance.state.tr, pos + 2).scrollIntoView());
+        else if (action === "row" || action === "column") {
             if (located(instance.state)?.pos !== pos) instance.commands.setTextSelection(pos + 4);
             if (action === "row") instance.commands.addRowAfter(); else instance.commands.addColumnAfter();
         }
@@ -607,7 +826,12 @@
             return () => {
                 void unmount(component);
             };
-        });
+        }, mediaViews({
+            file: id => session.state.page?.mediaFiles?.[id],
+            writable: () => !locked,
+            checkpoint: () => session.checkpoint(),
+            open: openImage
+        }));
         const links = backlinkElement = document.createElement("div");
         const backlinks = pageAnchor ? mount(Backlinks, { target: links, props: {
             get links() {
@@ -716,6 +940,7 @@
                 handlePaste(view, event, slice) {
                     const data = event.clipboardData;
                     if (!data) return false;
+                    const linkedText = finishClipboardWebLinks(event);
                     const loc = located(view.state);
                     if (loc && kindOf(loc.node) === "code") {
                         const text = data.getData("text/plain").replace(/\r\n?/gu, "\n");
@@ -729,6 +954,7 @@
                             void perform(() => offerPaste(clipboard)); return true;
                         }
                     }
+                    if (linkedText) return false;
                     const html = data.getData("text/html"), plain = data.getData("text/plain");
                     if (located(view.state)?.node.type.name === "pageTable") return false;
                     const elements = html ? [...new DOMParser().parseFromString(html, "text/html").querySelectorAll("li,p")].filter(el => el.tagName === "LI" || !el.closest("li")) : [];
@@ -746,6 +972,7 @@
                 },
                 handleDOMEvents: {
                     copy: (view, e) => copy(view, e, false), cut: (view, e) => copy(view, e, true),
+                    paste: (_view, event) => pasteMedia(instance, event),
                     compositionstart: () => {
                         clearPreview();
                         const selected = wholeSelection(instance.state.selection);
@@ -786,15 +1013,18 @@
                 }
                 else slash = null;
                 for (const tr of trs) {
+                    mediaInsertions.map(tr);
                     if (handle && tr.docChanged) {
                         const pos = tr.mapping.map(handle.pos, 1), node = tr.doc.nodeAt(pos);
                         if (!node || node.attrs.blockId !== handle.id) close();
-                        else handle = { ...handle, pos, folded: !!node.attrs.collapsed, children: node.type.name === "pageBlock" && node.childCount > 1 };
+                        else handle = { ...handle, pos, folded: !!node.attrs.collapsed, children: node.type.name === "pageBlock" && node.childCount > 1,
+                            caption: node.type.name === "mediaBlock" && !node.firstChild!.content.size };
                     }
                     if (caret) caret = caret.map(tr.mapping);
                     if (brackets) brackets = brackets.map(tr.mapping);
                     if (menuOrigin) menuOrigin = menuOrigin.map(tr.mapping);
                     if (pendingPaste) pendingPaste.bookmark = pendingPaste.bookmark.map(tr.mapping);
+                    if (webChoice && tr.docChanged) webChoice.bookmark = webChoice.bookmark.map(tr.mapping);
                     if (preview) {
                         const pos = tr.mapping.map(preview.pos, 1);
                         preview = tr.doc.nodeAt(pos)?.type.name === "inlineReference" ? { ...preview, pos } : null;
@@ -845,8 +1075,10 @@
         function copy(view: EditorView, event: ClipboardEvent, cut: boolean): boolean {
             if (view.state.selection.empty || !event.clipboardData) return false;
             const slice = view.state.selection.content(), data = view.serializeForClipboard(slice);
-            const internal = writeClipboard(workspaceId, slice);
+            const internal = writeClipboard(workspaceId, slice, session.state.page?.mediaFiles);
+            event.clipboardData.clearData(webLinkClipboard);
             if (internal) event.clipboardData.setData("application/x-labloom-blocks", internal);
+            else if (data.dom.querySelector("a.web-link[href]")) event.clipboardData.setData(webLinkClipboard, "1");
             event.clipboardData.setData("text/html", data.dom.innerHTML);
             const { from, to } = view.state.selection;
             const first = located(view.state, from), last = located(view.state, to);
@@ -896,6 +1128,7 @@
         }
         document.addEventListener("pointerdown", outside, true);
         return () => {
+            for (const job of mediaInsertions.jobs.keys()) if (!job.committing) job.cancel.abort();
             off();
             geometry.disconnect(); gesture?.();
             offEditing();

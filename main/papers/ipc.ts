@@ -4,21 +4,13 @@ import { papersChannels, type PapersAPI } from "../../shared/papers/ipc";
 import { invalid, register, route, type Routes } from "../ipc";
 import * as papers from "../knowledge/papers";
 import { LabloomError } from "../../shared/failure";
-import * as dialogs from "../ui/fileDialogs";
 
 type Args<Key extends keyof typeof papersChannels> = Parameters<PapersAPI[Key]>;
 
 export function registerPapersIPCs(window: BrowserWindow): void {
     const routes = {
-        importPDF: route(typia.createAssert<Args<"importPDF">>(invalid), async (...[source, pageId]) => {
-            const paths = await dialogs.selectPDF(window);
-            return papers.importPaths(paths, source, pageId, true);
-        }),
-        importPaths: route(typia.createAssert<Args<"importPaths">>(invalid), papers.importPaths),
-        importFiles: route(typia.createAssert<Args<"importFiles">>(invalid), async (...[pageId, attributeId, source]) => {
-            const paths = await dialogs.selectFiles(window, papers.fileSelection(attributeId));
-            return paths.length ? papers.attachFiles(paths, pageId, attributeId, source) : null;
-        }),
+        importPrepared: route(typia.createAssert<Args<"importPrepared">>(invalid), papers.importPrepared),
+        attachImported: route(typia.createAssert<Args<"attachImported">>(invalid), papers.attachImported),
         attachFile: route(typia.createAssert<Args<"attachFile">>(invalid), papers.attachFile),
         files: route(typia.createAssert<Args<"files">>(invalid), papers.files),
         openFile: route(typia.createAssert<Args<"openFile">>(invalid), async id => {

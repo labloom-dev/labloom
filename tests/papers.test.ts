@@ -24,9 +24,9 @@ function fixture(t: TestContext): ReturnType<typeof createWorkspace> & { knowled
     const knowledge = knowledgeServices(), papers = paperServices(), history = historyServices();
     return { ...workspace, knowledge, papers, history };
 }
-function importPDF(papers: Papers, path: string): string {
+async function importPDF(papers: Papers, path: string): Promise<string> {
     writeFileSync(path, knownCoordinatePdf());
-    return papers.importFile(path).pageId;
+    return (await papers.importFile(path)).pageId;
 }
 function selection(fileId: string): AnnotationInput {
     return { fileId, pageNumber: 1, rectangles: [{ x: 50, y: 690, width: 70, height: 30 }], quote: "Untrusted client quotation", context: "Context", extractorVersion: PDF_EXTRACTOR_VERSION };
@@ -34,13 +34,13 @@ function selection(fileId: string): AnnotationInput {
 
 test("identical imports create independent papers, attachment rows and files, with size checks and no stored hash", async t => {
     const { knowledge, papers, info, database } = fixture(t);
-    const path = join(info.path, "original.pdf"), id = importPDF(papers, path);
+    const path = join(info.path, "original.pdf"), id = await importPDF(papers, path);
     const files = (await papers.resources(id)).files;
     assert.equal(files.length, 1);
     const imported = knowledge.get(id);
     assert.deepEqual(imported.children, []);
     assert.deepEqual(Object.keys(imported.blocks), [imported.titleBlockId]);
-    const other = papers.importFile(path);
+    const other = await papers.importFile(path);
     assert.notEqual(other.pageId, id);
     const second = (await papers.resources(other.pageId)).files[0];
     assert.notEqual(second.id, files[0].id);
@@ -97,7 +97,7 @@ test("paper history cannot restore a body in either direction", t => {
 });
 
 test("annotation creation is retained, reversible and has an empty paragraph, while repeated selections create distinct pages", async t => {
-    const { knowledge, papers, info, history } = fixture(t), paperId = importPDF(papers, join(info.path, "A.pdf"));
+    const { knowledge, papers, info, history } = fixture(t), paperId = await importPDF(papers, join(info.path, "A.pdf"));
     const fileId = (await papers.resources(paperId)).files[0].id, input = selection(fileId), id = await papers.annotate(paperId, input, pageHistory(paperId));
     const page = knowledge.get(id);
     assert.equal(page.kind, "annotation"); assert.equal(page.attributes.independent, false);
@@ -137,7 +137,7 @@ test("annotation creation is retained, reversible and has an empty paragraph, wh
 });
 
 test("color, deletion, undo, redo and restore are ordinary annotation edits and preserve paper membership", async t => {
-    const { knowledge, papers, info, history } = fixture(t), paperId = importPDF(papers, join(info.path, "A.pdf"));
+    const { knowledge, papers, info, history } = fixture(t), paperId = await importPDF(papers, join(info.path, "A.pdf"));
     const id = await papers.annotate(paperId, selection((await papers.resources(paperId)).files[0].id), pageHistory(paperId));
     assert.equal(papers.changeAnnotation(id, "green", pageHistory(paperId)).status, "saved");
     assert.equal((await papers.resources(paperId)).annotations[0].color, "green");
@@ -161,7 +161,7 @@ test("color, deletion, undo, redo and restore are ordinary annotation edits and 
 });
 
 test("ordinary reference blocks and inline links retain annotations without displaying or searching a special quote block", async t => {
-    const { knowledge, papers, info } = fixture(t), paperId = importPDF(papers, join(info.path, "A.pdf"));
+    const { knowledge, papers, info } = fixture(t), paperId = await importPDF(papers, join(info.path, "A.pdf"));
     const fileId = (await papers.resources(paperId)).files[0].id, id = await papers.annotate(paperId, selection(fileId), pageHistory(paperId));
     const inlineId = await papers.annotate(paperId, { ...selection(fileId), rectangles: [{ x: 150, y: 690, width: 60, height: 30 }] }, pageHistory(paperId));
     const unreferenced = await papers.annotate(paperId, { ...selection(fileId), rectangles: [{ x: 50, y: 690, width: 150, height: 30 }] }, pageHistory(paperId));
@@ -182,7 +182,7 @@ test("ordinary reference blocks and inline links retain annotations without disp
 });
 
 test("extractor refresh updates cache attributes without history or modification times", async t => {
-    const { knowledge, papers, info, history, database } = fixture(t), paperId = importPDF(papers, join(info.path, "A.pdf"));
+    const { knowledge, papers, info, history, database } = fixture(t), paperId = await importPDF(papers, join(info.path, "A.pdf"));
     const id = await papers.annotate(paperId, selection((await papers.resources(paperId)).files[0].id), pageHistory(paperId)), original = (await papers.resources(paperId)).annotations.find(annotation => annotation.id === id)!;
     knowledge.attributes.cache(id, { annotation_quote: "stale", annotation_context: "stale", annotation_extractor: "old" });
     const before = knowledge.get(id), undo = history.state(pageHistory(paperId)), modified = database.prepare("SELECT last_modified_at FROM workspace_meta").pluck().get();
@@ -197,7 +197,7 @@ test("extractor refresh updates cache attributes without history or modification
 test("encrypted PDF passwords stay transient and repeated selections produce independent annotation pages", async t => {
     const { knowledge, papers, info, database } = fixture(t), path = join(info.path, "encrypted.pdf");
     writeFileSync(path, readFileSync(join(process.cwd(), "tests/fixtures/protected.pdf")));
-    const paperId = papers.importFile(path).pageId, fileId = (await papers.resources(paperId)).files[0].id;
+    const paperId = (await papers.importFile(path)).pageId, fileId = (await papers.resources(paperId)).files[0].id;
     await assert.rejects(papers.annotate(paperId, selection(fileId), pageHistory(paperId)), hasFailure("pdf-password-required"));
     await assert.rejects(papers.unlockPDF(fileId, "incorrect"), hasFailure("pdf-password-incorrect"));
     await papers.unlockPDF(fileId, "reader-pass");
@@ -218,7 +218,7 @@ test("encrypted PDF passwords stay transient and repeated selections produce ind
 });
 
 test("annotation text controls the reader icon, while the paper's history spans paper and popup edits", async t => {
-    const { knowledge, papers, info, history } = fixture(t), paperId = importPDF(papers, join(info.path, "A.pdf"));
+    const { knowledge, papers, info, history } = fixture(t), paperId = await importPDF(papers, join(info.path, "A.pdf"));
     const id = await papers.annotate(paperId, selection((await papers.resources(paperId)).files[0].id), pageHistory(paperId));
     const paper = knowledge.get(paperId), title = paper.blocks[paper.titleBlockId];
     knowledge.commitEdit({ pageId: paperId, batch: 0, blocks: [{ ...title, payload: payload("title", "Paper edit") }] }, pageHistory(paperId));
@@ -235,7 +235,7 @@ test("annotation text controls the reader icon, while the paper's history spans 
 });
 
 test("a recycled paper can display attached highlights that followed it into the recycle bin", async t => {
-    const { knowledge, papers, info } = fixture(t), paperId = importPDF(papers, join(info.path, "A.pdf"));
+    const { knowledge, papers, info } = fixture(t), paperId = await importPDF(papers, join(info.path, "A.pdf"));
     const fileId = (await papers.resources(paperId)).files[0].id, source = pageHistory(paperId);
     const previous = await papers.annotate(paperId, selection(fileId), source);
     const kept = await papers.annotate(paperId, selection(fileId), source);
@@ -250,7 +250,7 @@ test("a recycled paper can display attached highlights that followed it into the
     await assert.rejects(papers.annotate(paperId, selection(fileId), source), hasFailure("page-recycled-readonly"));
     const attachment = join(info.path, "second.pdf");
     writeFileSync(attachment, knownCoordinatePdf());
-    assert.deepEqual(papers.importPaths([attachment], source, paperId).failures.map(row => row.error.kind), ["page-recycled-readonly"]);
+    assert.deepEqual((await papers.importPaths([attachment], source, paperId)).failures.map(row => row.error.kind), ["page-recycled-readonly"]);
     assert.equal(knowledge.restore([paperId], source).status, "saved");
     assert.equal(knowledge.flags(kept).deleted, false);
     assert.equal(knowledge.flags(previous).deleted, true);
@@ -258,7 +258,7 @@ test("a recycled paper can display attached highlights that followed it into the
 
 test("reading position remains a paper attribute without edit conflicts or timestamp changes", async t => {
     const { knowledge, papers, info } = fixture(t);
-    const id = importPDF(papers, join(info.path, "reading.pdf")), file = (await papers.resources(id)).files[0];
+    const id = await importPDF(papers, join(info.path, "reading.pdf")), file = (await papers.resources(id)).files[0];
     const before = knowledge.get(id);
     papers.position(id, file.id, { page: 1, scale: "page-width", rotation: 90, left: 10, top: 700 });
     const after = knowledge.get(id);
@@ -288,13 +288,13 @@ test("annotation rectangles stay in PDF user space including non-zero and negati
 });
 
 test("annotation file references retain detached files and permanently deleted annotations are excluded from resources", async t => {
-    const { knowledge, papers, info, history } = fixture(t), path = join(info.path, "A.pdf"), paperId = importPDF(papers, path);
+    const { knowledge, papers, info, history } = fixture(t), path = join(info.path, "A.pdf"), paperId = await importPDF(papers, path);
     const file = (await papers.resources(paperId)).files[0], id = await papers.annotate(paperId, selection(file.id), pageHistory(paperId));
     knowledge.commitEdit({ pageId: paperId, batch: 0, blocks: [], attributes: { paper_files: [] } }, pageHistory(paperId));
     assert.deepEqual(attachments.unreferencedFiles(knowledge.db), []);
     assert.equal((await papers.resources(paperId)).annotations.length, 0);
     assert.match(String((await papers.get(id)).attributes.annotation_quote), /HELLO/);
-    const other = papers.importFile(path).pageId;
+    const other = (await papers.importFile(path)).pageId;
     await assert.rejects(papers.annotate(other, selection(file.id), pageHistory(other)), /paper-file-removed/);
     const otherFile = (await papers.resources(other)).files[0];
     const otherAnnotation = await papers.annotate(other, selection(otherFile.id), pageHistory(other));
@@ -312,9 +312,9 @@ test("annotation file references retain detached files and permanently deleted a
 });
 
 test("identical PDFs have independent annotations and a second paper cannot adopt an existing annotation", async t => {
-    const { knowledge, papers, info, history } = fixture(t), path = join(info.path, "A.pdf"), first = importPDF(papers, path);
+    const { knowledge, papers, info, history } = fixture(t), path = join(info.path, "A.pdf"), first = await importPDF(papers, path);
     const file = (await papers.resources(first)).files[0], id = await papers.annotate(first, selection(file.id), pageHistory(first));
-    const second = papers.importFile(path).pageId;
+    const second = (await papers.importFile(path)).pageId;
     const secondFile = (await papers.resources(second)).files[0];
     const secondId = await papers.annotate(second, selection(secondFile.id), pageHistory(second));
     assert.notEqual(secondId, id);
@@ -333,7 +333,7 @@ test("identical PDFs have independent annotations and a second paper cannot adop
 });
 
 test("annotation edits refresh highlights and shared history without marking the paper changed", async t => {
-    const { knowledge, papers, info, history } = fixture(t), paperId = importPDF(papers, join(info.path, "A.pdf")), fileId = (await papers.resources(paperId)).files[0].id;
+    const { knowledge, papers, info, history } = fixture(t), paperId = await importPDF(papers, join(info.path, "A.pdf")), fileId = (await papers.resources(paperId)).files[0].id;
     const id = await papers.annotate(paperId, selection(fileId), pageHistory(paperId));
     assert.equal(history.state(pageHistory(paperId)).canUndo, true);
     const annotation = knowledge.get(id), body = annotation.blocks[annotation.children[0]], changes: import("../shared/types/content").KnowledgeChange[] = [];
@@ -355,11 +355,11 @@ test("path imports isolate bad files and append ordinary attachments to the requ
     const first = join(info.path, "A.pdf"), bad = join(info.path, "B.pdf"), second = join(info.path, "C.PDF"), note = join(info.path, "notes.txt");
     writeFileSync(first, knownCoordinatePdf()); writeFileSync(second, knownCoordinatePdf());
     writeFileSync(bad, "invalid"); writeFileSync(note, "notes");
-    const result = papers.importPaths([first, bad, join(info.path, "missing.pdf"), second, note, info.path], workspaceHistory);
+    const result = await papers.importPaths([first, bad, join(info.path, "missing.pdf"), second, note, info.path], workspaceHistory);
     assert.equal(result.pages.length, 2);
     assert.deepEqual(result.failures.map(f => f.error.kind), ["pdf-invalid", "file-missing", "import-pdf-only", "import-regular-file"]);
     const id = result.pages[0];
-    const batch = papers.importPaths([note, bad, second], pageHistory(id), id);
+    const batch = await papers.importPaths([note, bad, second], pageHistory(id), id);
     assert.deepEqual(batch.pages, [id, id]);
     assert.deepEqual(batch.failures.map(f => [f.name, f.error.kind]), [["B.pdf", "pdf-invalid"]]);
     assert.equal(knowledge.list({ kind: "paper" }).total, 2);

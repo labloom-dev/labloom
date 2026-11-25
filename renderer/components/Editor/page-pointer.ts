@@ -83,7 +83,7 @@ export function followTextSelection(view: EditorView, root: HTMLElement): () => 
 export function rowAtHeight(view: EditorView, y: number): HTMLElement {
     if (y >= 0 && y < innerHeight) {
         const column = view.dom.getBoundingClientRect();
-        const hit = document.elementFromPoint((column.left + column.right) / 2, y)?.closest<HTMLElement>("[data-body], [data-code-line], [data-kind=title], [data-kind=hr], [data-kind=blocked_reference], td, th");
+        const hit = document.elementFromPoint((column.left + column.right) / 2, y)?.closest<HTMLElement>("[data-body], [data-code-line], [data-kind=title], [data-kind=hr], [data-kind=blocked_reference], .media-resource, td, th");
         if (hit && view.dom.contains(hit)) return hit.closest<HTMLElement>("[data-block-id]")!;
     }
     return nearest(view.dom, y).closest<HTMLElement>("[data-block-id]") ?? view.dom.firstElementChild as HTMLElement;

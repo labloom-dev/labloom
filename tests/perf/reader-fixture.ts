@@ -7,13 +7,13 @@ import { knownCoordinatePdf } from "../fixtures/pdf-text";
 import { paperServices } from "../support/session";
 import { type fixture } from "./fixture";
 
-export function seedReader(data: ReturnType<typeof fixture>, root: string): { paperId: string; fileId: string } {
+export async function seedReader(data: ReturnType<typeof fixture>, root: string): Promise<{ paperId: string; fileId: string }> {
     const line = "The coastal survey records observations from the spring sampling stations.";
     const contents = ["BT /F1 13 Tf 1 0 0 1 50 760 Tm", ...Array.from({ length: 23 }, (_, i) =>
         `${i ? "0 -28 Td " : ""}(${line}) Tj`), "ET"].join("\n");
     const path = join(root, "Reader benchmark.pdf");
     writeFileSync(path, knownCoordinatePdf(false, contents, 300));
-    const paperId = paperServices().importFile(path).pageId;
+    const paperId = (await paperServices().importFile(path)).pageId;
     const [fileId] = data.service.get(paperId).attributes.paper_files as string[];
     const block = data.sql.prepare("INSERT INTO blocks(id,type,content) VALUES(?,?,?)");
     const page = data.sql.prepare("INSERT INTO pages(id,kind,title_block_id,children) VALUES(?,'annotation',?,?)");

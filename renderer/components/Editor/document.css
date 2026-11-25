@@ -37,6 +37,9 @@
     line-height: var(--ui-editor-line-height);
     overflow-wrap: anywhere;
 }
+.editor-document .media-caption { color: var(--ui-text-secondary); font-size: var(--ui-font-small); }
+.editor-document .media-caption[data-empty] > [data-body] { height: 0; overflow: hidden; }
+.editor-document.ProseMirror-focused .media-caption[data-empty] > .media-caption-active { height: auto; }
 .editor-document :is([data-body], [data-kind="title"], td, th) :where(b, i, u, s, span, code) { line-height: inherit; }
 .editor-document [data-kind="title"] {
     margin-block-end: var(--ui-space-4);
@@ -127,6 +130,7 @@
     border-bottom: var(--ui-stroke) dashed currentColor;
     cursor: pointer;
 }
+.editor-document .web-link { color: var(--ui-text-match); text-decoration: underline; cursor: pointer; }
 .editor-document .sync-block {
     border: var(--ui-stroke) solid var(--ui-editor-sync-border);
     border-radius: var(--ui-radius-control);

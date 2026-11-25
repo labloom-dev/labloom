@@ -93,7 +93,7 @@
         <Menu items={blockItems({ kind, shared, folded, children: true }, value => {
             kind = value; status = t(`block.${value}`);
         }, action => {
-            if (action === "fold") folded = !folded; else if (action === "unsync") shared = false; status = t(`editor.${action}`);
+            if (action === "fold") folded = !folded; else if (action === "unsync") shared = false; status = t(action === "caption" ? "editor.addCaption" : `editor.${action}`);
         }, pick, direction => status = t(direction < 0 ? "editor.up" : "editor.down"))}>
             {#snippet trigger({ props })}<Button {...props} icon="gripper">{t("command.blockMenu")}</Button>{/snippet}
         </Menu>

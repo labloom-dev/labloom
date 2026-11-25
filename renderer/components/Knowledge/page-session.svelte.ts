@@ -247,6 +247,7 @@ export function makeSession(tabId: string, pageId: string, source: HistorySource
         let needed = [...new Set(ids)], structural = false;
         while (needed.length) {
             const data = await api.pages.readObjects(pageId, needed);
+            if (data.mediaFiles) Object.assign(page.mediaFiles ??= {}, data.mediaFiles);
             needed.forEach(id => seen.add(id));
             page.sharedUses ??= {};
             for (const id of needed) {

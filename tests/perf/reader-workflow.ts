@@ -266,7 +266,9 @@ export async function readerWorkflow(paperId: string, fileId: string, dropNames:
     const attribute = "custom:" + crypto.randomUUID();
     await window.api.attributes.define(attribute, { id: attribute, name: "Preview PDF", type: "file", metadata: {} });
     const note = await window.api.pages.create(workspace, "Attachment preview", { [attribute]: null });
-    const files = await window.api.papers.importFiles(note.id, attribute, { kind: "page", id: note.id });
+    const paths = await window.api.attachments.choose("file", false);
+    const staged = await window.api.attachments.stagePaths(paths, false, true);
+    const files = await window.api.papers.attachImported(staged.files.map(file => file.id), note.id, attribute, { kind: "page", id: note.id });
     if (files?.[0]?.originalName !== "Other.pdf") throw Error("Attachment note PDF import failed");
     openPage(note.id);
     const noteEditor = await until(() => [...document.querySelectorAll<HTMLElement>(root + ".page-view .tiptap[contenteditable=true]")]

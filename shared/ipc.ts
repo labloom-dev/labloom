@@ -3,6 +3,7 @@ export * from "./pages/ipc";
 export * from "./attributes/ipc";
 export * from "./history/ipc";
 export * from "./papers/ipc";
+export * from "./attachments/ipc";
 export * from "./timers/ipc";
 export * from "./workspace/ipc";
 export * from "./settings/ipc";

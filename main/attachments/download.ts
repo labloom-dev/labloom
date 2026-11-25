@@ -6,13 +6,13 @@ import { LabloomError, diagnostic } from "../../shared/failure";
 import { httpURL } from "../../shared/utils/url";
 import * as metadata from "./metadata";
 
-export type DownloadOptions = { expectedType?: string; timeoutMs?: number };
+export type DownloadOptions = { expectedType?: string; timeoutMs?: number; signal?: AbortSignal; progress?: (bytes: number, total?: number) => void };
 type Request = DownloadOptions & { directory: string; fetcher: typeof fetch; signal: AbortSignal };
 
 export const pdfHeader = Buffer.from("%PDF-");
 const active = new Set<string>();
 
-// Only staging files left by interrupted downloads are candidates. A previous session may still be closing its handle.
+// Only managed staging files are candidates. A previous session may still be closing its handle.
 export function discardInterrupted(directory: string): void {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
         if (!entry.isFile() || !/^\.download-[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}\.part$/.test(entry.name)) continue;
@@ -21,11 +21,19 @@ export function discardInterrupted(directory: string): void {
     }
 }
 
-async function stage<T>(directory: string, chunks: AsyncIterable<Uint8Array>, publish: (path: string) => T): Promise<T> {
+export async function stageFile(directory: string, chunks: AsyncIterable<Uint8Array>): Promise<{ path: string; discard: () => Promise<void> }> {
     // The temporary file and its final name are on the same volume.
     const path = join(directory, ".download-" + randomUUID() + ".part");
     active.add(path);
     let owned = false;
+    const discard = async (): Promise<void> => {
+        try {
+            if (owned) await rm(path, { force: true });
+        }
+        finally {
+            active.delete(path);
+        }
+    };
     try {
         const file = await open(path, "wx");
         owned = true;
@@ -35,15 +43,21 @@ async function stage<T>(directory: string, chunks: AsyncIterable<Uint8Array>, pu
         finally {
             await file.close();
         }
-        return publish(path);
+        return { path, discard };
+    }
+    catch (error) {
+        await discard();
+        throw error;
+    }
+}
+
+export async function stage<T>(directory: string, chunks: AsyncIterable<Uint8Array>, publish: (path: string) => T): Promise<T> {
+    const file = await stageFile(directory, chunks);
+    try {
+        return publish(file.path);
     }
     finally {
-        try {
-            if (owned) await rm(path, { force: true });
-        }
-        finally {
-            active.delete(path);
-        }
+        await file.discard();
     }
 }
 
@@ -55,6 +69,7 @@ export async function receive<T>(url: string, request: Request, save: (path: str
         idle = setTimeout(() => controller.abort(new LabloomError({ kind: "download-timeout" })), request.timeoutMs ?? 30_000);
     };
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    let total: number | undefined;
     const cancel = (): void => {
         void reader?.cancel(signal.reason).catch(() => {});
     };
@@ -64,7 +79,7 @@ export async function receive<T>(url: string, request: Request, save: (path: str
     }
 
     async function* chunks(): AsyncGenerator<Uint8Array> {
-        let checked = 0;
+        let checked = 0, bytes = 0;
         startWaiting();
         while (reader) {
             const { done, value } = await reader.read().catch(networkFailure);
@@ -78,6 +93,8 @@ export async function receive<T>(url: string, request: Request, save: (path: str
                 checked += prefix.length;
             }
             yield value;
+            bytes += value.byteLength;
+            request.progress?.(bytes, total);
             startWaiting();
         }
         clearTimeout(idle);
@@ -94,8 +111,12 @@ export async function receive<T>(url: string, request: Request, save: (path: str
         signal.throwIfAborted();
         if (!response.ok) throw new LabloomError({ kind: "download-http", status: response.status });
         const info = metadata.fromResponse(response, address);
+        const length = response.headers.get("content-length");
+        if (length !== null && /^\d+$/.test(length) && Number.isSafeInteger(Number(length))) total = Number(length);
+        request.progress?.(0, total);
         if (expected === "application/pdf") info.mediaType = expected; // Verified from the bytes, including on extensionless URLs.
-        else if (expected && expected !== info.mediaType) throw new LabloomError({ kind: "download-type-mismatch", expected, actual: info.mediaType });
+        else if (expected && (expected.endsWith("/*") ? !info.mediaType.startsWith(expected.slice(0, -1)) : expected !== info.mediaType))
+            throw new LabloomError({ kind: "download-type-mismatch", expected, actual: info.mediaType });
         return await stage(request.directory, chunks(), path => {
             signal.throwIfAborted();
             return save(path, info);

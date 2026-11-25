@@ -71,20 +71,12 @@ export function prepareValues(pageId: string, values: Record<string, AttributeVa
 }
 
 function validateOwnership(pageId: string, values: PreparedValue[]): void {
-    const changed = new Set(values.map(item => item.id)), incoming = new Set<string>();
-    for (const { id, definition, row } of values) {
-        const file = attributeTargetKind(definition.type) === "file" && id !== "annotation_file";
-        if (!row || !file && id !== "paper_annotations") continue;
-        for (const target of attributeTargets(definition.type, decodeValue(definition, row.value))) {
-            const key = target.kind + ":" + target.id;
-            const owners = workspace.database().$client.prepare(`SELECT source_id AS pageId,source_field AS attrId FROM link_refs
-                WHERE source_kind='page' AND target_kind=? AND target_id=? AND ${file ? "source_field<>'annotation_file'" : "source_field='paper_annotations'"}`).all(target.kind, target.id) as { pageId: string; attrId: string }[];
-            if (incoming.has(key) || owners.some(owner => owner.pageId !== pageId || !changed.has(owner.attrId))) {
-                throw new LabloomError({ kind: file ? "attachment-owned" : "annotation-owned" });
-            }
-            if (!file && !workspace.database().$client.prepare("SELECT 1 FROM pages WHERE id=? AND kind='annotation'").get(target.id)) throw new LabloomError({ kind: "annotation-unavailable" });
-            incoming.add(key);
-        }
+    const value = values.find(value => value.id === "paper_annotations");
+    if (!value?.row) return;
+    for (const target of attributeTargets(value.definition.type, decodeValue(value.definition, value.row.value))) {
+        if (statement(`SELECT 1 FROM link_refs WHERE source_kind='page' AND source_field='paper_annotations'
+            AND target_kind=? AND target_id=? AND source_id<>? LIMIT 1`).get(target.kind, target.id, pageId)) throw new LabloomError({ kind: "annotation-owned" });
+        if (!statement("SELECT 1 FROM pages WHERE id=? AND kind='annotation'").get(target.id)) throw new LabloomError({ kind: "annotation-unavailable" });
     }
 }
 

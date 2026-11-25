@@ -19,14 +19,14 @@ import * as commit from "../main/knowledge/commit";
 import * as events from "../main/knowledge/events";
 import * as feed from "../main/feed/service";
 import { registerIPCs } from "../main/register";
-import { appQueryChannels, pagesChannels, attributesChannels, historyChannels, papersChannels, timersChannels, workspaceChannels, settingsChannels, startupChannels, feedChannels } from "../shared/ipc";
+import { appQueryChannels, pagesChannels, attachmentsChannels, attributesChannels, historyChannels, papersChannels, timersChannels, workspaceChannels, settingsChannels, startupChannels, feedChannels } from "../shared/ipc";
 import { type CommitResult, type PageRecord } from "../shared/types/content";
 import { type AnnotationInput } from "../shared/types/papers";
 import { type FeedEntry } from "../shared/types/feed";
 import { type FeedResult } from "../main/feed/parser";
 import { payload } from "../shared/content/blocks";
 import { knownCoordinatePdf } from "./fixtures/pdf-text";
-import { annotate, saveFeed } from "./support/session";
+import { annotate, paperServices, saveFeed } from "./support/session";
 import { hasFailure } from "./failures";
 
 function folder(): string {
@@ -101,7 +101,7 @@ test("every public service operation rejects a closed session before validating 
         () => history.state(pageHistory(page.id)), () => history.apply(pageHistory(page.id), "undo"),
         () => papers.files([]), () => papers.state(page.id), () => papers.read(""), () => papers.get(page.id),
         () => papers.resources(page.id), () => papers.prepareAnnotation(page.id, ""),
-        () => papers.unlockPDF("", ""), () => papers.importFile(""), () => papers.position("", "", {} as never),
+        () => papers.unlockPDF("", ""), () => paperServices().importFile(""), () => papers.position("", "", {} as never),
         () => purge.purge(null), () => timers.settings(""), () => timers.notices(), () => timers.check(),
         () => timers.set("", "", -1, false), () => timers.read("", "", -1), () => timers.recalculateAll(),
         () => feed.getState({}), () => feed.getItem(""), () => feed.saveSource({} as never), () => feed.setSourceStatus("", "pause"),
@@ -211,15 +211,15 @@ test("all write paths publish after committing, including direct paper and subsc
     await check("place", () => edits.place({ position: { pageId: page.id, containerId: page.id, index: 0, blockId: page.children[0] }, action: "duplicate" }, pageHistory(page.id)));
     const definition = { id: "custom:" + randomUUID(), name: "A", type: "files" as const, metadata: {} };
     await check("definition", () => edits.setDefinition(definition.id, definition));
-    await check("files", () => papers.attachFiles([paths.text], page.id, definition.id, pageHistory(page.id)));
+    await check("files", () => paperServices().attachFiles([paths.text], page.id, definition.id, pageHistory(page.id)));
     await check("deleteBlock", () => confirm(token => edits.deleteBlock({ pageId: page.id, blockId: page.children[0] }, pageHistory(page.id), token)));
     await check("trash", () => confirm(token => edits.trash([page.id], workspaceHistory, token)));
     await check("restore", () => edits.restore([page.id], workspaceHistory));
     let paperId = "";
-    await check("import PDF", () => {
-        paperId = papers.importFile(paths.pdf).pageId;
+    await check("import PDF", async () => {
+        paperId = (await paperServices().importFile(paths.pdf)).pageId;
     });
-    await check("add PDF", () => papers.importFile(paths.pdf, paperId, pageHistory(paperId)));
+    await check("add PDF", () => paperServices().importFile(paths.pdf, paperId, pageHistory(paperId)));
     const fileId = (await papers.resources(paperId)).files[0].id;
     let annotation = "";
     await check("highlight", async () => {
@@ -341,7 +341,7 @@ test("IPC can register again for a recreated window without replacing the worksp
     };
     const a = create();
     registerIPCs(a.window, () => { });
-    assert.deepEqual(new Set(a.handlers.keys()), new Set([appQueryChannels, pagesChannels, attributesChannels, historyChannels, papersChannels, timersChannels, workspaceChannels, settingsChannels, startupChannels, feedChannels].flatMap(group => Object.values(group))));
+    assert.deepEqual(new Set(a.handlers.keys()), new Set([appQueryChannels, pagesChannels, attachmentsChannels, attributesChannels, historyChannels, papersChannels, timersChannels, workspaceChannels, settingsChannels, startupChannels, feedChannels].flatMap(group => Object.values(group))));
     a.window.webContents.emit("destroyed");
     a.window.emit("closed");
     const b = create();
@@ -394,7 +394,7 @@ test("service architecture has no singleton classes, connection WeakMaps, Electr
     }
 });
 test("annotation parsing returning after close leaves B unchanged and reports no stale error", async t => {
-    const a = open(t), paths = files(a.info.path), paper = papers.importFile(paths.pdf).pageId;
+    const a = open(t), paths = files(a.info.path), paper = (await paperServices().importFile(paths.pdf)).pageId;
     const file = (await papers.resources(paper)).files[0].id;
     const pending = annotate(paper, selection(file), pageHistory(paper));
     session.close();

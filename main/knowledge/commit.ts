@@ -179,9 +179,9 @@ function changePreview(plan: EditChanges, { action, deletedBlocks = [], position
         direct: ids.filter(id => plan.direct.has(id)).map(name), causes: [...plan.causes], deletedBlocks
     };
 }
-export function finish(plan: EditChanges, pageId: string, batch: number, review?: Review): Extract<CommitResult, { status: "saved" }> {
+export function finish(plan: EditChanges, pageId: string, batch: number, review?: Review, historyRows?: RowChanges): Extract<CommitResult, { status: "saved" }> {
     const context = current();
-    const changed = context.persist(plan, pageId, undefined, review && (projected => {
+    const changed = context.persist(plan, pageId, historyRows, review && (projected => {
         const preview = changePreview(plan, review, projected);
         if (preview && contexts.at(-1)?.options.confirmation !== preview.token) throw new ConfirmationRollback(preview);
     }));

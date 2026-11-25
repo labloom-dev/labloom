@@ -3,6 +3,7 @@ import type { PagesAPI } from "./pages/ipc";
 import type { AttributesAPI } from "./attributes/ipc";
 import type { HistoryAPI } from "./history/ipc";
 import type { PapersAPI } from "./papers/ipc";
+import type { AttachmentsAPI } from "./attachments/ipc";
 import type { TimersAPI } from "./timers/ipc";
 import type { WorkspaceAPI } from "./workspace/ipc";
 import type { SettingsAPI } from "./settings/ipc";
@@ -15,6 +16,7 @@ export type AppAPI = {
     attributes: AttributesAPI;
     history: HistoryAPI;
     papers: PapersAPI;
+    attachments: AttachmentsAPI;
     timers: TimersAPI;
     workspace: WorkspaceAPI;
     settings: SettingsAPI;

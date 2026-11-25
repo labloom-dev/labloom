@@ -1,17 +1,19 @@
 import type { ContentBlockKind } from "../../../shared/types/content";
+import { isMediaKind } from "../../../shared/content/blocks";
 import * as labels from "../../../shared/content/block-labels";
 import * as shortcuts from "../../../shared/content/commands";
 import * as i18n from "../../i18n.svelte";
 import type { MenuItem } from "../base/Menu.svelte";
 import * as icons from "../Knowledge/labels";
 
-type Handle = { kind: ContentBlockKind; shared: boolean; folded: boolean; children: boolean };
-type Action = "row" | "column" | "fold" | "unsync" | "delete";
+type Handle = { kind: ContentBlockKind; shared: boolean; folded: boolean; children: boolean; caption?: boolean; media?: boolean };
+type Action = "row" | "column" | "fold" | "unsync" | "delete" | "caption";
 export function block(handle: Handle, convert: (kind: ContentBlockKind) => void, act: (action: Action) => void,
     pick: (mode: "reference" | "sync") => void, move: (direction: -1 | 1) => void, multiple = false): MenuItem[] {
-    const items: MenuItem[] = [{ label: i18n.t("editor.convert"), items: labels.convertibleKinds.map(kind => ({
+    const items: MenuItem[] = handle.media || isMediaKind(handle.kind) ? [] : [{ label: i18n.t("editor.convert"), items: labels.convertibleKinds.map(kind => ({
         icon: icons.blockIcons[kind], label: i18n.t(`block.${kind}`), shortcut: shortcuts.conversionShortcuts[kind], onselect: () => convert(kind)
     })) }];
+    if (!multiple && handle.caption) items.push({ label: i18n.t("editor.addCaption"), onselect: () => act("caption") });
     if (!multiple && handle.kind === "table") items.push({ label: i18n.t("editor.row"), onselect: () => act("row") }, { label: i18n.t("editor.column"), onselect: () => act("column") });
     if (!multiple) items.push({ label: i18n.t("editor.reference"), onselect: () => pick("reference") }, { label: i18n.t("editor.sync"), onselect: () => pick("sync") });
     if (!multiple && handle.shared) items.push({ label: i18n.t("editor.unsync"), onselect: () => act("unsync") });

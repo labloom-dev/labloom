@@ -17,12 +17,12 @@ export function selectionIn(tr: Transaction, pos: number): Transaction {
 export const split: Command = (state, dispatch) => {
     const tr = state.tr.deleteSelection(), at = tr.selection.$from;
     const loc = located(tr);
-    if (!loc || !["pageBlock", "pageTitle"].includes(loc.node.type.name) || !at.parent.inlineContent) return false;
+    if (!loc || !["pageBlock", "pageTitle", "mediaBlock"].includes(loc.node.type.name) || !at.parent.inlineContent) return false;
     if (!dispatch) return true;
     const { node, pos } = loc, title = node.type.name === "pageTitle", field = title ? node : node.firstChild!;
     const offset = at.parentOffset, left = field.copy(field.content.cut(0, offset)), right = field.content.cut(offset);
     const first = title ? left : node.copy(node.content.replaceChild(0, left));
-    const next = blankBlock(state.schema, !title && node.attrs.kind.includes("list") ? node.attrs.kind : "paragraph");
+    const next = blankBlock(state.schema, node.type.name === "pageBlock" && node.attrs.kind.includes("list") ? node.attrs.kind : "paragraph");
     const sibling = next.copy(Fragment.from(next.firstChild!.copy(right)));
     tr.replaceWith(pos, pos + node.nodeSize, [first, sibling]).setMeta(splitBlock, { id: node.attrs.blockId, pos });
     dispatch(selectionIn(tr, pos + first.nodeSize + 2).scrollIntoView());
@@ -31,6 +31,10 @@ export const split: Command = (state, dispatch) => {
 export const backspace: Command = (state, dispatch) => {
     if (!state.selection.empty || state.selection.$from.parentOffset) return false;
     const loc = located(state);
+    if (loc?.node.type.name === "mediaBlock") {
+        if (dispatch) dispatch(state.tr.setSelection(NodeSelection.create(state.doc, loc.pos)));
+        return true;
+    }
     if (!loc || loc.node.type.name !== "pageBlock") return false;
     const { node, pos } = loc, at = state.doc.resolve(pos), previous = at.nodeBefore;
     if (["heading_1", "heading_2", "heading_3", "ordered_list", "unordered_list", "blockquote", "callout"].includes(kindOf(node))) {
@@ -88,6 +92,7 @@ export function copyBlocks(slice: Slice): Slice {
 }
 export function clipboardRows(state: EditorState, rows: { text: string; kind: "paragraph" | "ordered_list" | "unordered_list" }[]): Transaction {
     const tr = state.tr.deleteSelection(), loc = located(tr), at = tr.selection.$from;
+    if (loc?.node.type.name === "mediaBlock") return tr.insertText(rows.map(row => row.text).join(" "));
     if (!loc || !at.parent.inlineContent || loc.node.type.name === "pageTable") return tr.insertText(rows.map(r => r.text).join("\n"));
     const { pos, node } = loc, field = at.parent, title = node.type.name === "pageTitle";
     const left = field.content.cut(0, at.parentOffset), right = field.content.cut(at.parentOffset);

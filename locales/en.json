@@ -52,7 +52,10 @@
         "import-pdf-only": "Only PDF files can create paper pages.",
         "import-failed": "Some files could not be imported.",
         "attachment-missing": "The attachment was not found.",
-        "attachment-owned": "An attachment can belong to only one file attribute on one page.",
+        "attachment-image-required": "The file must be an image.",
+        "attachment-image-decode": "The image could not be decoded.",
+        "attachment-transfer-ended": "The file transfer has ended.",
+        "attachment-save-directory": "Choose a location outside the workspace attachments folder.",
         "annotation-owned": "An annotation can belong to only one paper.",
         "annotation-unavailable": "The annotation page is unavailable.",
         "page-body-forbidden": "This type of page cannot have a body.",
@@ -153,6 +156,7 @@
         "block-invalid-identity": "The block identity, type or child UUIDs are invalid.",
         "block-invalid-version": "The block content format version is invalid.",
         "block-invalid-language": "Only code blocks can specify a supported code language.",
+        "block-invalid-media": "The media block contains invalid file or display information.",
         "block-invalid-collapse": "The collapsed state is invalid.",
         "block-invalid-inline": "The rich text node is invalid.",
         "block-empty-text": "A text node cannot be empty.",
@@ -348,6 +352,8 @@
         "chooseDate": "Choose date property"
     },
     "dialog": {
+        "imageFilter": "Images",
+        "videoFilter": "Video and audio",
         "close": "Close",
         "cancel": "Cancel",
         "confirm": "Confirm changes",
@@ -469,6 +475,16 @@
         "perl": "Perl"
     },
     "editor": {
+        "pasteLink": "Paste link",
+        "embedImage": "Embed as image",
+        "imageViewer": "Image viewer",
+        "imageCount": "{{current}} / {{total}}",
+        "previousImage": "Previous image",
+        "nextImage": "Next image",
+        "mediaTransfer": "Importing files ({{current}} / {{total}})",
+        "addCaption": "Add caption",
+        "missingFile": "File missing",
+        "resizeMedia": "Resize media",
         "language": "Code language",
         "copyCode": "Copy code",
         "insertBlock": "Insert block",
@@ -732,7 +748,10 @@
         "code": "Code",
         "table": "Table",
         "hr": "Divider",
-        "blocked_reference": "Linked reference"
+        "blocked_reference": "Linked reference",
+        "image": "Image",
+        "video": "Video",
+        "file": "File"
     },
     "color": {
         "default": "Default",

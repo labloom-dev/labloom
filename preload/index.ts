@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { AppAPI, AppCommands, AppQueries, BridgeAPI } from "../shared/ipc";
 import type { Channels, InvokeKeys } from "../shared/ipc/contract";
-import { appChannels, appQueryChannels, beforeQuit, feedChanged, historyChanged, pagesChanged, settingsChanged, openReminderPage, pagesChannels, attributesChannels, historyChannels, papersChannels, timersChannels, workspaceChannels, settingsChannels, startupChannels, feedChannels } from "../shared/ipc";
+import { appChannels, appQueryChannels, attachmentProgress, beforeQuit, feedChanged, historyChanged, pagesChanged, settingsChanged, openReminderPage, pagesChannels, attachmentsChannels, attributesChannels, historyChannels, papersChannels, timersChannels, workspaceChannels, settingsChannels, startupChannels, feedChannels } from "../shared/ipc";
 
 function methods<API>(channels: Record<keyof API, string>, call: (channel: string, ...args: unknown[]) => unknown): API {
     return Object.fromEntries(Object.entries<string>(channels).map(([key, channel]) => [key, (...args: unknown[]) => call(channel, ...args)])) as API;
@@ -37,6 +37,7 @@ const api: BridgeAPI<AppAPI> = {
     attributes: invokes<AppAPI["attributes"]>(attributesChannels),
     history: { ...invokes<AppAPI["history"]>(historyChannels), onChanged: listener => subscribe(historyChanged, listener) },
     papers: invokes<AppAPI["papers"]>(papersChannels),
+    attachments: { ...invokes<AppAPI["attachments"]>(attachmentsChannels), onTransferProgress: listener => subscribe(attachmentProgress, listener) },
     timers: { ...invokes<AppAPI["timers"]>(timersChannels), onOpenNotice: listener => subscribe(openReminderPage, listener) },
     workspace: invokes<AppAPI["workspace"]>(workspaceChannels),
     settings: { ...invokes<AppAPI["settings"]>(settingsChannels), onChanged: listener => subscribe(settingsChanged, listener) },

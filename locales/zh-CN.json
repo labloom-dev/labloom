@@ -52,7 +52,10 @@
         "import-pdf-only": "只能用 PDF 文件新建文献。",
         "import-failed": "部分文件导入失败。",
         "attachment-missing": "附件不存在。",
-        "attachment-owned": "附件只能属于一个页面的一个文件属性。",
+        "attachment-image-required": "文件必须是图片。",
+        "attachment-image-decode": "无法解码图片。",
+        "attachment-transfer-ended": "文件传输已结束。",
+        "attachment-save-directory": "请选择工作区附件目录之外的位置。",
         "annotation-owned": "批注只能属于一篇文献。",
         "annotation-unavailable": "批注页面不可用。",
         "page-body-forbidden": "这种页面不能有正文。",
@@ -153,6 +156,7 @@
         "block-invalid-identity": "块的身份、类型或子块 UUID 无效。",
         "block-invalid-version": "块内容的格式版本无效。",
         "block-invalid-language": "只有代码块可以指定语言，且必须使用支持的代码语言。",
+        "block-invalid-media": "多媒体块的文件或显示数据无效。",
         "block-invalid-collapse": "折叠状态无效。",
         "block-invalid-inline": "富文本节点无效。",
         "block-empty-text": "文本节点不能为空。",
@@ -348,6 +352,8 @@
         "chooseDate": "选择日期属性"
     },
     "dialog": {
+        "imageFilter": "图片",
+        "videoFilter": "视频和音频",
         "close": "关闭",
         "cancel": "取消",
         "confirm": "确认更改",
@@ -469,6 +475,16 @@
         "perl": "Perl"
     },
     "editor": {
+        "pasteLink": "粘贴链接",
+        "embedImage": "嵌入为图片",
+        "imageViewer": "图片查看器",
+        "imageCount": "{{current}} / {{total}}",
+        "previousImage": "上一张图片",
+        "nextImage": "下一张图片",
+        "mediaTransfer": "正在导入文件（{{current}} / {{total}}）",
+        "addCaption": "添加说明",
+        "missingFile": "文件缺失",
+        "resizeMedia": "调整媒体宽度",
         "language": "代码语言",
         "copyCode": "复制代码",
         "insertBlock": "插入块",
@@ -732,7 +748,10 @@
         "code": "代码",
         "table": "表格",
         "hr": "分隔线",
-        "blocked_reference": "链接引用"
+        "blocked_reference": "链接引用",
+        "image": "图片",
+        "video": "视频",
+        "file": "文件"
     },
     "color": {
         "default": "默认",

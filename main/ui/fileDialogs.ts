@@ -7,11 +7,6 @@ export async function selectPDF(window: BrowserWindow): Promise<string[]> {
     const result = await dialog.showOpenDialog(window, { properties: ["openFile", "multiSelections"], filters: [{ name: t("dialog.pdfFilter"), extensions: ["pdf"] }] });
     return result.canceled ? [] : result.filePaths;
 }
-export async function selectFiles(window: BrowserWindow, multiple: boolean): Promise<string[]> {
-    const result = await dialog.showOpenDialog(window, { properties: multiple ? ["openFile", "multiSelections"] : ["openFile"] });
-    return result.canceled ? [] : result.filePaths;
-}
-
 // One dialog at a time prevents repeated clicks in the current window.
 let choosingWorkspace = false;
 

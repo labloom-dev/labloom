@@ -10,6 +10,7 @@ import * as lifecycle from "./lifecycle";
 import * as windows from "./ui/window";
 import * as reminders from "./ui/reminders";
 import { openReminderPage } from "../shared/timers/ipc";
+import { registerAttachmentProtocol } from "./attachments/protocol";
 
 // Set both paths before ready, so development also isolates Chromium state.
 const dataPath = app.isPackaged
@@ -18,6 +19,7 @@ const dataPath = app.isPackaged
 app.setPath("userData", dataPath);
 if (!app.requestSingleInstanceLock()) app.exit(0);
 else {
+    registerAttachmentProtocol();
     const sessionPath = join(dataPath, "chromium");
     mkdirSync(sessionPath, { recursive: true });
     app.setPath("sessionData", sessionPath);

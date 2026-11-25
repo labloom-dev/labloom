@@ -1,7 +1,12 @@
 import { codeLanguages } from "./code-languages";
+import { pastedURL } from "./media";
 import { LabloomError } from "../failure";
 import { jsonValue, record, validUUID } from "../attrs/values";
-import { blockKinds, type BlockPayload, type ContentBlock, type InlineNode, type Target } from "../types/content";
+import { blockKinds, mediaKinds, type BlockPayload, type ContentBlock, type InlineNode, type LinkTarget, type MediaKind, type Target } from "../types/content";
+
+export function isMediaKind(kind: string): kind is MediaKind {
+    return mediaKinds.includes(kind as MediaKind);
+}
 
 export function validTarget(value: unknown): value is Target {
     return record(value) && (value.kind === "page" || value.kind === "block") && validUUID(value.id);
@@ -24,19 +29,27 @@ export function payload(type: ContentBlock["type"], text = ""): BlockPayload {
     return { schemaVersion: 1, type, inline: textInline(text) };
 }
 
+const marks = new Set(["bold", "italic", "underline", "strike", "code", "fgColor", "bgColor", "webLink"]);
+const colors = new Set(["default", "gray", "light-gray", "red", "yellow", "orange", "green", "lime", "blue", "purple", "brown", "cyan", "pink", "magenta"]);
+
+function validMark(mark: unknown): boolean {
+    if (!record(mark) || typeof mark.type !== "string" || !marks.has(mark.type)) return false;
+    if (mark.type === "fgColor" || mark.type === "bgColor") return record(mark.attrs) && colors.has(String(mark.attrs[mark.type]));
+    if (mark.type === "webLink") return record(mark.attrs) && typeof mark.attrs.href === "string" && !!pastedURL(mark.attrs.href);
+    return true;
+}
+
 export function validateBlock(value: unknown): asserts value is ContentBlock {
     if (!record(value) || !validUUID(value.id) || !blockKinds.includes(value.type as never) || !Array.isArray(value.children) || !value.children.every(validUUID)) throw new LabloomError({ kind: "block-invalid-identity" });
     const body = value.payload;
     if (!record(body) || body.schemaVersion !== 1 || body.type !== value.type || !Array.isArray(body.inline) || !jsonValue(body)) throw new LabloomError({ kind: "block-invalid-version" });
     if (body.collapsed !== undefined && typeof body.collapsed !== "boolean") throw new LabloomError({ kind: "block-invalid-collapse" });
     if (body.language !== undefined && (value.type !== "code" || !codeLanguages.includes(body.language as never))) throw new LabloomError({ kind: "block-invalid-language" });
-    const marks = new Set(["bold", "italic", "underline", "strike", "code", "fgColor", "bgColor"]);
-    const colors = new Set(["default", "gray", "light-gray", "red", "yellow", "orange", "green", "lime", "blue", "purple", "brown", "cyan", "pink", "magenta"]);
     for (const node of body.inline) {
         if (!record(node)) throw new LabloomError({ kind: "block-invalid-inline" });
         if (node.type === "text") {
             if (typeof node.text !== "string" || !node.text) throw new LabloomError({ kind: "block-empty-text" });
-            if (node.marks !== undefined && (!Array.isArray(node.marks) || node.marks.some(mark => !record(mark) || !marks.has(String(mark.type)) || (["fgColor", "bgColor"].includes(String(mark.type)) && (!record(mark.attrs) || !colors.has(String(mark.attrs[String(mark.type)]))))))) throw new LabloomError({ kind: "block-invalid-marks" });
+            if (node.marks !== undefined && (!Array.isArray(node.marks) || !node.marks.every(validMark))) throw new LabloomError({ kind: "block-invalid-marks" });
         }
         else if (node.type === "inlineReference") {
             if (!record(node.attrs) || !validTarget(node.attrs.target) || typeof node.attrs.label !== "string") throw new LabloomError({ kind: "block-invalid-inline-target" });
@@ -44,7 +57,9 @@ export function validateBlock(value: unknown): asserts value is ContentBlock {
         else if (node.type !== "hardBreak") throw new LabloomError({ kind: "block-inline-only" });
     }
     if (value.type === "title" && value.children.length) throw new LabloomError({ kind: "block-invalid-title" });
-    if (["title", "heading_1", "heading_2", "heading_3", "code", "table", "hr", "blocked_reference"].includes(String(value.type)) && value.children.length) throw new LabloomError({ kind: "block-no-children" });
+    const type = value.type as ContentBlock["type"];
+    if ((isMediaKind(type) || ["title", "heading_1", "heading_2", "heading_3", "code", "table", "hr", "blocked_reference"].includes(type)) && value.children.length) throw new LabloomError({ kind: "block-no-children" });
+    if (isMediaKind(type) ? !validMedia(type, body.media) : body.media !== undefined) throw new LabloomError({ kind: "block-invalid-media" });
     if (value.type === "blocked_reference" && body.target !== null && !validTarget(body.target)) throw new LabloomError({ kind: "block-reference-required" });
     if (value.type !== "blocked_reference" && body.target !== undefined) throw new LabloomError({ kind: "block-reference-only" });
     if (value.type === "table") {
@@ -61,10 +76,22 @@ export function validateBlock(value: unknown): asserts value is ContentBlock {
     else if (body.table !== undefined) throw new LabloomError({ kind: "block-table-only" });
 }
 
-export function references(block: ContentBlock): Target[] {
-    const targets: Target[] = [];
+function validMedia(kind: MediaKind, media: unknown): boolean {
+    if (!record(media) || !(validUUID(media.fileId) || media.fileId === null && typeof media.name === "string" && !!media.name)) return false;
+    const positive = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value > 0;
+    const { width, aspectRatio, naturalWidth } = media;
+    if (width !== undefined && (!positive(width) || width > 1)) return false;
+    if (kind === "image") return positive(aspectRatio) && positive(naturalWidth);
+    if (naturalWidth !== undefined) return false;
+    if (kind === "video" && aspectRatio !== undefined) return positive(aspectRatio);
+    return width === undefined && aspectRatio === undefined;
+}
+
+export function references(block: ContentBlock): LinkTarget[] {
+    const targets: LinkTarget[] = [];
     if (block.payload.target) targets.push(block.payload.target);
     for (const node of block.payload.inline) if (node.type === "inlineReference") targets.push(node.attrs.target);
+    if (block.payload.media?.fileId) targets.push({ kind: "file", id: block.payload.media.fileId });
     return targets;
 }
 

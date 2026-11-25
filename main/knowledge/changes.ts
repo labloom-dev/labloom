@@ -114,6 +114,8 @@ export class EditChanges {
 
     putBlock(value: ContentBlock, stored?: BlockRow): BlockRow | null {
         validateBlock(value);
+        const fileId = value.payload.media?.fileId;
+        if (fileId && !data.statement("SELECT 1 FROM attachments WHERE id=?").get(fileId)) throw new LabloomError({ kind: "attachment-missing" });
         if (value.children.length && data.owners(value.id).some(id => bodylessPageKinds.includes(data.header(id).kind))) throw new LabloomError({ kind: "page-body-forbidden" });
         const id = "block:" + value.id;
         const before = data.blockRow(value.id);

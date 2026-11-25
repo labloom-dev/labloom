@@ -1,11 +1,19 @@
 import type { CodeLanguage } from "../content/code-languages";
+import type { MediaFile } from "../content/media";
 import { type AttributeValue } from "./attributes";
 
 export const pageKinds = ["editable", "paper", "annotation", "feed"] as const;
 export type PageKind = typeof pageKinds[number];
 export const bodylessPageKinds: readonly PageKind[] = ["feed", "paper"];
-export const blockKinds = ["title", "paragraph", "heading_1", "heading_2", "heading_3", "unordered_list", "ordered_list", "blockquote", "callout", "code", "table", "hr", "blocked_reference"] as const;
+export const mediaKinds = ["image", "video", "file"] as const;
+export type MediaKind = typeof mediaKinds[number];
+export const blockKinds = ["title", "paragraph", "heading_1", "heading_2", "heading_3", "unordered_list", "ordered_list", "blockquote", "callout", "code", "table", "hr", "blocked_reference", ...mediaKinds] as const;
 export type ContentBlockKind = typeof blockKinds[number];
+export type BlockMedia = ({ fileId: string } | { fileId: null; name: string }) & {
+    width?: number;
+    aspectRatio?: number;
+    naturalWidth?: number;
+};
 export type Target = { kind: "page" | "block"; id: string };
 export type LinkTarget = { kind: Target["kind"] | "file"; id: string };
 export type InlineNode = { type: "text"; text: string; marks?: { type: string; attrs?: Record<string, AttributeValue> }[] }
@@ -20,6 +28,7 @@ export type BlockPayload = {
     language?: CodeLanguage;
     target?: Target | null;
     table?: RichNode;
+    media?: BlockMedia;
 };
 export type ContentBlock = { id: string; type: ContentBlockKind; payload: BlockPayload; children: string[] };
 export type PageSummary = {
@@ -36,6 +45,7 @@ export type PageRecord = PageSummary & {
     sharedUses?: Record<string, number>;
     children: string[];
     blocks: Record<string, ContentBlock>;
+    mediaFiles?: Record<string, MediaFile>;
 };
 export type BlockListItem = { id: string; type: ContentBlockKind; text: string; depth: number };
 export type PageBlockList = { title: string; rows: BlockListItem[] };
@@ -43,6 +53,7 @@ export type PageObjects = {
     page?: Pick<PageRecord, "attributes" | "children">;
     blocks: ContentBlock[];
     uses: Record<string, number>;
+    mediaFiles?: Record<string, MediaFile>;
 };
 export type PageQuery = { ids?: string[]; keyword?: string; kind?: PageKind | ""; deleted?: boolean; pinned?: boolean; tags?: string[]; hasValue?: string; attributes?: Record<string, AttributeValue>; sort?: "modified" | "created" | "title"; offset?: number; limit?: number };
 export type PageList = { items: PageSummary[]; total: number };
@@ -50,6 +61,7 @@ export type EditCommit = {
     pageId: string; batch: number;
     blocks: ContentBlock[]; pageChildren?: string[]; attributes?: Record<string, AttributeValue>; detach?: string[];
     sync?: string[];
+    linkedPapers?: { id: string; fileId: string }[];
 };
 type Position = { pageId: string; containerId: string; index: number; blockId: string };
 export type Placement = { position: Position; action: "insert" | "remove" | "clone" | "duplicate" | "move-up" | "move-down"; blockId?: string };
