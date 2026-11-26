@@ -28,11 +28,22 @@ function putBlock(block: ContentBlock): void {
     plan.putBlock(block);
     plan.persist();
 }
-export function create(source: HistorySource, title = "", initial: Record<string, AttributeValue> = {}, parentId?: string, kind: "editable" | "paper" = "editable"): PageRecord {
+export function validateInitial(initial: Record<string, AttributeValue>): void {
     workspace.requireWorkspace();
     if (!record(initial)) throw new LabloomError({ kind: "page-invalid-attributes" });
     for (const id of Object.keys(initial)) if (attributes.definition(id).readonly || id === "deleted") throw new LabloomError({ kind: "page-create-readonly" });
-    return createPage(kind, title, initial, parentId, source);
+}
+
+type CreationIdentity = { id: string; writeId: string };
+export function create(source: HistorySource, title = "", initial: Record<string, AttributeValue> = {}, parentId?: string, kind: PageKind = "editable",
+    identity?: CreationIdentity): PageRecord {
+    validateInitial(initial);
+    return createPage(kind, title, kind === "annotation" && !parentId ? { independent: true, ...initial } : initial, parentId, source, identity);
+}
+
+export function rename(pageId: string, title: string, source: HistorySource, confirmation?: string): CommitResult {
+    const { titleBlockId } = data.writable(pageId);
+    return commitEdit({ pageId, batch: 0, blocks: [{ id: titleBlockId, type: "title", payload: payload("title", title), children: [] }] }, source, confirmation);
 }
 function planEdit(input: EditCommit): EditChanges {
     if (!record(input) || !Number.isSafeInteger(input.batch) || input.batch < 0 || !Array.isArray(input.blocks) || !record(input.attributes ?? {}) ||
@@ -301,18 +312,20 @@ function createPageRows(plan: EditChanges, id: string, kind: PageKind, title: st
     return [titleId, ...children];
 }
 
-export function createPage(kind: PageKind = "editable", title = "", initial: Record<string, AttributeValue> = {}, parentId?: string, history?: HistorySource): PageRecord {
+export function createPage(kind: PageKind = "editable", title = "", initial: Record<string, AttributeValue> = {}, parentId?: string,
+    history?: HistorySource, identity?: CreationIdentity): PageRecord {
     workspace.requireWorkspace();
-    if (!pageKinds.includes(kind) || typeof title !== "string" || !record(initial)) throw new LabloomError({ kind: "page-invalid-create" });
+    if (!pageKinds.includes(kind) || typeof title !== "string" || !record(initial) || identity && !validUUID(identity.id))
+        throw new LabloomError({ kind: "page-invalid-create" });
     const changed = { pages: [] as string[], blocks: [] as string[] };
-    const page = commit.run({ history }, context => {
+    const page = commit.run({ history, writeId: identity?.writeId }, context => {
         if (parentId) data.writable(parentId);
         if (kind === "annotation" && initial.annotation_file != null) {
             if (!parentId || data.header(parentId).kind !== "paper") throw new LabloomError({ kind: "annotation-paper-required" });
             const files = data.get(parentId).attributes.paper_files as string[];
             if (!files.includes(String(initial.annotation_file))) throw new LabloomError({ kind: "paper-file-removed" });
         }
-        const id = randomUUID(), plan = new EditChanges();
+        const id = identity?.id ?? randomUUID(), plan = new EditChanges();
         const created = createPageRows(plan, id, kind, title, parentId ? { ...initial, independent: false } : initial);
         if (parentId && kind === "annotation") {
             if (data.header(parentId).kind !== "paper") throw new LabloomError({ kind: "annotation-paper-required" });

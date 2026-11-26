@@ -13,7 +13,7 @@ import { copyData } from "../copy-data";
 import { perform } from "../Knowledge/feedback.svelte";
 import { write } from "../Knowledge/page-sessions";
 
-import { defaultLibrary } from "../../../shared/workspace/library";
+import { defaultTable, defaultTrash } from "../../../shared/workspace/table";
 import { defaultOverviewDate, defaultOverviewStatus as status } from "../../../shared/workspace/overview";
 import { defaultCalendar } from "../../../shared/workspace/calendar";
 
@@ -21,8 +21,9 @@ export type { Destination } from "./destinations";
 
 export const destinationViews: Record<Destination, View> = {
     overview: { type: "overview", params: { status, date: defaultOverviewDate } },
-    library: { type: "library", params: defaultLibrary() },
-    papers: { type: "library", params: defaultLibrary(true) },
+    library: { type: "library", params: defaultTable() },
+    papers: { type: "papers", params: defaultTable("papers") },
+    trash: { type: "trash", params: defaultTrash() },
     calendar: { type: "calendar", params: defaultCalendar },
     feed: { type: "feed", params: {} },
     settings: { type: "settings", params: {} },
@@ -50,7 +51,7 @@ function openView(view: View): Tab {
     return tab;
 }
 export function openDestination(type: Destination): Tab {
-    if (type === "feed" || type === "overview" || type === "calendar") {
+    if (type === "feed" || type === "overview" || type === "calendar" || type === "trash") {
         const focused = tabState.groups.find(group => group.id === tabState.focusedGroupId);
         const existing = focused?.tabs.find(tab => tab.view.type === type)
             ?? tabState.groups.flatMap(group => group.tabs).find(tab => tab.view.type === type);

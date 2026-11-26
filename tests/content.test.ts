@@ -10,6 +10,7 @@ import { test, type TestContext } from "node:test";
 import { createWorkspace, openWorkspace } from "./support/session";
 import { fingerprint } from "../main/knowledge/attributes";
 import { blockList } from "../main/knowledge/block-list";
+import { trashIndex, viewIndex } from "../main/knowledge/query";
 import { EditChanges } from "../main/knowledge/changes";
 import * as settings from "../main/settings/store";
 import { builtinAttrs, builtinAttrsByPageKind } from "../shared/attrs/builtins";
@@ -156,9 +157,8 @@ test("recycled pages disappear from active listings, search, the picker and back
     assert.equal(service.list({ hasValue: "schedule_date" }).total, 0);
     assert.equal(service.list({ kind: "paper" }).total, 0);
     assert.throws(() => blockList(paper.id), hasFailure("page-recycled-readonly"));
-    const sort = { column: "created_at", direction: "desc" } as const;
-    assert.deepEqual(service.libraryIndex({ language: "en", sort }).ids, [note.id]);
-    assert.deepEqual(service.libraryIndex({ deleted: true, kind: "paper", language: "en", sort }).ids, [paper.id]);
+    assert.deepEqual(viewIndex({ type: "library", language: "en", query: { conditions: [], sort: [] } }).ids, [note.id]);
+    assert.deepEqual(trashIndex({ language: "en", sort: [] }).ids, [paper.id]);
     assert.equal(service.resolve({ kind: "page", id: paper.id })?.status, "recycled");
     service.restore([paper.id], workspaceHistory);
     assert.equal(service.backlinks(note.id)[0].sourceId, paper.id);
@@ -490,13 +490,19 @@ test("quick open ranks titles, follows the first shared match and pages through 
     assert.deepEqual(next.items[0].match, { field: "attribute", id: "paper_authors", name: "作者", snippet: "Author SIGNAL" });
     assert.deepEqual(service.searchPages("signal", 4), { items: [], total: 4 });
     assert.deepEqual(service.list({ keyword: "signal" }).items.map(page => page.id), [d.id, c.id, b.id, a.id]);
+    const scoped = viewIndex({ type: "library", keyword: "signal", language: "en",
+        query: { conditions: [{ field: { kind: "title" }, operator: "not-equals", values: [c.title] }], sort: [] } });
+    assert.deepEqual(new Set(scoped.ids), new Set([a.id, b.id, d.id]));
 });
 
 test("library sorting uses displayed values, pinyin, empty-last and stable ties during search", t => {
     const { service } = fixture(t);
     const sample = ["赵", "艾", "", "艾"].map((author, i) => service.create("paper", "Survey " + i, { paper_authors: author }));
     for (const [i, row] of sample.entries()) service.attributes.write(row.id, { modified_at: (i + 1) * 60 }, true);
-    const sort = (direction: "asc" | "desc"): string[] => service.libraryIndex({ keyword: "Survey", kind: "paper", language: "zh-CN", sort: { column: "paper_authors", direction } }).ids;
+    const sort = (direction: "asc" | "desc"): string[] => viewIndex({ type: "library", keyword: "Survey", language: "zh-CN", query: {
+        conditions: [{ field: { kind: "page-type" }, operator: "in", values: ["paper"] }],
+        sort: [{ field: { kind: "attribute", id: "paper_authors" }, direction }]
+    } }).ids;
     assert.deepEqual(sort("asc"), [3, 1, 0, 2].map(i => sample[i].id));
     assert.deepEqual(sort("desc"), [0, 3, 1, 2].map(i => sample[i].id));
     service.attributes.write(sample[3].id, { modified_at: 120 }, true);
@@ -505,7 +511,7 @@ test("library sorting uses displayed values, pinyin, empty-last and stable ties 
     assert.ok(preview.status === "confirmation");
     assert.deepEqual(preview.preview.direct.map(p => p.id), ids);
     assert.equal(service.trash(ids, workspaceHistory, preview.preview.token).status, "saved");
-    assert.equal(service.libraryIndex({ deleted: true, language: "en", sort: { column: "created_at", direction: "desc" } }).ids.length, 4);
+    assert.equal(trashIndex({ language: "en", sort: [] }).ids.length, 4);
 });
 
 test("numeric library sorting keeps null and absent fields last and returns the ordered first batch", t => {
@@ -517,7 +523,7 @@ test("numeric library sorting keeps null and absent fields last and returns the 
     sample.forEach((page, index) => service.attributes.write(page.id, { modified_at: (index + 1) * 60 }, true));
     for (const direction of ["asc", "desc"] as const) {
         const numbers = direction === "asc" ? [1, 2, 0] : [2, 0, 1];
-        const index = service.libraryIndex({ language: "en", sort: { column, direction } }, [column]);
+        const index = viewIndex({ type: "library", language: "en", query: { conditions: [], sort: [{ field: { kind: "attribute", id: column }, direction }] } }, [column]);
         assert.deepEqual(index.ids, [...numbers, 4, 3].map(i => sample[i].id));
         assert.deepEqual(index.initial?.map(page => page.id), index.ids);
     }

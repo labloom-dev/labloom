@@ -1,9 +1,9 @@
-<div class="attribute-input">
+<div class="attribute-input" bind:this={root}>
     {#if definition.type === "file" || definition.type === "files"}
-        <FileInput {definition} {value} {session} disabled={disabled || !!definition.readonly} {onchange} />
+        <FileInput {definition} {value} {session} inline={!!onstage} {onstage} disabled={disabled || !!definition.readonly} {onchange} />
     {:else if isTimeType(definition.type)}
         <DatePicker {label} precision={definition.type} value={typeof value === "number" ? value : null} {zone}
-            readonly={disabled || !!definition.readonly} {onchange} />
+            readonly={disabled || !!definition.readonly} {initiallyOpen} {onchange} />
     {:else if definition.readonly || disabled}
         {#if (definition.type === "page-link" || definition.type === "page-links") && !empty}
             {#each (Array.isArray(value) ? value : [value]) as id (id)}
@@ -21,7 +21,7 @@
     {:else if definition.type === "boolean"}
         <Checkbox {label} checked={value === true} hideLabel {onchange} />
     {:else if definition.type === "select" || definition.type === "status"}
-        <Select {label} value={empty ? "" : String(value)} placeholder={t("property.empty")}
+        <Select {label} value={empty ? "" : String(value)} placeholder={t("property.empty")} open={initiallyOpen}
             options={[{ value: "", label: t("property.empty") }, ...(definition.metadata.options ?? []).map(option => ({ value: option.id, label: propertyOption(definition, option) }))]}
             onchange={id => onchange(id || emptyValue(definition.type))} />
     {:else if definition.type === "multiselect"}
@@ -38,10 +38,10 @@
                 <span class="inline"><TextButton text={t("property.openPage")} onclick={() => services.open(String(id))} />
                     <IconButton icon="close" label={t("property.removeItem", { name: t("shell.page") })} onclick={() => onchange(Array.isArray(value) ? value.filter(item => item !== id) : emptyValue(definition.type))} /></span>
             {/each}
-            <Button variant="text" onclick={() => picker = true}>{t("editor.choosePage")}</Button>
+            <Button variant="text" onclick={openPicker}>{t("editor.choosePage")}</Button>
         </div>
         {#if picker}
-            <TargetPicker mode="page" source={services.picker} onclose={() => picker = false} onselect={target => {
+            <TargetPicker mode="page" position={pickerPosition} source={services.picker} onclose={() => picker = false} onselect={target => {
                 onchange(definition.type === "page-link" ? target.id : [...new Set([...(Array.isArray(value) ? value : []), target.id])]); picker = false;
             }} />
         {/if}
@@ -67,6 +67,7 @@
     small[role="alert"] { display: block; position: absolute; top: 100%; z-index: 1; background: var(--ui-surface-popup); padding: var(--ui-space-1); color: var(--ui-text-danger); font-size: var(--ui-font-small); }
 </style>
 <script lang="ts">
+    import { onMount } from "svelte";
     import { t, failure, message, type ErrorValue } from "../../i18n.svelte";
     import { recurrenceMinutes } from "../../../shared/content/timers";
     import { type AttributeDefinition, type AttributeValue } from "../../../shared/types/attributes";
@@ -86,11 +87,26 @@
     import { type PageSession } from "./page-session.svelte";
 
     import TargetPicker from "./TargetPicker.svelte";
-    let { definition, value, disabled = false, session, onchange }: { definition: AttributeDefinition; value: AttributeValue; disabled?: boolean; session?: PageSession; onchange: (value: AttributeValue) => void } = $props();
+    let { definition, value, disabled = false, session, initiallyOpen = false, onstage, onchange }: {
+        definition: AttributeDefinition; value: AttributeValue; disabled?: boolean; session?: PageSession; initiallyOpen?: boolean;
+        onstage?: (ids: string[]) => boolean; onchange: (value: AttributeValue) => void;
+    } = $props();
     const services = propertyControls(), label = $derived(propertyName(definition));
     const zone = $derived(currentTimeZone());
     const empty = $derived(isEmpty(definition.type, value));
     let picker = $state(false), error = $state<ErrorValue>("");
+    let root: HTMLElement;
+    let pickerPosition = $state<{ x: number; y: number; left: number; right: number; bottom: number }>();
+    function openPicker(): void {
+        if (initiallyOpen && root) {
+            const bounds = root.getBoundingClientRect();
+            pickerPosition = { x: bounds.left, y: bounds.bottom, left: 0, right: document.documentElement.clientWidth, bottom: document.documentElement.clientHeight };
+        }
+        picker = true;
+    }
+    onMount(() => {
+        if (initiallyOpen && (definition.type === "page-link" || definition.type === "page-links")) openPicker();
+    });
     function change(read: () => AttributeValue): void {
         try {
             onchange(read());

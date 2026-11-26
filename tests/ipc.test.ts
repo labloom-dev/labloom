@@ -39,6 +39,12 @@ test("every group rejects malformed IPC arguments before side effects and accept
         [attachmentsChannels.importPath, [[42, ""], ["A", "C", { id: "B" }]]],
         [attachmentsChannels.uploadChunk, [["A", "bytes"]]],
         [pagesChannels.get, [[42]]], [pagesChannels.blockList, [[42]]],
+        [pagesChannels.viewIndex, [[{ type: "table", language: "en", query: { conditions: [], sort: [] } }],
+            [{ type: "library", language: "en", query: { conditions: [], sort: "title" } }],
+            [{ type: "papers", language: "en", query: { conditions: [{ field: { kind: "title" }, operator: "unknown", values: [] }], sort: [] } }],
+            [{ type: "library", language: "en", query: { conditions: [], sort: [], group: { field: { kind: "page-type" }, collapsed: [{}] } } }]]],
+        [pagesChannels.trashIndex, [[{ language: "en", sort: [{ field: { kind: "title" }, direction: "newest" }] }]]],
+        [pagesChannels.releaseView, [["not-a-session"]]],
         [pagesChannels.commitEdit, [[{ pageId: "A", batch: 0, blocks: [3] }, workspaceHistory],
             [{ batch: 0, blocks: [] }, workspaceHistory], [{ pageId: "A", batch: 0, blocks: [] }, workspaceHistory, undefined, 42],
             [{ pageId: "A", batch: 0, blocks: [] }]]],
@@ -302,7 +308,10 @@ test("large layouts survive IPC storage and renderer restoration", async t => {
     const { call } = fixture(t);
     for (const count of [33, 41]) {
         const groups: SavedTabs["groups"] = Array.from({ length: count }, (_, i) => ({ id: String(i), tabs: [], activeTabId: null }));
-        groups[0].tabs.push({ id: "T".repeat(101), view: { type: "library", params: { scope: "all", sort: { column: "title", direction: "asc" }, tags: ["A".repeat(1000001)], filters: [] } } });
+        groups[0].tabs.push({ id: "T".repeat(101), view: { type: "library", params: { query: {
+            conditions: [{ field: { kind: "title" }, operator: "contains", values: ["A".repeat(1000001)] }],
+            sort: [{ field: { kind: "title" }, direction: "asc" }]
+        } } } });
         groups[0].activeTabId = groups[0].tabs[0].id;
         let layout: SavedTabs["layout"] = { type: "group", groupId: "0" };
         for (const group of groups.slice(1)) layout = { type: "split", direction: "horizontal", ratio: 0.5, children: [layout, { type: "group", groupId: group.id }] };

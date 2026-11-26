@@ -1,12 +1,12 @@
 import type Database from "better-sqlite3";
 import { resolveAttributeDefinition } from "../../shared/attrs/definitions";
 import { unsearchableBuiltinValues } from "../../shared/attrs/builtins";
-import { libraryText, search } from "../../shared/attrs/format";
+import { search } from "../../shared/attrs/format";
 import { attributeTargetKind, decodeValue, emptyValue, encodeValue, nullable, record, validUUID } from "../../shared/attrs/values";
 import { blockText, payload, validateBlock, validTarget } from "../../shared/content/blocks";
 import { matchRanges } from "../../shared/content/matches";
 import type { MediaFile } from "../../shared/content/media";
-import { isTimeType, resolveTimeZone, validTimeSeconds } from "../../shared/content/time";
+import { resolveTimeZone, validTimeSeconds } from "../../shared/content/time";
 import { LabloomError } from "../../shared/failure";
 import { type AttributeDefinition, type AttributeValue } from "../../shared/types/attributes";
 import { pageKinds, type Backlink, type ContentBlock, type LinkTarget, type PageKind, type PageList, type PageObjects, type PageQuery, type PageRecord, type PageSummary, type PageSearchResult, type ResolvedTarget, type Target } from "../../shared/types/content";
@@ -16,8 +16,6 @@ import * as workspace from "../workspace-state";
 
 import { overviewBatchSize, type OverviewIndex, type OverviewPage, type OverviewQuery } from "../../shared/workspace/overview";
 import type { CalendarPage, CalendarQuery } from "../../shared/workspace/calendar";
-import { libraryBatchSize, type LibraryIndex, type LibraryQuery } from "../../shared/workspace/library";
-import { createI18n, type Translate } from "../../shared/i18n";
 
 export type BlockRow = typeof blocks.$inferSelect;
 type PageRow = typeof pages.$inferSelect;
@@ -237,10 +235,11 @@ export function bodyExcerpts(rows: { id: string; children: string[] }[]): Map<st
 }
 
 // The same formatted attribute value can belong to many pages (tags, dates, options).
+const unsearchableIds = unsearchableBuiltinValues.map(id => "'" + id + "'").join(",");
 // Format each distinct value once, then use page_attrs_by_value to find its pages.
 const attributeHits = `distinct_values AS MATERIALIZED (
     SELECT attr_id, value FROM page_attrs WHERE attr_id IN (
-        SELECT id FROM attrs_meta WHERE id NOT IN (${unsearchableBuiltinValues.map(id => "'" + id + "'").join(",")})
+        SELECT id FROM attrs_meta WHERE id NOT IN (${unsearchableIds})
     ) AND value IS NOT NULL GROUP BY attr_id, value
 ), matched_values AS MATERIALIZED (
     SELECT v.attr_id, v.value FROM distinct_values v JOIN attrs_meta a ON a.id=v.attr_id
@@ -276,6 +275,36 @@ const blockHits = `file_hits(id, name) AS MATERIALIZED (
 const searchMatches = `WITH RECURSIVE ${blockHits}, ${attributeHits}, matches(id) AS (
     SELECT id FROM owners WHERE kind='page' UNION SELECT id FROM attribute_hits
 ) `;
+
+const scopedSearchMatches = `WITH RECURSIVE candidates(id) AS MATERIALIZED (SELECT value FROM json_each(@candidates)),
+visible_blocks(id) AS (
+    SELECT r.block_id FROM candidates c CROSS JOIN sync_refs r ON r.container_kind='page' AND r.container_id=c.id
+    UNION SELECT r.block_id FROM visible_blocks b CROSS JOIN sync_refs r ON r.container_kind='block' AND r.container_id=b.id
+), block_hits(id) AS (
+    SELECT b.id FROM visible_blocks i CROSS JOIN blocks b ON b.id=i.id
+    WHERE instr(knowledge_lower(knowledge_text(b.type,b.content)), @keyword)>0
+        OR (b.type IN ('image','video','file') AND b.content ->> '$.media.fileId' IS NULL
+            AND instr(knowledge_lower(coalesce(b.content ->> '$.media.name','')), @keyword)>0)
+    UNION SELECT l.source_id FROM visible_blocks i CROSS JOIN link_refs l ON l.source_kind='block' AND l.source_id=i.id
+        JOIN attachments f ON f.id=l.target_id WHERE l.target_kind='file' AND instr(knowledge_lower(f.original_name), @keyword)>0
+), owners(kind,id) AS (
+    SELECT 'block',id FROM block_hits
+    UNION SELECT u.container_kind,u.container_id FROM owners o JOIN sync_refs u ON u.block_id=o.id WHERE o.kind='block'
+), matches(id) AS (
+    SELECT id FROM owners WHERE kind='page'
+    UNION SELECT c.id FROM candidates c WHERE EXISTS (
+        SELECT 1 FROM page_attrs v JOIN attrs_meta a ON a.id=v.attr_id
+        WHERE v.page_id=c.id AND v.value IS NOT NULL AND v.attr_id NOT IN (${unsearchableIds})
+            AND instr(knowledge_lower(${attributeText()}), @keyword)>0
+    )
+) `;
+
+export function viewSearch(keyword: string | undefined, zone: string, candidates?: string[]): { cte: string; params: Record<string, string> } | undefined {
+    const term = keyword?.trim().toLocaleLowerCase();
+    if (!term) return undefined;
+    return candidates ? { cte: scopedSearchMatches, params: { keyword: term, zone, candidates: JSON.stringify(candidates) } }
+        : { cte: searchMatches, params: { keyword: term, zone } };
+}
 
 function listFilter(query: Omit<PageQuery, "sort">, bindings: Record<string, string> = {}): { from: string; filter: string; cte: string; params: unknown[]; keyword?: string } | null {
     const where = ["d.value = ?"], params: unknown[] = [Number(!!query.deleted)];
@@ -338,14 +367,16 @@ function listRows(query: PageQuery): { selected: ListRow[]; total: number } {
         " JOIN page_attrs s ON s.page_id=p.id AND s.attr_id='" + (query.sort === "created" ? "created_at" : "modified_at") + "'";
     // Materialize keyword hits once. The window count precedes pagination.
     const count = keyword ? ", count(*) OVER() AS total" : "";
-    const dateOrdered = query.hasValue === undefined && !query.ids && !keyword && query.pinned === undefined && !query.tags?.length && !Object.keys(query.attributes ?? {}).length && query.sort !== "title";
+    const dateOrdered = query.hasValue === undefined && !query.ids && !keyword && query.pinned === undefined && !query.tags?.length && query.sort !== "title";
     const dateId = query.sort === "created" ? "created_at" : "modified_at";
     const selected = (dateOrdered ? statement(`SELECT p.id, p.kind, p.title_block_id AS titleBlockId, p.children
         FROM page_attrs s INDEXED BY page_attrs_order CROSS JOIN pages p ON p.id=s.page_id AND s.attr_id=?
-        JOIN page_attrs d ON d.page_id=p.id AND d.attr_id='deleted'${filter} ORDER BY s.value DESC,s.page_id LIMIT ? OFFSET ?`).all(dateId, ...params, limit, offset)
+        CROSS JOIN page_attrs d ON d.page_id=p.id AND d.attr_id='deleted'${filter} ORDER BY s.value DESC,s.page_id LIMIT ? OFFSET ?`).all(dateId, ...params, limit, offset)
         : statement(cte + "SELECT p.id, p.kind, p.title_block_id AS titleBlockId, p.children" + count + from + join + filter +
             " ORDER BY " + order + ", p.id LIMIT ? OFFSET ?").all(...params, limit, offset)) as ListRow[];
-    const total = dateOrdered && !query.kind ? statement("SELECT count(*) FROM page_attrs WHERE attr_id='deleted' AND value=?").pluck().get(Number(!!query.deleted)) as number : selected[0]?.total ?? (keyword && !offset ? 0 : statement(cte + "SELECT count(*)" + from + filter).pluck().get(...params) as number);
+    const total = dateOrdered && !query.kind && !Object.keys(query.attributes ?? {}).length
+        ? statement("SELECT count(*) FROM page_attrs WHERE attr_id='deleted' AND value=?").pluck().get(Number(!!query.deleted)) as number
+        : selected[0]?.total ?? (keyword && !offset ? 0 : statement(cte + "SELECT count(*)" + from + filter).pluck().get(...params) as number);
     return { selected, total };
 }
 
@@ -427,7 +458,7 @@ function matchSnippet(text: string, keyword: string): string {
     return (start ? "…" : "") + text.slice(start, end) + (end < text.length ? "…" : "");
 }
 
-function targetNames(entries: Iterable<[AttributeDefinition, AttributeValue]>): Record<string, string> {
+export function targetNames(entries: Iterable<[AttributeDefinition, AttributeValue]>): Record<string, string> {
     const pages = new Set<string>(), files = new Set<string>();
     for (const [def, value] of entries) {
         const kind = attributeTargetKind(def.type);
@@ -447,65 +478,14 @@ function targetNames(entries: Iterable<[AttributeDefinition, AttributeValue]>): 
     return names;
 }
 
-const libraryLocale = createI18n("zh-CN");
-function orderedLibraryRows(query: LibraryQuery): { id: string; title: string }[] {
-    const { column, direction } = query.sort, def = definition(column);
-    const sortAttr = def && !def.hidden && column !== "modified_at";
-    const parts = listFilter(query, sortAttr ? { column } : {});
-    if (!parts) return [];
-    const { from, filter, cte, params } = parts;
-    const source = from + " JOIN blocks b ON b.id=p.title_block_id JOIN page_attrs m ON m.page_id=p.id AND m.attr_id='modified_at'" +
-        (sortAttr ? " LEFT JOIN page_attrs s ON s.page_id=p.id AND s.attr_id=@column" : "") + filter;
-    const valueColumn = sortAttr ? "s.value" : "m.value";
-    if (column !== "title" && column !== "kind" && (!def || def.hidden || isTimeType(def.type) || def.type === "number")) {
-        const order = valueColumn + (direction === "asc" ? " ASC" : " DESC") + " NULLS LAST" + (sortAttr ? ", m.value DESC" : "") + ", p.id";
-        return statement(cte + "SELECT p.id,knowledge_text(b.type,b.content) AS title" + source + " ORDER BY " + order).all(...params) as { id: string; title: string }[];
-    }
-    const zone = resolveTimeZone(workspace.timeZone());
-    const t: Translate = (key, options) => libraryLocale.t(key, { ...options, lng: query.language });
-    const collator = new Intl.Collator(query.language === "zh-CN" ? "zh-CN-u-co-pinyin" : query.language, { numeric: true });
-    const rows = statement(cte + "SELECT p.id, p.kind, knowledge_text(b.type,b.content) AS title, m.value AS modified, " + valueColumn + " AS value" + source).all(...params) as {
-            id: string; kind: PageKind; title: string; modified: number; value: unknown; key?: string | null;
-        }[];
-    const kindLabels = Object.fromEntries(pageKinds.map(kind => [kind, t(`library.${kind}`)]));
-    const decoded = new Map<unknown, AttributeValue>();
-    if (sortAttr) for (const row of rows) {
-        if (row.value != null && !decoded.has(row.value)) decoded.set(row.value, decodeValue(def, row.value));
-    }
-    const names = def && attributeTargetKind(def.type) ? targetNames(Array.from(decoded.values(), v => [def, v])) : {};
-    const labels = new Map(Array.from(decoded, ([raw, value]) => [raw, libraryText(def!, value, query.language, zone, t, names)]));
-    for (const row of rows) {
-        if (column === "title") row.key = row.title || null;
-        else if (column === "kind") row.key = kindLabels[row.kind];
-        else row.key = labels.get(row.value) || null;
-    }
-    const sign = direction === "desc" ? -1 : 1;
-    rows.sort((a, b) => {
-        const x = a.key, y = b.key;
-        if ((x == null) !== (y == null)) return x == null ? 1 : -1;
-        const diff = x != null && y != null ? collator.compare(x, y) : 0;
-        return sign * diff || b.modified - a.modified || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
-    });
-    return rows;
-}
-
-export function libraryIndex(query: LibraryQuery, initialColumns?: string[]): LibraryIndex & { initial?: PageSummary[] } {
-    const rows = orderedLibraryRows(query);
-    const filterLinks: [AttributeDefinition, AttributeValue][] = [];
-    for (const [id, value] of Object.entries(query.attributes ?? {})) {
-        const attr = definition(id);
-        if (attr && attributeTargetKind(attr.type)) filterLinks.push([attr, value]);
-    }
-    const index = { ids: rows.map(row => row.id), titles: rows.map(row => row.title), ...(filterLinks.length ? { names: targetNames(filterLinks) } : {}) };
-    if (!initialColumns || !index.ids.length) return index;
-    // These IDs have already been filtered and ordered. Read just their headers for the first viewport.
+export function summariesForIds(ids: string[]): PageSummary[] {
+    if (!ids.length) return [];
     const heads = statement(`SELECT p.id,p.kind,p.title_block_id AS titleBlockId,p.children FROM json_each(?) j
-        CROSS JOIN pages p ON p.id=j.value ORDER BY j.key`).all(JSON.stringify(index.ids.slice(0, libraryBatchSize))) as ListRow[];
-    const initial = summaries(heads);
-    return { ...index, initial, names: { ...index.names, ...summaryNames(initial, initialColumns) } };
+        CROSS JOIN pages p ON p.id=j.value ORDER BY j.key`).all(JSON.stringify(ids)) as ListRow[];
+    return summaries(heads);
 }
 
-function summaryNames(items: PageSummary[], columns?: string[]): Record<string, string> | undefined {
+export function summaryNames(items: PageSummary[], columns?: string[]): Record<string, string> | undefined {
     const links = columns?.map(definition).filter(def => def && attributeTargetKind(def.type)) as AttributeDefinition[] | undefined;
     return links?.length ? targetNames(items.flatMap(row => links.map((def): [AttributeDefinition, AttributeValue] => [def, row.attributes[def.id]]))) : undefined;
 }

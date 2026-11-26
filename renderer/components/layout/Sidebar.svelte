@@ -22,14 +22,15 @@
     import SidebarGroup from "./SidebarGroup.svelte";
     import { destinationViews, sameView, openDestination } from "./navigation";
     import { type Destination } from "./destinations";
+    import { isTableView } from "../../../shared/workspace/table";
     import { minPanelWidth, maxPanelWidth } from "../../../shared/settings/defaults";
     import { shell, persistPanel } from "./shell.svelte";
     let tags = $state<{ id: string; name: string }[]>([]), filter = $state(""), applied = $state("");
     const group = $derived(tabState.groups.find(group => group.id === tabState.focusedGroupId));
     const activeView = $derived(group?.tabs.find(tab => tab.id === group.activeTabId)?.view);
     const currentPage = $derived(activeView?.type === "page" ? activeView.params.page.id : undefined);
-    const activeDestination = $derived(activeView?.type === "library" ? (activeView.params.paperOnly ? "papers" : "library")
-        : activeView?.type === "calendar" ? "calendar" : (Object.keys(destinationViews) as Destination[]).find(id => sameView(activeView, destinationViews[id])));
+    const activeDestination = $derived(isTableView(activeView?.type) || activeView?.type === "trash" || activeView?.type === "calendar" ? activeView.type
+        : (Object.keys(destinationViews) as Destination[]).find(id => sameView(activeView, destinationViews[id])));
     $effect(() => {
         const value = filter; const timer = setTimeout(() => applied = value, 200); return () => clearTimeout(timer);
     });

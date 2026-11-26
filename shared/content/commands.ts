@@ -7,7 +7,7 @@ export const commands = {
     sidebar: { shortcut: "Ctrl+Alt+B" }, splitRight: { shortcut: "Ctrl+\\" },
     mergeGroup: { shortcut: "" }, commandPalette: { shortcut: "Ctrl+Shift+P" },
     splitDown: { shortcut: "" }, overview: { shortcut: "" },
-    feed: { shortcut: "" }, library: { shortcut: "" }, papers: { shortcut: "" },
+    feed: { shortcut: "" }, library: { shortcut: "" }, papers: { shortcut: "" }, trash: { shortcut: "" },
     calendar: { shortcut: "" }, attributes: { shortcut: "" }, search: { shortcut: "Ctrl+P" },
     nextTab: { shortcut: "Ctrl+Tab" }, previousTab: { shortcut: "Ctrl+Shift+Tab" },
     group1: { shortcut: "Ctrl+1" }, group2: { shortcut: "Ctrl+2" }, group3: { shortcut: "Ctrl+3" },
@@ -34,10 +34,11 @@ export function shortcutCommand(event: Pick<KeyboardEvent, "key" | "ctrlKey" | "
 export const conversionShortcuts: Record<string, string> = { paragraph: "Ctrl+Alt+0", heading_1: "Ctrl+Alt+1", heading_2: "Ctrl+Alt+2", heading_3: "Ctrl+Alt+3", unordered_list: "Ctrl+Shift+8", ordered_list: "Ctrl+Shift+7" };
 export const blockShortcuts = { fold: "Ctrl+Enter", language: "Ctrl+Alt+L", extendUp: "Shift+↑", extendDown: "Shift+↓",
     up: "Alt+↑", down: "Alt+↓", indent: "Tab", outdent: "Shift+Tab", select: "Esc", remove: "Delete" } as const;
-export const libraryShortcuts = {
+export const tableShortcuts = {
     open: "Enter", openSide: "Ctrl+Enter", pin: "Ctrl+Shift+K", restore: "Ctrl+Shift+Enter", trash: "Delete", purge: "Delete",
     selectAll: commands.selectAll.shortcut, extendUp: "Shift+ArrowUp", extendDown: "Shift+ArrowDown",
-    previous: "ArrowUp", next: "ArrowDown", first: "Home", last: "End", screenUp: "PageUp", screenDown: "PageDown", menu: "Shift+F10"
+    previous: "ArrowUp", next: "ArrowDown", first: "Home", last: "End", screenUp: "PageUp", screenDown: "PageDown", menu: "Shift+F10",
+    collapse: "ArrowLeft", expand: "ArrowRight", editTitle: "F2", apply: "Enter", cancel: "Escape", nextCell: "Tab", previousCell: "Shift+Tab"
 } as const;
 export const feedShortcuts = {
     previous: "ArrowUp", next: "ArrowDown", first: "Home", last: "End", screenUp: "PageUp", screenDown: "PageDown", menu: "F10"

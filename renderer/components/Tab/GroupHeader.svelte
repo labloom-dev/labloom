@@ -47,7 +47,7 @@
     const header = $derived(focused && current ? definitionFor(current.view.type).header?.(current.id, current.view.params) : undefined);
     function viewIcon(view: Tab["view"]): IconName {
         if (view.type === "page") return kindIcons.editable;
-        return destinationIcons[view.type === "library" && view.params.paperOnly ? "papers" : view.type];
+        return destinationIcons[view.type];
     }
     async function focusEditor(id: TabID): Promise<void> {
         await tick();

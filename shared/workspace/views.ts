@@ -1,10 +1,9 @@
 import type { tags } from "typia";
 import type { uuid } from "../types/uuid";
-import type { AttributeType, AttributeValue } from "../types/attributes";
-import type { PageKind } from "../types/content";
+import type { AttributeType } from "../types/attributes";
 
 import type { FeedParams } from "./feed";
-import type { LibraryColumn, LibrarySort } from "./library";
+import type { TableParams, TrashParams } from "./table";
 
 type ReferenceId = string & tags.MinLength<1>;
 type AttributeRef<T extends AttributeType> = { kind: "attribute"; type: T; id: ReferenceId };
@@ -17,17 +16,9 @@ export type ViewParams = {
         infoWidth?: number & tags.Minimum<1>;
         paperSidebar?: "info" | "annotations";
     };
-    library: {
-        scope: "all" | "pinned" | "trash";
-        pageType?: { kind: "page-type"; type: PageKind };
-        sort: LibrarySort;
-        paperOnly?: boolean;
-        columns?: LibraryColumn[];
-        showProperties?: boolean;
-        infoWidth?: number & tags.Minimum<1>;
-        tags: string[];
-        filters: { attribute: { kind: "attribute"; id: ReferenceId }; value: AttributeValue }[];
-    };
+    library: TableParams;
+    papers: TableParams;
+    trash: TrashParams;
     calendar: { date: AttributeRef<"day">; start?: AttributeRef<"minute">; status?: AttributeRef<"status">; agendaWidth?: number & tags.Minimum<1> };
     overview: { status?: AttributeRef<"status">; date?: AttributeRef<"day"> };
     attributes: { listWidth?: number & tags.Minimum<1> };

@@ -11,7 +11,7 @@ export async function libraryWorkflow(paths: string[], bulkPapers: string[] | nu
         }
     }
     const el = <T extends HTMLElement = HTMLElement>(selector: string): T | null => document.querySelector<T>(selector);
-    const library = "[data-tabs-content]:not([hidden]) .library ";
+    let library = "[data-tabs-content]:not([hidden]) [data-table-view=papers] ";
     const row = (): HTMLElement | null => el(library + "[data-kind=paper]");
     const info = (): HTMLElement | null => el(library + "[data-history-page]");
     const author = (): HTMLTextAreaElement | null => info()?.querySelector("textarea[aria-label=作者]") ?? null;
@@ -21,10 +21,26 @@ export async function libraryWorkflow(paths: string[], bulkPapers: string[] | nu
     const input = (node: HTMLInputElement | HTMLTextAreaElement, value: string): void => {
         node.value = value; node.dispatchEvent(new Event("input", { bubbles: true })); node.dispatchEvent(new Event("change", { bubbles: true }));
     };
-    const button = (scope: ParentNode, text: string): HTMLButtonElement => [...scope.querySelectorAll("button")].find(b => b.textContent?.trim() === text)!;
+    const button = (scope: ParentNode | null, text: string): HTMLButtonElement =>
+        Array.from(scope?.querySelectorAll("button") ?? []).find(b => b.textContent?.trim() === text)!;
+    function identity(icon: "book" | "library", label: string): boolean {
+        const tab = el(".group-header.focused [data-tabs-trigger][data-state=active]");
+        return tab?.textContent?.trim() === label && !!tab.querySelector(`[data-icon=${icon}]`) &&
+            el(`.activity button:has([data-icon=${icon}])`)?.getAttribute("aria-pressed") === "true";
+    }
+    const knowledge = "[data-tabs-content]:not([hidden]) [data-table-view=library] ";
+    el(".activity [data-icon=library]")!.closest("button")!.click();
+    await until(() => el(knowledge + "[role=grid][aria-busy=false]"), "knowledge table");
+    const tabsPath = "/components/Tab/api.ts";
+    const { setViewParams } = await import(tabsPath) as typeof import("../../renderer/components/Tab/api");
+    const knowledgeId = el(knowledge + "[role=grid]")!.closest<HTMLElement>("[data-tabs-content]")!.dataset.value!;
+    setViewParams(knowledgeId, { query: { conditions: [{ field: { kind: "page-type" }, operator: "not-in", values: ["paper"] }], sort: [] } });
+    await until(() => el(knowledge + "[data-table-filter-chip]") && !el(knowledge + "[data-table-import]"), "knowledge excludes PDF import");
+    setViewParams(knowledgeId, { query: { conditions: [{ field: { kind: "page-type" }, operator: "in", values: ["paper"] }], sort: [] } });
+    await until(() => identity("library", "知识库") && el(knowledge + "[data-table-import]") && el(knowledge + "[data-kind=paper]"), "paper-filtered knowledge identity");
     el(".activity [data-icon=book]")!.closest("button")!.click();
     (await until(row, "paper results")).click();
-    if (el(library + ".library-toolbar [aria-pressed]")?.getAttribute("aria-pressed") !== "false" || el(library + ".library-status")?.textContent?.includes("文献")) throw Error("Built-in paper type is shown as a filter");
+    if (!identity("book", "文献库") || el(library + "[data-table-filter-chip]") || !el(library + "[data-table-import]")) throw Error("Paper scope leaked into filters");
     const field = await until(author, "paper properties"), id = info()!.dataset.historyPage!, old = field.value;
     field.focus(); input(field, "Library workflow A");
     await until(() => row()?.innerText.includes("Library workflow A"), "table updated by inspector");
@@ -33,6 +49,16 @@ export async function libraryWorkflow(paths: string[], bulkPapers: string[] | nu
     key(field, "y", { ctrlKey: true });
     await until(() => author()?.value === "Library workflow A", "inspector redo");
     const sink = (): HTMLElement => el(library + "[data-library-keyboard]")!;
+    row()!.querySelector<HTMLElement>("[data-column=paper_authors]")!.click();
+    const inline = await until(() => el<HTMLInputElement>(library + "[data-cell-editor] input"), "inline author editor");
+    input(inline, "Inline author");
+    key(inline, "Tab");
+    const next = await until(() => el<HTMLInputElement>(library + "[data-column=paper_year] [data-cell-editor] input"), "next editable column");
+    key(next, "Escape");
+    await until(() => author()?.value === "Inline author", "inspector updated by direct edit");
+    sink().focus();
+    key(sink(), "z", { ctrlKey: true });
+    await until(() => author()?.value === "Library workflow A", "workspace undo of direct edit");
     sink().focus();
     key(sink(), "p", { ctrlKey: true, altKey: true });
     await until(() => !el(library + "aside"), "close info");
@@ -45,6 +71,7 @@ export async function libraryWorkflow(paths: string[], bulkPapers: string[] | nu
     if (other.value !== "Library workflow A") throw Error("Page session did not read the inspector edit");
     other.focus(); input(other, "Library workflow B");
     await until(() => author()?.value === "Library workflow B", "live inspector while page is focused");
+    await until(() => row()?.innerText.includes("Library workflow B"), "live split table while page is focused");
     author()!.focus(); input(author()!, "Library workflow C");
     await until(() => other.value === "Library workflow C", "live page while inspector is focused");
 
@@ -56,6 +83,7 @@ export async function libraryWorkflow(paths: string[], bulkPapers: string[] | nu
     const header = el(library + "[role=columnheader]")!;
     header.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 420, clientY: 115 }));
     const doi = await until(() => [...document.querySelectorAll<HTMLElement>("[role=menuitemcheckbox]")].find(e => e.textContent?.trim() === "DOI"), "column menu");
+    if ([...document.querySelectorAll("[role=menuitemcheckbox]")].some(e => e.textContent?.trim() === "类型")) throw Error("Papers offer a page-type column");
     doi.click();
     await until(() => el(library + "[role=columnheader][data-column=paper_doi]"), "added DOI column");
     const head = el(library + "[data-column=title]")!, sash = head.querySelector<HTMLElement>("[role=separator]")!;
@@ -69,13 +97,25 @@ export async function libraryWorkflow(paths: string[], bulkPapers: string[] | nu
     await until(() => el(library + "[role=columnheader]")?.dataset.column === "paper_doi", "column reorder");
     const toolbar = el(library + ".library-toolbar")!;
     button(toolbar, "筛选").click();
-    const tagQuery = await until(() => el<HTMLInputElement>(".filters input[type=search]"), "tag filter");
+    const filter = await until(() => el(":popover-open .filter-list"), "filter popover");
+    button(filter, "添加条件").click();
+    const condition = await until(() => filter.querySelector("[data-filter-row]"), "first filter condition");
+    condition.querySelector<HTMLButtonElement>(".ui-select")!.click();
+    const tags = await until(() => [...document.querySelectorAll<HTMLElement>("[role=option]")].find(o => o.textContent?.trim() === "标签"), "tag field");
+    if ([...document.querySelectorAll("[role=option]")].some(e => e.textContent?.trim() === "类型")) throw Error("Papers offer a page-type filter");
+    tags.click();
+    (await until(() => condition.querySelector<HTMLButtonElement>("button.choices"), "tag condition selector")).click();
+    const tagQuery = await until(() => el<HTMLInputElement>(".table-filter-choices input[type=search]"), "tag filter search");
     input(tagQuery, "Climate");
-    const tag = await until(() => [...document.querySelectorAll<HTMLElement>(".filters [role=checkbox]")].find(item => item.textContent?.trim() === "Climate"), "tag option");
-    tag.click(); key(tag, "Escape");
-    await until(() => Number(el(library + "[role=grid]")?.getAttribute("aria-rowcount")) < 5001 && button(el(library + ".library-status")!, "Climate"), "filtered total");
-    button(el(library + ".library-status")!, "Climate").click();
+    const tag = await until(() => [...document.querySelectorAll<HTMLElement>(".table-filter-choices [role=option]")].find(item => item.textContent?.trim() === "Climate"), "tag option");
+    tag.click();
+    key(tagQuery, "Escape");
+    const chip = await until(() => [...document.querySelectorAll<HTMLElement>(library + "[data-table-filter-chip]")].find(item => item.textContent?.includes("Climate")), "tag filter chip");
+    await until(() => Number(el(library + "[role=grid]")?.getAttribute("aria-rowcount")) < 5001, "filtered total");
+    if (!identity("book", "文献库") || !el(library + "[data-table-import]")) throw Error("Paper identity changed after adding a user filter");
+    chip.querySelectorAll("button")[1].click();
     await until(() => el(library + "[role=grid]")?.getAttribute("aria-rowcount") === "5001", "remove filter");
+    if (filter.isConnected) key(filter.querySelector("button")!, "Escape");
     const importButton = await until(() => button(toolbar, "导入 PDF"), "import PDF button");
     importButton.click();
     await until(() => el(library + "aside > [data-paragraph]")?.textContent?.includes("2"), "multiple PDF selection");
@@ -140,14 +180,11 @@ export async function libraryWorkflow(paths: string[], bulkPapers: string[] | nu
     const modulePath = "/components/Knowledge/library-import.svelte.ts";
     const { importedPages } = await import(modulePath) as typeof import("../../renderer/components/Knowledge/library-import.svelte");
     const tabId = search.closest<HTMLElement>("[data-tabs-content]")!.dataset.value!;
-    let reads = 0;
-    const observer = new MutationObserver(records => reads += records.filter(r => r.oldValue === "true").length);
-    observer.observe(el(library + "[role=grid]")!, { attributes: true, attributeFilter: ["aria-busy"], attributeOldValue: true });
     importedPages.set(tabId, [keep, gone]);
-    await until(() => !importedPages.has(tabId) && info()?.dataset.historyPage === keep, "missing import cleared after one read");
-    await wait(250);
-    observer.disconnect();
-    if (reads !== 1 || el(library + "[aria-selected=true]")?.dataset.pageId !== keep) throw Error("Import reread count or surviving selection: " + reads);
+    await until(() => !importedPages.has(tabId) && info()?.dataset.historyPage === keep, "select surviving imported row");
+    if (search.value !== "not-an-imported-title" || el(library + "[aria-selected=true]")?.dataset.pageId !== keep) throw Error("Import changed the current search or selected a recycled page");
+    input(search, "");
+    await until(() => el(library + "[role=grid]")?.getAttribute("aria-rowcount") === "5002", "search cleared");
     const clipped = [...document.querySelectorAll<HTMLElement>(library + "[role=gridcell] .cell-label")].find(label => label.scrollWidth > label.clientWidth);
     if (!clipped) throw Error("Missing clipped cell");
     clipped.dispatchEvent(new PointerEvent("pointerover", { bubbles: true }));
@@ -175,20 +212,52 @@ export async function libraryWorkflow(paths: string[], bulkPapers: string[] | nu
     if (removeNotePage.status !== "confirmation") throw Error("Missing note preview");
     await window.api.pages.trash([note.id], { kind: "workspace" }, removeNotePage.preview.token);
     el(".activity [data-icon=book]")!.closest("button")!.click();
-    const scope = await until(() => el(library + ".library-toolbar .ui-select"), "library scope");
-    scope.focus(); key(scope, "ArrowDown");
-    await until(() => [...document.querySelectorAll<HTMLElement>("[role=option]")].find(o => o.textContent?.trim() === "回收站"), "recycle bin option");
-    key(scope, "End"); key(scope, "Enter");
-    const purge = await until(() => button(el(library + ".library-toolbar")!, "永久删除全部结果"), "purge filtered results");
-    await until(() => !purge.disabled && el(library + "[role=grid]")?.getAttribute("aria-rowcount") === "2", "only the recycled paper");
-    purge.click();
-    const confirmation = await until(() => el(":popover-open [role=alertdialog]"), "filtered purge confirmation");
-    if (!confirmation.textContent?.includes("1个页面") || confirmation.textContent.includes(note.title)) throw Error("Incorrect purge scope");
-    confirmation.querySelectorAll(".ui-dialog-actions button")[1].dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await until(() => purge.disabled && el(library + "[role=grid]")?.getAttribute("aria-rowcount") === "1", "empty filtered trash disabled");
-    if (!(await window.api.pages.get(note.id)).attributes.deleted) throw Error("Unrelated recycled page lost");
+    const actions = await until(() => el<HTMLButtonElement>(".group-header.focused [data-tab-actions]"), "table tab actions");
+    actions.click();
+    const openTrash = await until(() => [...document.querySelectorAll<HTMLElement>("[role=menuitem]")].find(item => item.textContent?.trim() === "打开回收站"), "trash destination");
+    openTrash.click();
+    library = "[data-tabs-content]:not([hidden]) [data-table-view=trash] ";
+    const purge = await until(() => button(el(library + ".library-toolbar")!, "清空回收站"), "clear trash");
+    await until(() => !purge.disabled && el(library + "[role=grid]")?.getAttribute("aria-rowcount") === "3", "trash includes all page kinds");
+    if (el(library + "[data-table-filters]") || el(library + "[data-table-create]")) throw Error("Trash exposes table editing controls");
+    const trashSearch = el<HTMLInputElement>(library + ".library-toolbar input")!;
+    input(trashSearch, note.title);
+    await until(() => el(library + "[role=grid]")?.getAttribute("aria-rowcount") === "2" && el(library + "[data-page-id]")?.dataset.pageId === note.id, "trash search");
+    input(trashSearch, "");
+    await until(() => el(library + "[role=grid]")?.getAttribute("aria-rowcount") === "3", "clear trash search");
+    (await until(row, "recycled paper")).click();
+    const title = await until(() => info()?.closest("[data-history-page]")?.querySelector<HTMLInputElement>("input[readonly]"), "read-only trash inspector");
+    if (!title.readOnly) throw Error("Trash inspector editable");
+    key(sink(), "F2");
+    if (el(library + "[data-cell-editor]")) throw Error("Trash cell editable");
+    key(sink(), "Delete");
+    const confirmation = await until(() => el(":popover-open [role=alertdialog]"), "permanent deletion confirmation");
+    if (!confirmation.textContent?.includes("1个页面") || confirmation.textContent.includes(note.title)) throw Error("Incorrect selected deletion scope");
+    confirmation.querySelectorAll<HTMLButtonElement>(".ui-dialog-actions button")[1].click();
+    await until(() => el(library + "[role=grid]")?.getAttribute("aria-rowcount") === "2", "one page remains in the trash");
+    (await until(() => el(library + "[data-page-id]"), "recycled note")).click();
+    key(sink(), "Enter", { ctrlKey: true, shiftKey: true });
+    await until(() => purge.disabled && el(library + "[role=grid]")?.getAttribute("aria-rowcount") === "1", "restore from trash");
+    if ((await window.api.pages.get(note.id)).attributes.deleted) throw Error("Restore left the note recycled");
 
-    if (!bulkPapers) return null;
+    if (!bulkPapers) {
+        library = "[data-tabs-content]:not([hidden]) [data-table-view=papers] ";
+        el(".activity [data-icon=book]")!.closest("button")!.click();
+        const grid = await until(() => el(library + "[role=grid][aria-busy=false]"), "reopened papers");
+        const papersId = grid.closest<HTMLElement>("[data-tabs-content]")!.dataset.value!;
+        const climate = (await window.api.attributes.definitions()).find(def => def.id === "tags")!.metadata.options!.find(option => option.name === "Climate")!.id;
+        setViewParams(papersId, { query: { conditions: [{ field: { kind: "attribute", id: "tags" }, operator: "any", values: [climate] }], sort: [] } });
+        await until(() => el(library + "[role=grid][aria-busy=false]") && el(library + "[data-table-filter-chip]"), "filtered papers for creation");
+        const create = el<HTMLButtonElement>(library + "[data-table-create]")!;
+        create.click();
+        const title = await until(() => el<HTMLInputElement>(library + "[data-cell-editor] input"), "new paper title");
+        const createdId = title.closest<HTMLElement>("[data-page-id]")!.dataset.pageId!;
+        key(title, "Escape");
+        await until(() => !create.disabled, "new paper written");
+        const created = await window.api.pages.get(createdId);
+        if (created.kind !== "paper" || !(created.attributes.tags as string[]).includes(climate)) throw Error("Paper creation lost its fixed kind or user condition");
+        return null;
+    }
     const source = { kind: "workspace" } as const;
     const bulkTrash = await window.api.pages.trash(bulkPapers, source);
     if (bulkTrash.status !== "confirmation" || bulkTrash.preview.direct.length !== 5000 || bulkTrash.preview.recycled.length !== 1000) {
@@ -197,7 +266,7 @@ export async function libraryWorkflow(paths: string[], bulkPapers: string[] | nu
     if ((await window.api.pages.trash(bulkPapers, source, bulkTrash.preview.token)).status !== "saved") {
         throw Error("Could not move the benchmark papers to the recycle bin");
     }
-    await until(() => !purge.disabled && el(library + "[role=grid]")?.getAttribute("aria-rowcount") === "5001", "bulk recycle results");
+    await until(() => !purge.disabled && el(library + "[role=grid]")?.getAttribute("aria-rowcount") === "6001", "bulk recycle results");
     const start = performance.now();
     purge.click();
     const preview = await until(() => el(":popover-open [role=alertdialog]"), "bulk permanent deletion confirmation");

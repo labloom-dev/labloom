@@ -8,7 +8,7 @@
         </div>
     {:else}<span class="muted">{t("property.noFiles")}</span>{/each}
     {#if !disabled}
-        {#if session}<Button icon="add" disabled={busy} onclick={add}>{t(busy ? "property.addingFile" : "property.addFile")}</Button>
+        {#if session || onstage}<Button icon="add" disabled={busy} onclick={add}>{t(busy ? "property.addingFile" : "property.addFile")}</Button>
         {:else}
             <Input search label={t("property.findFile")} clearLabel={t("shell.clearFilter")} placeholder={t("property.findFile")} bind:value={query} />
             {#each choices.filter(file => !ids.includes(file.id) && file.originalName.toLocaleLowerCase().includes(query.toLocaleLowerCase())) as file (file.id)}
@@ -19,7 +19,7 @@
     {/if}
     {#if error}<div data-paragraph role="alert">{message(error)}</div>{/if}
 {/snippet}
-{#if openPaperPDF}
+{#if openPaperPDF || inline}
     <div class="inline-files">{@render contents()}</div>
 {:else}<div class="file-input">
     {#if definition.type === "file" && files[0]}
@@ -66,7 +66,10 @@
     import { type PageSession } from "./page-session.svelte";
     import { knowledgeState } from "./feedback.svelte";
     import { write } from "./page-sessions";
-    let { definition, value, session, disabled = false, openPaperPDF, onchange }: { definition: AttributeDefinition; value: AttributeValue; session?: PageSession; disabled?: boolean; openPaperPDF?: (id: string) => void; onchange: (value: AttributeValue) => void } = $props();
+    let { definition, value, session, disabled = false, openPaperPDF, inline = false, onstage, onchange }: {
+        definition: AttributeDefinition; value: AttributeValue; session?: PageSession; disabled?: boolean; openPaperPDF?: (id: string) => void;
+        inline?: boolean; onstage?: (ids: string[]) => boolean; onchange: (value: AttributeValue) => void;
+    } = $props();
     const services = propertyControls();
     const ids = $derived((Array.isArray(value) ? value : typeof value === "string" ? [value] : []) as string[]);
     let files = $state<Attachment[]>([]), choices = $state<Attachment[]>([]), preview = $state<Attachment | null>(null);
@@ -88,7 +91,7 @@
         };
     });
     $effect(() => {
-        if (!expanded || session || disabled) return;
+        if (!expanded || session || onstage || disabled) return;
         void knowledgeState.change.seq;
         let active = true;
         void services.files().then(result => {
@@ -125,23 +128,25 @@
         }
     }
     async function add(): Promise<void> {
-        if (!session?.state.page) return;
+        if (!session?.state.page && !onstage) return;
         busy = true;
         try {
             const current = session;
-            const api = window.api, pageId = current.state.page!.id, attribute = definition.id;
+            const api = window.api, pageId = current?.state.page?.id, attribute = definition.id;
             const paths = await api.attachments.choose("file", definition.type === "files");
             if (!paths.length) return;
             const staged = await api.attachments.stagePaths(paths, false, true);
             const ids = staged.files.map(file => file.id);
+            let handedOff = false;
             try {
-                await write(async () => {
+                if (onstage) handedOff = onstage(ids);
+                else if (current && pageId) await write(async () => {
                     await api.papers.attachImported(ids, pageId, attribute, current.source);
                     await current.reread([pageId]);
                 });
             }
             finally {
-                await api.attachments.releaseHandoffs(ids);
+                if (!handedOff) await api.attachments.releaseHandoffs(ids);
             }
             error = "";
         }

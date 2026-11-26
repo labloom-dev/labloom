@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { tick } from "svelte";
+    import { onMount, tick } from "svelte";
     import { datePickerShortcuts as keys, isComposingKey } from "../../../shared/content/commands";
     import {
         dayToSeconds, nowSeconds, secondsToDay, secondsToSecond, timeToSeconds, type TimePrecision
@@ -12,12 +12,13 @@
     import Popover from "./Popover.svelte";
     import { clampPickerDay, movePickerDay, pickerDay, pickerHeading, pickerPageStart, pickerRows, pickerValueText, shiftPickerPage, weekdays } from "./date-picker";
 
-    let { label, precision, value, zone, readonly = false, onchange }: {
+    let { label, precision, value, zone, readonly = false, initiallyOpen = false, onchange }: {
         label: string;
         precision: TimePrecision;
         value: number | null;
         zone: string;
         readonly?: boolean;
+        initiallyOpen?: boolean;
         onchange?: (value: number | null) => void;
     } = $props();
 
@@ -70,6 +71,9 @@
 
     $effect(() => {
         if (readonly && open) setOpen(false);
+    });
+    onMount(() => {
+        if (initiallyOpen && !readonly) setOpen(true);
     });
 
     function save(nextValue: number | null): void {
