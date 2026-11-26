@@ -4,7 +4,7 @@ import { type ViewParams } from "../../../shared/workspace/views";
 import { workspaceHistory, type HistorySource } from "../../../shared/history/ipc";
 import Standalone from "./Standalone.svelte";
 import PageView from "../Knowledge/PageView.svelte";
-import Library from "../Knowledge/Library.svelte";
+import Table from "../Knowledge/Table.svelte";
 import Calendar from "../Knowledge/Calendar.svelte";
 import AttributeManagement from "../Knowledge/AttributeManagement.svelte";
 import Overview from "../tabs/Overview.svelte";
@@ -16,11 +16,11 @@ import { t } from "../../i18n.svelte";
 import { type MenuItem } from "../base/Menu.svelte";
 import { type IconName } from "../utils/Icon.svelte";
 import { type TabID } from "./defs";
-import { libraryHeader, pageHeader } from "../Knowledge/page-header";
+import { tableHeader, pageHeader } from "../Knowledge/page-header";
 import { pageTitle } from "./page-titles";
 
 export type ViewProps<K extends keyof ViewParams> = {
-    tabId: string; params: ViewParams[K]; onparams: (params: ViewParams[K]) => void; source: HistorySource;
+    tabId: string; viewType: K; params: ViewParams[K]; onparams: (params: ViewParams[K]) => void; source: HistorySource;
 };
 export type HeaderActions = {
     buttons: { icon: IconName; label: string; shortcut?: string; pressed?: boolean; onclick: () => void }[];
@@ -39,7 +39,9 @@ const named = (key: Parameters<typeof t>[0]) => () => toStore(() => t(key));
 const standalone = (screen: Component): Component<{ tabId: string }> => (anchor, { tabId }) => Standalone(anchor, { tabId, screen });
 const views: { [K in keyof ViewParams]: Definition<K> } = {
     page: { component: PageView, header: pageHeader, title: p => pageTitle(p.page.id), history: p => ({ kind: "page", id: p.page.id }), keepMounted: true },
-    library: { component: Library, header: libraryHeader, title: p => toStore(() => t(p.scope === "trash" ? "shell.trashView" : p.scope === "pinned" ? "shell.pinnedView" : p.paperOnly ? "command.papers" : "command.library")), history: workspace, keepMounted: true },
+    library: { component: Table, header: tableHeader, title: named("command.library"), history: workspace, keepMounted: true },
+    papers: { component: Table, header: tableHeader, title: named("command.papers"), history: workspace, keepMounted: true },
+    trash: { component: Table, header: (id, params) => tableHeader(id, params, true), title: named("shell.trashView"), history: workspace, keepMounted: true },
     calendar: { component: Calendar, title: named("command.calendar"), history: workspace, keepMounted: true, header: id => ({ buttons: [], menu: viewMenu(id) }) },
     overview: { component: Overview, title: named("command.overview"), history: workspace, keepMounted: false, header: id => ({ buttons: [], menu: viewMenu(id) }) },
     attributes: { component: AttributeManagement, title: named("command.attributes"), history: workspace, keepMounted: false },

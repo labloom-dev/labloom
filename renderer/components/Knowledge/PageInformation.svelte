@@ -10,7 +10,7 @@
     import { inspectPage } from "./page-sessions";
     import { knowledgeState } from "./feedback.svelte";
 
-    let { tabId, pageId }: { tabId: string; pageId: string } = $props();
+    let { tabId, pageId, readonly = false }: { tabId: string; pageId: string; readonly?: boolean } = $props();
     const inspection = untrack(() => inspectPage(tabId, pageId)), current = inspection.current;
     onDestroy(inspection.release);
     const page = $derived(current.state.page);
@@ -25,7 +25,7 @@
     });
     function rename(value: string): void {
         draft = undefined;
-        if (!title || page?.attributes.deleted || value === blockText(title)) return;
+        if (!title || readonly || page?.attributes.deleted || value === blockText(title)) return;
         current.stage({ blocks: [{ ...title, payload: payload("title", value) }] });
         void current.flush().then(saved => {
             if (!saved && current.state.error) knowledgeState.error = current.state.error;
@@ -37,12 +37,12 @@
     {#if page?.kind === "paper" && title}
         <div class="paper-title">
             <Input value={blockText(title)} label={t("quickOpen.title")} placeholder={t("shell.untitled")}
-                inputProps={{ readonly: !!page.attributes.deleted, onkeydown: event => {
+                inputProps={{ readonly: readonly || !!page.attributes.deleted, onkeydown: event => {
                     if (event.key === "Enter" && !isComposingKey(event)) event.currentTarget.blur();
                 } }} disabled={current.state.loading} oninput={value => draft = value} onchange={rename} />
         </div>
     {/if}
-    <LibraryInfo {tabId} {pageId} />
+    <LibraryInfo {tabId} {pageId} {readonly} />
     {#if page?.kind === "paper" && current.state.backlinks.length}
         <div class="backlinks">
             <Backlinks links={current.state.backlinks} onopen={(id, otherGroup, anchorId) => openPage(id, { currentGroup: true, otherGroup, anchorId })} />

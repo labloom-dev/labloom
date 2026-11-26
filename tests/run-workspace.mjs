@@ -8,7 +8,7 @@ import { build } from "esbuild";
 
 const require = createRequire(import.meta.url);
 const benchmark = process.argv.includes("--perf");
-const suites = ["ipc", "services", "workspace", "builtin-attrs", "drizzle", "attributes", "content", "history", "papers", "files", "schedule", "retention", "timestamps", "time-precision", "editor", "clipboard", "tabs", "session-views", "pdf-text", "feed", "purge", "failure", "appearance", "lifecycle", "workspace-lock"];
+const suites = ["ipc", "services", "workspace", "builtin-attrs", "drizzle", "attributes", "query", "content", "history", "papers", "files", "schedule", "retention", "timestamps", "time-precision", "editor", "clipboard", "tabs", "session-views", "pdf-text", "feed", "purge", "failure", "appearance", "lifecycle", "workspace-lock"];
 const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 export function buildTestMain(options) {
     return build({ ...options, plugins: [typia({ include: [/[/\\]main[/\\][^/\\]+[/\\]ipc\.ts$/, /[/\\]Tab[/\\]restore\.ts$/], tsconfig: join(projectRoot, "configs/tsconfig.node.json") })] });

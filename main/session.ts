@@ -5,6 +5,7 @@ import { createWorkspace, openWorkspace, closeWorkspace, type OpenWorkspace } fr
 import { fetchFeed } from "./feed/parser";
 import * as state from "./workspace-state";
 import * as records from "./knowledge/records";
+import * as query from "./knowledge/query";
 import * as history from "./knowledge/history-state";
 import * as attachments from "./attachments/service";
 import * as papers from "./knowledge/papers";
@@ -61,6 +62,7 @@ export function close(): void {
     commit.release();
     history.release();
     workspaceSettings.release();
+    query.release();
     records.release();
     if (workspace) closeWorkspace(workspace);
 }

@@ -15,12 +15,13 @@ import { generateMedia } from "./media-fixture.mjs";
 const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const editing = process.argv.includes("--editing");
 const library = process.argv.includes("--library");
+const views = process.argv.includes("--views");
 const reader = process.argv.includes("--reader");
 const media = process.argv.includes("--media");
 const mediaClipboard = process.argv.includes("--media-clipboard");
 const paperState = process.argv.includes("--feed-paper-state");
 const feed = paperState || process.argv.includes("--feed");
-const picker = library || editing || process.argv.includes("--picker");
+const picker = library || views || editing || process.argv.includes("--picker");
 const local = join(root, ".local");
 mkdirSync(local, { recursive: true });
 const mediaFixtures = join(local, "media-bench-data");
@@ -36,16 +37,20 @@ const server = await createServer({ root: process.env.LABLOOM_RENDERER_ROOT ?? j
     server: { host: "127.0.0.1", port: reader ? 15176 : 0, hmr: false, watch: null, ...(reader ? { forwardConsole: false } : {}), fs: { allow: [root] } } });
 try {
     const options = { absWorkingDir: root, bundle: true, platform: "node", format: "cjs", packages: "external", outdir: dir, outExtension: { ".js": ".cjs" } };
-    await buildTestMain({ ...options, entryPoints: { main: mediaClipboard ? "tests/perf/media-clipboard-main.ts" : media ? "tests/perf/media-main.ts" : reader ? "tests/perf/reader-main.ts" : feed ? "tests/perf/feed-main.ts" : library ? "tests/perf/library-main.ts" : picker ? "tests/perf/picker-main.ts" : "tests/perf/tabs-main.ts" } });
+    await buildTestMain({ ...options, entryPoints: { main: mediaClipboard ? "tests/perf/media-clipboard-main.ts" : media ? "tests/perf/media-main.ts" : reader ? "tests/perf/reader-main.ts" : feed ? "tests/perf/feed-main.ts" : library || views ? "tests/perf/library-main.ts" : picker ? "tests/perf/picker-main.ts" : "tests/perf/tabs-main.ts" } });
     await build({ ...options, entryPoints: { preload: "preload/index.ts" } });
     await server.listen();
-    const env = { ...process.env, LABLOOM_TEST_ROOT: dir, LABLOOM_BENCH_URL: server.resolvedUrls.local[0], LABLOOM_MEDIA_FIXTURES: mediaFixtures };
+    const env = { ...process.env, LABLOOM_TEST_ROOT: dir, LABLOOM_BENCH_URL: server.resolvedUrls.local[0], LABLOOM_MEDIA_FIXTURES: mediaFixtures,
+        LABLOOM_VIEW_BENCH: views ? "yes" : "" };
     delete env.ELECTRON_RUN_AS_NODE;
     for (const scale of mediaClipboard ? ["media-clipboard"] : media ? ["media"] : reader ? ["reader"] : feed ? [paperState ? "paper-state" : "feed"] : picker ? [editing ? "editing" : "B"] : process.env.LABLOOM_TAB_SCALE ? [process.env.LABLOOM_TAB_SCALE] : ["A", "B"]) {
         const run = spawn(createRequire(import.meta.url)("electron"), [join(dir, "main.cjs"), scale], { cwd: root, env, stdio: "inherit", windowsHide: true });
         const code = await new Promise((resolve, reject) => {
             run.once("error", reject);
-            run.once("exit", status => resolve(status ?? 1));
+            run.once("exit", (status, signal) => {
+                if (status === null || status !== 0) console.error("Electron benchmark exited", { status, signal });
+                resolve(status ?? 1);
+            });
         });
         if (code) process.exitCode = code;
     }

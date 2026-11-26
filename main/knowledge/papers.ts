@@ -194,7 +194,7 @@ export function attachImported(ids: string[], pageId: string, attributeId: strin
     });
 }
 
-export function importPrepared(ids: string[], source?: HistorySource, pageId?: string): string[] {
+export function importPrepared(ids: string[], source?: HistorySource, pageId?: string, initial: Record<string, AttributeValue> = {}): string[] {
     workspace.requireWorkspace();
     if (!ids.length) return [];
     if (pageId) {
@@ -204,8 +204,9 @@ export function importPrepared(ids: string[], source?: HistorySource, pageId?: s
     }
     const files = requiredFiles(ids);
     if (files.some(file => file.mediaType !== "application/pdf")) throw new LabloomError({ kind: "import-pdf-only" });
+    edits.validateInitial(initial);
     return files.map(file => edits.createPage("paper", basename(file.originalName, extname(file.originalName)), {
-        paper_files: [file.id], source_snapshot: { originalName: file.originalName }
+        ...initial, paper_files: [file.id], source_snapshot: { originalName: file.originalName }
     }, undefined, source).id);
 }
 

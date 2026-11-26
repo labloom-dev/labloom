@@ -1,5 +1,6 @@
 import { type HistorySource } from "../history/ipc";
 import type { CommitResult } from "../types/content";
+import type { AttributeValue } from "../types/attributes";
 import { type AnnotationInput, type AnnotationPaper, type Attachment, type PaperResources, type ReadingPosition } from "../types/papers";
 import { type Channels } from "../ipc/contract";
 import type { tags } from "typia";
@@ -7,7 +8,7 @@ import type { tags } from "typia";
 type SelectedAnnotation = Omit<AnnotationInput, "rectangles"> & { rectangles: AnnotationInput["rectangles"] & tags.MinItems<1> };
 
 export type PapersAPI = {
-    importPrepared(ids: string[], source: HistorySource, pageId?: string): Promise<string[]>;
+    importPrepared(ids: string[], source: HistorySource, pageId?: string, initial?: Record<string, AttributeValue>): Promise<string[]>;
     attachImported(ids: string[], pageId: string, attributeId: string, source: HistorySource): Promise<Attachment[]>;
     attachFile(pageId: string, attributeId: string, fileId: string, source: HistorySource): Promise<void>;
     files(ids?: string[]): Promise<Attachment[]>;

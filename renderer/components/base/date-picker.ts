@@ -1,10 +1,10 @@
 import {
-    dayToSeconds, secondsToDay, secondsToHour, secondsToMinute, secondsToMonth, secondsToYear, type TimePrecision
+    dayToSeconds, secondsToDay, secondsToHour, secondsToMinute, secondsToMonth, secondsToYear, secondsPerDay as day, startOfWeek, weekStartsOn, type TimePrecision
 } from "../../../shared/content/time";
 
-const day = 86400;
 const firstDay = dayToSeconds("0000-01-01"), lastDay = dayToSeconds("9999-12-31");
-export const weekdays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const;
+const weekdaysByIndex = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"] as const;
+export const weekdays = [...weekdaysByIndex.slice(weekStartsOn), ...weekdaysByIndex.slice(0, weekStartsOn)];
 
 function utcDay(year: number, month = 0, date = 1): number {
     const value = new Date(0);
@@ -45,11 +45,11 @@ export function pickerPageStart(precision: TimePrecision, date: number): number 
 
 export function pickerRows(precision: TimePrecision, start: number): (number | null)[][] {
     const first = new Date(start * 1000), year = first.getUTCFullYear();
-    const monday = start - ((first.getUTCDay() + 6) % 7) * day;
+    const week = startOfWeek(start);
     const columns = precision === "year" || precision === "month" ? 3 : 7;
     return Array.from({ length: columns === 3 ? 4 : 6 }, (_, row) => Array.from({ length: columns }, (_, column) => {
         const i = row * columns + column;
-        const value = precision === "year" ? utcDay(year + i) : precision === "month" ? utcDay(year, i) : monday + i * day;
+        const value = precision === "year" ? utcDay(year + i) : precision === "month" ? utcDay(year, i) : week + i * day;
         return value === clampPickerDay(value) ? value : null;
     }));
 }

@@ -5,7 +5,8 @@ import type { TabState } from "./defs";
 
 import { defaultOverviewDate, defaultOverviewStatus } from "../../../shared/workspace/overview";
 import { defaultCalendar } from "../../../shared/workspace/calendar";
-import { defaultLibrary } from "../../../shared/workspace/library";
+import { defaultTable, defaultTrash, repairPaperFields, type TableViewType } from "../../../shared/workspace/table";
+import { fieldKey } from "../../../shared/workspace/query";
 import { record } from "../../../shared/attrs/values";
 
 type Layout = SavedTabs["layout"];
@@ -14,10 +15,11 @@ const isLayout = typia.createIs<{ groups: StoredGroup[]; focusedGroupId: string;
 const isView = typia.createEquals<View>();
 const isPageLocation = typia.createEquals<Pick<Extract<View, { type: "page" }>["params"], "page" | "fileId">>();
 
-function validLibrary(view: Extract<View, { type: "library" }>): boolean {
-    const { columns, tags, filters, pageType, paperOnly } = view.params;
+function validTableLayout(view: Extract<View, { type: TableViewType | "trash" }>): boolean {
+    const { columns } = view.params;
+    const sort = view.type === "trash" ? view.params.sort : view.params.query.sort;
     const unique = (ids: string[]): boolean => new Set(ids).size === ids.length;
-    return !(paperOnly && pageType) && (!columns || columns.some(c => c.id === "title") && unique(columns.map(c => c.id))) && unique(tags) && unique(filters.map(f => f.attribute.id));
+    return (!columns || columns.some(c => c.id === "title") && unique(columns.map(c => c.id))) && unique(sort.map(item => fieldKey(item.field)));
 }
 
 export function restoreTabState(state: unknown): TabState | undefined {
@@ -35,8 +37,9 @@ export function restoreTabState(state: unknown): TabState | undefined {
         for (const tab of group.tabs) {
             if (!Object.hasOwn(tab, "view") || tabIds.has(tab.id)) return;
             tabIds.add(tab.id);
-            const view = tab.view;
-            if (isView(view) && (view.type !== "library" || validLibrary(view))) tabs.push({ id: tab.id, view });
+            let view = tab.view;
+            if (isView(view) && view.type === "papers") view = { ...view, params: repairPaperFields(view.params) };
+            if (isView(view) && (view.type !== "library" && view.type !== "papers" && view.type !== "trash" || validTableLayout(view))) tabs.push({ id: tab.id, view });
             else if (record(view) && view.type === "page" && record(view.params) &&
                 Object.keys(view.params).every(key => ["page", "fileId", "showProperties", "infoWidth", "paperSidebar"].includes(key))) {
                 const { page, fileId } = view.params;
@@ -50,10 +53,9 @@ export function restoreTabState(state: unknown): TabState | undefined {
             else if (record(view) && (view.type === "feed" || view.type === "attributes" || view.type === "settings" || view.type === "about")) {
                 tabs.push({ id: tab.id, view: { type: view.type, params: {} } });
             }
-            else if (record(view) && view.type === "library") {
-                const papers = record(view.params) && view.params.paperOnly === true;
-                tabs.push({ id: tab.id, view: { type: "library", params: defaultLibrary(papers) } });
-            }
+            else if (record(view) && (view.type === "table" || view.type === "library")) tabs.push({ id: tab.id, view: { type: "library", params: defaultTable() } });
+            else if (record(view) && view.type === "papers") tabs.push({ id: tab.id, view: { type: "papers", params: defaultTable("papers") } });
+            else if (record(view) && view.type === "trash") tabs.push({ id: tab.id, view: { type: "trash", params: defaultTrash() } });
         }
         const activeTabId = group.activeTabId === null ? null : tabs.find(tab => tab.id === group.activeTabId)?.id ?? tabs[0]?.id ?? null;
         groups.push({ id: group.id, tabs, activeTabId });

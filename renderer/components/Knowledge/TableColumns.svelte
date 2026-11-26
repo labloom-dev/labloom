@@ -1,13 +1,14 @@
 <script lang="ts">
     import { isComposingKey } from "../../../shared/content/commands";
-    import type { LibraryColumn, LibrarySort } from "../../../shared/workspace/library";
+    import type { ViewSort } from "../../../shared/workspace/query";
+    import { fieldColumn, type TableColumn } from "../../../shared/workspace/table";
     import { t } from "../../i18n.svelte";
     import Menu, { type MenuItem } from "../base/Menu.svelte";
     import Icon from "../utils/Icon.svelte";
 
     let { columns, choices, sort, label, onsort, onchange, onreset }: {
-        columns: LibraryColumn[]; choices: string[]; sort: LibrarySort; label: (id: string) => string;
-        onsort: (id: string) => void; onchange: (columns: LibraryColumn[]) => void; onreset: () => void;
+        columns: TableColumn[]; choices: string[]; sort: ViewSort[]; label: (id: string) => string;
+        onsort: (id: string, extend: boolean) => void; onchange: (columns: TableColumn[]) => void; onreset: () => void;
     } = $props();
     let header: HTMLElement, dragging = "", resize: { id: string; x: number; width: number } | undefined;
     const items = $derived<MenuItem[]>([...choices.map(id => ({
@@ -48,17 +49,22 @@
         <div {...props} bind:this={header} class="column-heads" role="row">
             {#each columns as column (column.id)}
                 {@const id = column.id}
-                <div role="columnheader" data-column={id} aria-sort={sort.column !== id ? "none" : sort.direction === "asc" ? "ascending" : "descending"}
+                {@const rank = sort.findIndex(item => fieldColumn(item.field) === id)}
+                {@const direction = sort[rank]?.direction}
+                <div role="columnheader" data-column={id} aria-sort={rank !== 0 ? "none" : direction === "asc" ? "ascending" : "descending"}
                     ondragover={event => {
                         if (dragging) event.preventDefault();
                     }} ondrop={event => drop(event, id)}>
                     <button class="column-sort" draggable="true" ondragstart={event => {
                         dragging = id; event.dataTransfer?.setData("application/x-labloom-column", id);
-                    }} ondragend={() => dragging = ""} onclick={() => onsort(id)} onkeydown={event => {
+                    }} ondragend={() => dragging = ""} onclick={event => onsort(id, event.shiftKey)} onkeydown={event => {
                         if (isComposingKey(event) && (event.key === "Enter" || event.key === " ")) event.preventDefault();
                     }}>
                         <span class="cell-label">{label(id)}</span>
-                        {#if sort.column === id}<Icon name={sort.direction === "asc" ? "chevron-up" : "chevron-down"} size="var(--ui-icon-small)" />{/if}
+                        {#if rank >= 0}
+                            <Icon name={direction === "asc" ? "chevron-up" : "chevron-down"} size="var(--ui-icon-small)" />
+                            {#if sort.length > 1}<span aria-label={t("table.sortLevel", { level: rank + 1 })}>{rank + 1}</span>{/if}
+                        {/if}
                     </button>
                     <div class="column-sash" role="separator" aria-orientation="vertical" tabindex="0" aria-label={t("library.width", { name: label(id) })}
                         aria-valuenow={column.width} onpointerdown={event => {
@@ -78,7 +84,7 @@
 </Menu>
 
 <style>
-    .column-heads { display: grid; grid-template-columns: var(--library-tracks); position: sticky; top: 0; z-index: 1; min-width: var(--library-min-width); width: 100%; height: var(--ui-row-height); background: var(--ui-surface-panel); border-bottom: var(--ui-stroke) solid var(--ui-divider); }
+    .column-heads { display: grid; grid-template-columns: var(--library-tracks); position: sticky; top: 0; z-index: 2; min-width: var(--library-min-width); width: 100%; height: var(--ui-row-height); background: var(--ui-surface-panel); border-bottom: var(--ui-stroke) solid var(--ui-divider); }
     [role="columnheader"] { position: relative; min-width: 0; }
     .column-sort { display: flex; align-items: center; width: 100%; height: 100%; gap: var(--ui-space-2); padding-inline: var(--ui-space-3); font-size: var(--ui-font-small); color: var(--ui-text-secondary); }
     .column-sort:hover { background: var(--ui-hover); }

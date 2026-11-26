@@ -1,5 +1,5 @@
 {#key source.kind === "page" ? source.id : tab.id}
-    <ViewComponent tabId={tab.id} params={tab.view.params} {source} onparams={params => setViewParams(tab.id, params)} />
+    <ViewComponent tabId={tab.id} viewType={tab.view.type} params={tab.view.params} {source} onparams={params => setViewParams(tab.id, params)} />
 {/key}
 
 <script lang="ts">

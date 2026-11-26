@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { fixture } from "./fixture";
 import { registerIPCs } from "../../main/register";
 import { attach } from "../../main/ui/windowFrame";
+import { defaultTable } from "../../shared/workspace/table";
 
 function stats(values: number[]): { p50: number; p95: number } {
     const sorted = values.toSorted((a, b) => a - b);
@@ -192,7 +193,7 @@ for (let sample = 0; sample <= (process.env.LABLOOM_COMPACT_UI_ONLY ? 0 : 20); s
     if (preview.status !== "confirmation") throw new Error("Missing confirmation");
     const start = performance.now(); purge.purge(ids, "benchmark", preview.token); if (sample) deletion.push(performance.now() - start);
 }
-const group = randomUUID(), tabs = Array.from({ length: 20 }, () => ({ id: randomUUID(), view: { type: "library", params: { scope: "all", sort: { column: "modified_at", direction: "desc" }, tags: [], filters: [] } } }));
+const group = randomUUID(), tabs = Array.from({ length: 20 }, () => ({ id: randomUUID(), view: { type: "library", params: defaultTable() } }));
 f.sql.prepare("UPDATE workspace_meta SET settings=?").run(JSON.stringify({ tabs: { groups: [{ id: group, tabs, activeTabId: tabs[0].id }], focusedGroupId: group, layout: { type: "group", groupId: group } } }));
 session.close();
 void app.whenReady().then(async () => {

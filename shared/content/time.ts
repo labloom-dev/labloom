@@ -2,6 +2,13 @@ import { LabloomError } from "../failure";
 import { type AttributeType } from "../types/attributes";
 
 export const nowSeconds = (): number => Math.floor(Date.now() / 1000);
+export const secondsPerDay = 86400;
+export const weekStartsOn = 1;
+
+export function startOfWeek(day: number): number {
+    const weekday = new Date(day * 1000).getUTCDay();
+    return day - (weekday - weekStartsOn + 7) % 7 * secondsPerDay;
+}
 
 export function resolveTimeZone(preference: string): string {
     return preference === "system" ? Intl.DateTimeFormat().resolvedOptions().timeZone : preference;

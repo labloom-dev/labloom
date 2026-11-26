@@ -9,6 +9,7 @@ import { viewMenu } from "../Tab/view-menu";
 import * as feedback from "./feedback.svelte";
 import * as sessions from "./page-sessions";
 import type { PageSession } from "./page-session.svelte";
+import { openDestination } from "../layout/navigation";
 
 export function toggleProperties(id: TabID, params: ViewParams["page"]): void {
     const paper = sessions.mountedSession(id, params.page.id)?.state.page?.kind === "paper";
@@ -43,10 +44,11 @@ export function pageHeader(id: TabID, params: ViewParams["page"]): HeaderActions
     return actions;
 }
 
-export function toggleLibraryProperties(id: TabID, params: ViewParams["library"]): void {
+export function toggleTableProperties(id: TabID, params: ViewParams["library" | "trash"]): void {
     tabs.setViewParams(id, { ...params, showProperties: params.showProperties === false });
 }
-export function libraryHeader(id: TabID, params: ViewParams["library"]): HeaderActions {
+export function tableHeader(id: TabID, params: ViewParams["library" | "trash"], trash = false): HeaderActions {
     return { buttons: [{ icon: "layout-sidebar-right", label: i18n.t("editor.properties"), shortcut: shortcuts.commands.toggleProperties.shortcut,
-        pressed: params.showProperties !== false, onclick: () => toggleLibraryProperties(id, params) }], menu: [] };
+        pressed: params.showProperties !== false, onclick: () => toggleTableProperties(id, params) }],
+    menu: trash ? [] : [{ label: i18n.t("table.openTrash"), icon: "trash", onselect: () => openDestination("trash") }] };
 }
